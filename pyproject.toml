@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "reelcut"
+version = "0.1.0"
+description = "CLI-based AI video editor for Instagram Reels"
+requires-python = ">=3.10"
+dependencies = [
+    "faster-whisper",
+    "whisperx",
+    "torch",
+    "torchaudio",
+    "silero-vad",
+    "librosa",
+    "ffmpeg-python",
+    "pyyaml",
+    "typer[all]",
+    "Pillow",
+    "rich",
+    "pydantic>=2.0",
+    "soundfile",
+    "scipy",
+    "numpy<2",
+]
+
+[project.scripts]
+reelcut = "reelcut.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["reelcut*"]
