@@ -23,6 +23,7 @@ dependencies = [
     "soundfile",
     "scipy",
     "numpy<2",
+    "onnxruntime",
 ]
 
 [project.scripts]

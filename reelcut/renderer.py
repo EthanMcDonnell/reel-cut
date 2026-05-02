@@ -1,7 +1,9 @@
-"""Video renderer — FFmpeg render from EDL with caption overlay."""
+"""Video renderer — FFmpeg render from EDL with optional caption overlay."""
 from __future__ import annotations
 
 import concurrent.futures
+import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -11,6 +13,22 @@ from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeEl
 from .caption import CaptionFrame
 from .config import ReelCutConfig
 from .edl import EDLEntry, edl_summary
+
+
+def _videotoolbox_available() -> bool:
+    if sys.platform != "darwin":
+        return False
+    try:
+        result = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-encoders"],
+            capture_output=True, text=True, timeout=5,
+        )
+        return "h264_videotoolbox" in result.stdout
+    except Exception:
+        return False
+
+
+_USE_VIDEOTOOLBOX = _videotoolbox_available()
 
 
 def render(
@@ -44,6 +62,8 @@ def render(
             f"max_duration_s={config.output.max_duration_s}s — rendering anyway."
         )
 
+    n_workers = min(config.output.render_workers, len(keep_entries))
+
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
@@ -54,26 +74,21 @@ def render(
 
         with tempfile.TemporaryDirectory() as tmpdir:
             # Step 1: extract and trim each keep segment to a temp clip
-            segment_paths = _extract_segments(keep_entries, tmpdir, progress, task)
+            segment_paths = _extract_segments(keep_entries, tmpdir, progress, task, n_workers, config.output.fps)
 
-            # Step 2: concatenate segments
+            # Step 2: concatenate segments (stream copy — no re-encode)
             progress.update(task, description="Concatenating segments…")
-            # MKV container matches intermediate segments (H.264 + FLAC, stream copy)
             concat_path = Path(tmpdir) / "concat.mkv"
-            _concatenate(segment_paths, concat_path, config)
+            _concatenate(segment_paths, concat_path)
 
-            # Step 3: burn in captions (if any)
+            # Step 3: final encode to output spec (caption overlay folded in if present)
+            caption_seq: tuple[Path, int] | None = None
             if caption_frames:
-                progress.update(task, description="Burning in captions…")
-                captioned_path = Path(tmpdir) / "captioned.mkv"
-                _burn_captions(concat_path, caption_frames, captioned_path, config)
-                final_input = captioned_path
-            else:
-                final_input = concat_path
+                progress.update(task, description="Preparing captions…")
+                caption_seq = _prepare_caption_sequence(caption_frames, config, tmpdir)
 
-            # Step 4: final encode to output spec
             progress.update(task, description="Encoding final output…")
-            _final_encode(final_input, output_path, config)
+            _final_encode(concat_path, output_path, config, caption_seq)
 
         progress.update(task, description=f"Done → {output_path}", completed=1, total=1)
 
@@ -89,21 +104,21 @@ def _extract_segments(
     tmpdir: str,
     progress,
     task,
+    n_workers: int,
+    fps: int,
 ) -> list[Path]:
     """Trim each EDL keep entry to a temp file using frame-accurate trim + re-encode.
 
     Uses the trim/atrim filter approach instead of stream copy so cuts land on
     exact timestamps regardless of keyframe placement.
 
-    Segments are extracted in parallel (unsilence-style thread pool). Each FFmpeg
-    job is independent, so N workers run simultaneously. Paths are pre-allocated
-    by index so concatenation order is preserved regardless of completion order.
+    Segments are extracted in parallel. Each FFmpeg job is independent, so N workers
+    run simultaneously. Paths are pre-allocated by index so concatenation order is
+    preserved regardless of completion order.
     """
     n = len(entries)
-    # Use MKV + FLAC (lossless, no encoder delay) for intermediate segments.
-    # AAC encoder delay (~1024 samples) accumulates across independently-encoded
-    # segments when concatenated with stream copy, causing audio dropouts.
-    # _final_encode converts to AAC once at the end.
+    # MKV + FLAC: lossless audio, no encoder delay. AAC delay accumulates across
+    # independently-encoded segments on stream copy — converted to AAC once in _final_encode.
     paths: list[Path] = [Path(tmpdir) / f"seg_{i:04d}.mkv" for i in range(n)]
 
     def _extract_one(i: int) -> None:
@@ -115,43 +130,58 @@ def _extract_segments(
                 src.video
                 .trim(start=entry.start, end=entry.end)
                 .setpts("PTS-STARTPTS")
+                .filter("fps", fps=fps)  # VFR → CFR; prevents per-segment A/V drift at concat
             )
             audio = (
                 src.audio
                 .filter("atrim", start=entry.start, end=entry.end)
                 .filter("asetpts", "PTS-STARTPTS")
+                # No apad: apad + separate filter chains deadlocks when audio waits
+                # for video EOF signal that never arrives. -shortest handles any
+                # minor audio/video length mismatch without hanging.
             )
-            (
+            vcodec = "h264_videotoolbox" if _USE_VIDEOTOOLBOX else "libx264"
+            encode_kwargs: dict = dict(
+                vcodec=vcodec,
+                acodec="flac",
+                pix_fmt="yuv420p",
+            )
+            if not _USE_VIDEOTOOLBOX:
+                encode_kwargs["preset"] = "ultrafast"
+            else:
+                encode_kwargs["b:v"] = "8000k"
+
+            # ffmpeg-python converts shortest=True to "-shortest True" which FFmpeg
+            # parses as a filename; compile the command and insert the flag manually.
+            cmd = (
                 ffmpeg
-                .output(
-                    video,
-                    audio,
-                    str(out),
-                    vcodec="libx264",
-                    acodec="flac",
-                    pix_fmt="yuv420p",
-                )
+                .output(video, audio, str(out), **encode_kwargs)
                 .overwrite_output()
-                .run(quiet=True)
+                .compile()
             )
+            cmd.insert(-1, "-shortest")
+            proc = subprocess.run(cmd, capture_output=True, timeout=300)
+            if proc.returncode != 0:
+                raise ffmpeg.Error("ffmpeg", proc.stdout, proc.stderr)
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(f"Segment {i} extraction timed out after 300s — FFmpeg may be hung")
         except ffmpeg.Error as exc:
             stderr = exc.stderr.decode() if exc.stderr else ""
             raise RuntimeError(f"Failed to extract segment {i} from {entry.source_clip}:\n{stderr}") from exc
 
-    n_workers = min(4, n)
     progress.update(task, description=f"Extracting {n} segments ({n_workers} parallel)…")
     with concurrent.futures.ThreadPoolExecutor(max_workers=n_workers) as executor:
         futures = {executor.submit(_extract_one, i): i for i in range(n)}
         completed = 0
         for future in concurrent.futures.as_completed(futures):
-            future.result()  # re-raises any extraction error immediately
+            future.result()
             completed += 1
             progress.update(task, description=f"Extracting segments… {completed}/{n}")
 
     return paths
 
 
-def _concatenate(segment_paths: list[Path], output: Path, config: ReelCutConfig) -> None:
+def _concatenate(segment_paths: list[Path], output: Path) -> None:
     """Write a concat list file and join segments with FFmpeg concat demuxer."""
     concat_list = output.parent / "concat_list.txt"
     with concat_list.open("w") as f:
@@ -162,11 +192,7 @@ def _concatenate(segment_paths: list[Path], output: Path, config: ReelCutConfig)
         (
             ffmpeg
             .input(str(concat_list), format="concat", safe=0)
-            .output(
-                str(output),
-                vcodec="copy",
-                acodec="copy",
-            )
+            .output(str(output), vcodec="copy", acodec="copy")
             .overwrite_output()
             .run(quiet=True)
         )
@@ -175,28 +201,17 @@ def _concatenate(segment_paths: list[Path], output: Path, config: ReelCutConfig)
         raise RuntimeError(f"FFmpeg concat failed:\n{stderr}") from exc
 
 
-def _burn_captions(
-    input_path: Path,
+def _prepare_caption_sequence(
     caption_frames: list[CaptionFrame],
-    output_path: Path,
     config: ReelCutConfig,
-) -> None:
-    """Overlay PNG caption frames onto the video using FFmpeg overlay filter."""
-    # Build a frame-accurate overlay using a concat of caption images
-    # Strategy: create a video stream from caption PNGs at the same fps,
-    # then overlay it with blend mode (captions have transparency).
-    fps = config.output.fps
-    caption_dir = Path(caption_frames[0].image_path).parent
-
-    # Write a PNG list for the caption image sequence
+    tmpdir: str,
+) -> tuple[Path, int]:
+    """Build the symlinked PNG sequence for caption overlay. Returns (seq_dir, min_frame)."""
     frame_map: dict[int, str] = {cf.frame_number: cf.image_path for cf in caption_frames}
-    if not frame_map:
-        return
     min_frame = min(frame_map)
     max_frame = max(frame_map)
 
-    # Create a padded sequence directory where missing frames are blank
-    seq_dir = caption_dir / "seq"
+    seq_dir = Path(tmpdir) / "cap_seq"
     seq_dir.mkdir(exist_ok=True)
     blank = _blank_frame(config.output.resolution[0], config.output.resolution[1], seq_dir)
 
@@ -207,53 +222,67 @@ def _burn_captions(
             dest.unlink()
         dest.symlink_to(src)
 
-    try:
-        main = ffmpeg.input(str(input_path))
-        overlay_raw = ffmpeg.input(
-            str(seq_dir / "cap_%06d.png"),
-            framerate=fps,
-            start_number=min_frame,
-        )
-        # Convert overlay PNGs to rgba so transparency is respected
-        overlay_rgba = overlay_raw.video.filter("format", "rgba")
-        (
-            ffmpeg
-            .overlay(main.video, overlay_rgba, eof_action="pass")
-            .output(
-                main.audio,
-                str(output_path),
-                vcodec="libx264",
-                acodec="copy",
-                r=fps,
-                pix_fmt="yuv420p",
-            )
-            .overwrite_output()
-            .run(quiet=True)
-        )
-    except ffmpeg.Error as exc:
-        stderr = exc.stderr.decode() if exc.stderr else ""
-        raise RuntimeError(f"Caption burn-in failed:\n{stderr}") from exc
+    return seq_dir, min_frame
 
 
-def _final_encode(input_path: Path, output_path: Path, config: ReelCutConfig) -> None:
-    """Re-encode to final output spec: 1080x1920 H.264, AAC, target fps."""
+def _final_encode(
+    input_path: Path,
+    output_path: Path,
+    config: ReelCutConfig,
+    caption_seq: tuple[Path, int] | None = None,
+) -> None:
+    """Re-encode to final output spec, optionally overlaying caption frames in the same pass."""
     w, h = config.output.resolution
     fps = config.output.fps
 
+    def _build_streams() -> tuple:
+        main = ffmpeg.input(str(input_path))
+        video = main.video
+        # Fix accumulated A/V drift from VFR source material: async resampling
+        # adjusts audio timing by up to 1000 samples/s to stay locked to video PTS.
+        audio = main.audio.filter("aresample", **{"async": 1000})
+        if caption_seq is not None:
+            seq_dir, min_frame = caption_seq
+            overlay_raw = ffmpeg.input(
+                str(seq_dir / "cap_%06d.png"),
+                framerate=fps,
+                start_number=min_frame,
+            )
+            video = ffmpeg.overlay(
+                video,
+                overlay_raw.video.filter("format", "rgba"),
+                eof_action="pass",
+            )
+        video = video.filter("scale", w, h, force_original_aspect_ratio="disable")
+        return video, audio
+
+    common: dict = dict(
+        acodec="aac",
+        audio_bitrate=config.output.audio_bitrate,
+        r=fps,
+        pix_fmt="yuv420p",
+        movflags="+faststart",
+    )
+
+    if _USE_VIDEOTOOLBOX:
+        video, audio = _build_streams()
+        try:
+            vt_kwargs = {**common, "vcodec": "h264_videotoolbox", "b:v": "8000k"}
+            (
+                ffmpeg
+                .output(video, audio, str(output_path), **vt_kwargs)
+                .overwrite_output()
+                .run(quiet=True)
+            )
+            return
+        except ffmpeg.Error:
+            pass  # fall through to libx264
+
+    video, audio = _build_streams()
     try:
         (
             ffmpeg
-            .input(str(input_path))
-            .output(
-                str(output_path),
-                vcodec="libx264",
-                acodec="aac",
-                audio_bitrate=config.output.audio_bitrate,
-                r=fps,
-                vf=f"scale={w}:{h}:force_original_aspect_ratio=disable",
-                pix_fmt="yuv420p",
-                movflags="+faststart",
-            )
+            .output(video, audio, str(output_path), vcodec="libx264", **common)
             .overwrite_output()
             .run(quiet=True)
         )

@@ -15,11 +15,13 @@ GapType = Literal["silence", "breath", "noise", "speech"]
 
 @dataclass
 class Gap:
-    start: float        # seconds
-    end: float          # seconds
+    start: float           # seconds, = words[i].end (used for map lookup in edl.py)
+    end: float             # seconds, = words[i+1].start
+    effective_start: float # true silence onset — may be earlier than start when Whisper
+                           # extends a word's end timestamp into trailing silence
     duration_ms: float
     gap_type: GapType
-    cut: bool           # True = this gap will be removed
+    cut: bool              # True = this gap will be removed
 
 
 def detect_gaps(
@@ -147,6 +149,36 @@ def _spectral_flatness(chunk: np.ndarray, n_fft: int = 256) -> float:
     return float(np.mean(flatness_per_frame))
 
 
+def _find_silence_onset(
+    audio: np.ndarray,
+    sr: int,
+    before_t: float,
+    scan_s: float,
+    config: CutsConfig,
+) -> float:
+    """Scan backward from before_t to find where audio actually goes silent.
+
+    Whisper commonly extends a word's end timestamp into the trailing silence
+    (the gap gets attributed to the previous word). This finds the true onset of
+    silence so the cut starts where energy actually drops, not at the timestamp.
+
+    Returns a time <= before_t. Falls back to before_t if no silence found.
+    """
+    frame_size = max(64, int(0.010 * sr))  # 10 ms frames
+    end_sample = int(before_t * sr)
+    start_sample = max(0, end_sample - int(scan_s * sr))
+    silence_thresh = float(10 ** (config.silence_threshold_db / 20))
+
+    pos = end_sample
+    while pos - frame_size >= start_sample:
+        frame = audio[pos - frame_size : pos]
+        if float(np.mean(np.abs(frame) > silence_thresh)) < config.failure_tolerance_ratio:
+            return pos / sr  # this frame is silent — speech ended here
+        pos -= frame_size
+
+    return before_t
+
+
 def _build_gaps(
     words: list[WordTimestamp],
     audio: np.ndarray,
@@ -157,24 +189,28 @@ def _build_gaps(
     gaps: list[Gap] = []
 
     for i in range(len(words) - 1):
-        gap_start = words[i].end
+        raw_start = words[i].end
         gap_end = words[i + 1].start
-        duration_ms = (gap_end - gap_start) * 1000
+
+        # Find where audio truly goes silent — may be before Whisper's word end
+        effective_start = _find_silence_onset(audio, sr, raw_start, scan_s=0.20, config=config)
+
+        duration_ms = (gap_end - effective_start) * 1000
 
         if duration_ms <= 0:
             continue
 
-        gap_type = _classify_gap(audio, sr, gap_start, gap_end, duration_ms, config, peak_amplitude)
+        gap_type = _classify_gap(audio, sr, effective_start, gap_end, duration_ms, config, peak_amplitude)
 
-        # Determine whether to cut based on type and threshold
         if gap_type == "breath":
             should_cut = duration_ms >= config.min_breath_ms
         else:
             should_cut = duration_ms >= config.min_silence_ms
 
         gaps.append(Gap(
-            start=gap_start,
+            start=raw_start,
             end=gap_end,
+            effective_start=effective_start,
             duration_ms=duration_ms,
             gap_type=gap_type,
             cut=should_cut,

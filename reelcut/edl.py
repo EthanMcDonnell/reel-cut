@@ -110,19 +110,23 @@ def generate_edl(
 def generate_scriptless_edl(
     words: list[WordTimestamp],
     gaps: list[Gap],
-    min_keep_ms: int = 100,
+    min_keep_ms: int = 50,
+    speech_pad_ms: int = 30,
 ) -> list[EDLEntry]:
     """Build an EDL with no script: keep all speech, cut at every marked gap.
 
-    Unlike generate_edl (which keeps entire aligned-segment blocks), this walks
-    word-by-word and splits keep segments at each gap where cut=True. This means
-    silence/breath gaps between words are individually removed, which is the right
-    behaviour when there is no script to define outtake regions.
+    Cut boundaries are placed at:
+      - gap.effective_start  (true silence onset — may be before Whisper's word end)
+      - nxt.start - pad_s    (leave a safety margin before the next word starts)
+
+    This prevents clipping word edges when Whisper timestamps are off by ±30 ms.
     """
     if not words:
         return []
 
-    # Build a fast lookup: (gap_start_rounded, gap_end_rounded) → Gap
+    pad_s = speech_pad_ms / 1000.0
+
+    # Keyed by original word boundary (words[i].end, words[i+1].start) for fast lookup
     gap_map: dict[tuple[float, float], Gap] = {}
     for g in gaps:
         gap_map[(round(g.start, 4), round(g.end, 4))] = g
@@ -140,24 +144,24 @@ def generate_scriptless_edl(
         for i in range(len(clip_words) - 1):
             curr = clip_words[i]
             nxt = clip_words[i + 1]
-            gap_start = round(curr.end, 4)
-            gap_end = round(nxt.start, 4)
-            gap = gap_map.get((gap_start, gap_end))
+            gap = gap_map.get((round(curr.end, 4), round(nxt.start, 4)))
 
             if gap and gap.cut:
-                # Close current keep segment, emit the cut gap
-                entries.append(EDLEntry(
-                    start=seg_start, end=curr.end, keep=True,
-                    source_clip=clip_path, reason="speech",
-                ))
-                entries.append(EDLEntry(
-                    start=curr.end, end=nxt.start, keep=False,
-                    source_clip=clip_path, reason=gap.gap_type,  # type: ignore[arg-type]
-                ))
-                seg_start = nxt.start
+                cut_start = gap.effective_start          # true silence onset
+                cut_end   = nxt.start - pad_s            # keep natural lead before next word
+
+                if cut_end > cut_start + 0.010:          # only cut if ≥10 ms remains
+                    entries.append(EDLEntry(
+                        start=seg_start, end=cut_start, keep=True,
+                        source_clip=clip_path, reason="speech",
+                    ))
+                    entries.append(EDLEntry(
+                        start=cut_start, end=cut_end, keep=False,
+                        source_clip=clip_path, reason=gap.gap_type,  # type: ignore[arg-type]
+                    ))
+                    seg_start = cut_end
             seg_end = nxt.end
 
-        # Final keep segment
         entries.append(EDLEntry(
             start=seg_start, end=seg_end, keep=True,
             source_clip=clip_path, reason="speech",

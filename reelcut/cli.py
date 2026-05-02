@@ -17,6 +17,7 @@ os.environ.setdefault("OMP_NUM_THREADS", "1")          # prevent OMP fork-safety
 
 import json
 import tempfile
+import time
 import traceback
 from pathlib import Path
 from typing import Optional
@@ -67,7 +68,6 @@ def run(
 ) -> None:
     """Process all videos in input.footage folder, moving each to done/ when complete."""
     from .config import load_config
-
     try:
         cfg = load_config(config_path)
     except (FileNotFoundError, ValueError) as exc:
@@ -123,7 +123,7 @@ def run(
         if dest.exists():
             dest = done_dir / f"{video.stem}_{int(dest.stat().st_mtime)}{video.suffix}"
         video.rename(dest)
-        console.print(f"[dim]Moved {video.name} → done/{dest.name}[/dim]\n")
+        console.print(f"[cyan]Moved {video.name} → done/{dest.name}[/cyan]\n")
 
     _exit_with_warnings(all_warnings)
 
@@ -135,7 +135,7 @@ def _run_pipeline(cfg, output_path: Path, verbose: bool, dry_run: bool) -> list[
     from .edl import generate_scriptless_edl, generate_edl, save_edl, edl_summary
     from .gap_detector import detect_gaps
     from .renderer import render as do_render
-    from .transcriber import transcribe, align
+    from .transcriber import transcribe, align, filter_words_by_vad, filter_silent_words
 
     warnings: list[str] = []
     output_dir = output_path.parent
@@ -152,28 +152,67 @@ def _run_pipeline(cfg, output_path: Path, verbose: bool, dry_run: bool) -> list[
             # --- Audio extraction ---
             console.print(f"[bold]Step 1[/bold] Extracting audio: {Path(clip_path).name}…")
             _vlog(verbose, f"  → {wav}")
+            t = time.perf_counter()
             extract_audio(clip_path, wav)
             normalize_audio(wav)
+            _tlog(time.perf_counter() - t, "done")
 
             # --- Transcription ---
             console.print(f"[bold]Step 2[/bold] Transcribing {Path(clip_path).name}…")
+            t = time.perf_counter()
             words = transcribe(wav, cfg.whisper)
+            _tlog(time.perf_counter() - t, f"{len(words)} words")
             _vlog(verbose, f"  {len(words)} words from faster-whisper")
 
             # --- Forced alignment ---
             console.print(f"[bold]Step 3[/bold] Aligning timestamps for {Path(clip_path).name}…")
-            words = align(words, wav, cfg.whisper)
-            _vlog(verbose, f"  {len(words)} words after wav2vec2 alignment")
+            t = time.perf_counter()
+            words, align_method = align(words, wav, cfg.whisper)
+            align_ok = "Whisper timestamps" not in align_method
+            align_color = "green" if align_ok else "yellow"
+            console.print(f"  Alignment: [{align_color}]{align_method}[/{align_color}]")
+
+            # --- VAD hallucination filter ---
+            before = len(words)
+            try:
+                words = filter_words_by_vad(words, wav, threshold=cfg.cuts.vad_threshold)
+                vad_method = "Silero VAD (ONNX)"
+                vad_color = "green"
+            except Exception as exc:
+                console.print(f"  [yellow]VAD filter failed ({exc}) — falling back to energy filter[/yellow]")
+                words = filter_silent_words(words, wav, cfg.cuts.silence_threshold_db, cfg.cuts.failure_tolerance_ratio)
+                vad_method = "energy filter (fallback)"
+                vad_color = "yellow"
+            dropped = before - len(words)
+            drop_note = f", [red]{dropped} hallucinated words dropped[/red]" if dropped else ", no hallucinations detected"
+            console.print(f"  Hallucination filter: [{vad_color}]{vad_method}[/{vad_color}]{drop_note}")
+            _tlog(time.perf_counter() - t, f"{len(words)} words")
 
             for w in words:
                 w.clip_path = str(clip_path)
             all_words.extend(words)
+
+        # --- Transcript artifact ---
+        transcript_path = output_dir / f"{output_path.stem}.transcript.json"
+        transcript_data = [
+            {
+                "word": w.word,
+                "start": round(w.start, 3),
+                "end": round(w.end, 3),
+                "confidence": round(w.confidence, 3),
+                "clip": Path(w.clip_path).name,
+            }
+            for w in all_words
+        ]
+        transcript_path.write_text(json.dumps(transcript_data, indent=2))
+        console.print(f"  Transcript → {transcript_path}  ({len(all_words)} words)")
 
         # --- Retake detection (scriptless only — script mode handles this via last-take-wins) ---
         retake_ranges: dict[str, list[tuple[float, float]]] = {}
         if not use_script and cfg.cuts.min_retake_words > 0:
             from .retake_detector import detect_retakes
             console.print("[bold]Step 3b[/bold] Detecting duplicate takes…")
+            t = time.perf_counter()
             for clip_path in clips:
                 clip_words = [w for w in all_words if w.clip_path == str(clip_path)]
                 ranges = detect_retakes(clip_words, cfg.cuts.min_retake_words)
@@ -186,9 +225,11 @@ def _run_pipeline(cfg, output_path: Path, verbose: bool, dry_run: bool) -> list[
                 console.print(f"  {total_retakes} retake region(s) detected ({total_s:.1f}s to cut)")
             else:
                 console.print("  No duplicate takes found")
+            _tlog(time.perf_counter() - t)
 
         # --- Gap detection (always runs — primary cut driver) ---
         console.print("[bold]Step 4[/bold] Detecting silences, breaths, and gaps…")
+        t = time.perf_counter()
         gaps = []
         for clip_path in clips:
             wav = tmp / (Path(clip_path).stem + ".wav")
@@ -197,9 +238,12 @@ def _run_pipeline(cfg, output_path: Path, verbose: bool, dry_run: bool) -> list[
             gaps.extend(clip_gaps)
             n_cut = sum(1 for g in clip_gaps if g.cut)
             _vlog(verbose, f"  {Path(clip_path).name}: {n_cut}/{len(clip_gaps)} gaps will be cut")
+        n_cut_total = sum(1 for g in gaps if g.cut)
+        _tlog(time.perf_counter() - t, f"{n_cut_total}/{len(gaps)} gaps cut")
 
         # --- EDL generation ---
         console.print("[bold]Step 5[/bold] Building EDL…")
+        t = time.perf_counter()
         if use_script:
             # Script mode: gap cuts + outtake removal
             from .script_aligner import align_to_script
@@ -228,7 +272,7 @@ def _run_pipeline(cfg, output_path: Path, verbose: bool, dry_run: bool) -> list[
         else:
             # Scriptless mode: gap cuts only, all speech kept
             console.print("  No script — keeping all speech, cutting silences/breaths…")
-            edl = generate_scriptless_edl(all_words, gaps, min_keep_ms=cfg.cuts.min_keep_ms)
+            edl = generate_scriptless_edl(all_words, gaps, min_keep_ms=cfg.cuts.min_keep_ms, speech_pad_ms=cfg.cuts.speech_pad_ms)
 
         # Apply retake cuts (works in both script and scriptless modes)
         if retake_ranges:
@@ -239,9 +283,9 @@ def _run_pipeline(cfg, output_path: Path, verbose: bool, dry_run: bool) -> list[
         save_edl(edl, edl_path)
         summary = edl_summary(edl)
         console.print(
-            f"  EDL saved → {edl_path}  "
-            f"([green]keep {summary['total_keep_s']}s[/green] / "
-            f"[red]cut {summary['total_cut_s']}s[/red])"
+            f"({time.perf_counter() - t:.1f}s) "
+            f"[green]keep {summary['total_keep_s']}s[/green] / "
+            f"[red]cut {summary['total_cut_s']}s[/red] → {edl_path}"
         )
 
         if summary["total_keep_s"] > cfg.output.max_duration_s:
@@ -254,22 +298,32 @@ def _run_pipeline(cfg, output_path: Path, verbose: bool, dry_run: bool) -> list[
             return warnings
 
         # --- Caption rendering ---
+        caption_words = _remap_words_to_edited_timeline(all_words, [e for e in edl if e.keep])
+
+        srt_path = output_dir / f"{output_path.stem}.srt"
+        from .caption import write_srt
+        write_srt(caption_words, srt_path)
+        console.print(f"  SRT → {srt_path}")
+
         caption_frames = []
         if cfg.captions.enabled and cfg.captions.style != "none":
             console.print("[bold]Step 6b/6[/bold] Rendering caption frames…")
+            t = time.perf_counter()
             cap_dir = tmp / "captions"
-            caption_words = _remap_words_to_edited_timeline(all_words, [e for e in edl if e.keep])
             caption_frames = render_caption_frames(
                 caption_words, cfg.captions, cap_dir,
                 fps=cfg.output.fps,
                 resolution=tuple(cfg.output.resolution),
             )
-            _vlog(verbose, f"  {len(caption_frames)} caption frames")
+            _tlog(time.perf_counter() - t, f"{len(caption_frames)} frames")
 
         # --- Render ---
-        console.print("[bold]Step 6c/6[/bold] Rendering final video…")
+        from .renderer import _USE_VIDEOTOOLBOX
+        encoder = "h264_videotoolbox (hardware)" if _USE_VIDEOTOOLBOX else "libx264 (software)"
+        console.print(f"[bold]Step 6c/6[/bold] Rendering final video… encoder: [cyan]{encoder}[/cyan]")
+        t = time.perf_counter()
         out = do_render(edl, caption_frames, cfg, output_path)
-        console.print(f"\n[green bold]Done![/green bold] → {out}")
+        console.print(f"\n[green bold]Done![/green bold] → {out}  ({time.perf_counter() - t:.1f}s)")
 
     return warnings
 
@@ -409,9 +463,13 @@ def _collect_clips(cfg) -> list[str]:
     return [cfg.input.footage]
 
 
+def _tlog(elapsed: float, label: str = "") -> None:
+    msg = f"  → {label} ({elapsed:.1f}s)" if label else f"  → {elapsed:.1f}s"
+    console.print(msg)
+
 def _vlog(verbose: bool, msg: str) -> None:
     if verbose:
-        console.print(f"[dim]{msg}[/dim]")
+        console.print(f"[cyan]{msg}[/cyan]")
 
 
 def _exit_with_warnings(warnings: list[str]) -> None:

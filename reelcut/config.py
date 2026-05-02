@@ -19,12 +19,12 @@ class InputConfig(BaseModel):
 
 
 class CutsConfig(BaseModel):
-    min_silence_ms: int = 150
-    min_breath_ms: int = 80
+    min_silence_ms: int = 100
+    min_breath_ms: int = 60
     breath_detection: bool = True
-    silence_threshold_db: float = -50.0
+    silence_threshold_db: float = -40.0
     vad_threshold: float = 0.5
-    speech_pad_ms: int = 30
+    speech_pad_ms: int = 80
     # Relative amplitude ceiling for breath classification: a gap is only treated
     # as a breath if its RMS is below this fraction of the track's peak amplitude.
     # Prevents loud noise bursts from being misclassified as breaths.
@@ -36,11 +36,11 @@ class CutsConfig(BaseModel):
     # Drop keep segments shorter than this after cuts are applied. Prevents
     # sub-word fragments (clicks, partial phonemes) from becoming isolated clips.
     # Adjacent cuts around a dropped segment are merged into one.
-    min_keep_ms: int = 100
+    min_keep_ms: int = 50
     # Minimum phrase length (in words) for duplicate-take detection. Repeated
     # sequences shorter than this are ignored to avoid cutting naturally repeated
     # short phrases (e.g. "you know", "I think"). Set to 0 to disable entirely.
-    min_retake_words: int = 4
+    min_retake_words: int = 0
 
 
 class OutputConfig(BaseModel):
@@ -51,6 +51,7 @@ class OutputConfig(BaseModel):
     audio_bitrate: str = "128k"
     max_duration_s: int = 90
     location: str = "./output/"
+    render_workers: int = 8
 
     @field_validator("resolution")
     @classmethod
@@ -76,9 +77,10 @@ class CaptionsConfig(BaseModel):
 
 
 class WhisperConfig(BaseModel):
-    model: str = "large-v2"
+    model: str = "medium"
     compute_type: Literal["int8", "float16", "float32"] = "int8"
     language: str = "en"
+    beam_size: int = 1  # 1 = greedy (fastest); 5 = default beam search (more accurate)
 
     @field_validator("compute_type")
     @classmethod
@@ -139,15 +141,15 @@ input:
   # clips_folder: ./clips/         # optional, for multi-clip
 
 cuts:
-  min_silence_ms: 150              # cut gaps longer than this
-  min_breath_ms: 80                # cut breaths longer than this
+  min_silence_ms: 100              # cut gaps longer than this
+  min_breath_ms: 60                # cut breaths longer than this
   breath_detection: true
-  silence_threshold_db: -50
+  silence_threshold_db: -40        # -40 catches typical room noise; raise if over-cutting
   vad_threshold: 0.5
-  speech_pad_ms: 30
+  speech_pad_ms: 80                # ms kept before each word on a cut (raise for more breathing room)
   breath_amplitude_ratio: 0.15     # breath RMS must be < 15% of track peak
   failure_tolerance_ratio: 0.02    # allow 2% of samples to spike above noise floor
-  min_keep_ms: 100                 # drop keep segments shorter than this (ms)
+  min_keep_ms: 50                  # drop keep segments shorter than this (ms)
   min_retake_words: 4              # duplicate-take detection: min words in a repeated phrase (0 = off)
 
 output:
@@ -158,6 +160,7 @@ output:
   audio_bitrate: 128k
   max_duration_s: 90
   location: ./output/
+  render_workers: 8                # parallel segment extraction workers
 
 captions:
   enabled: true
@@ -172,9 +175,10 @@ captions:
   stroke_width: 3
 
 whisper:
-  model: large-v2
+  model: medium                    # medium (4-5× faster than large-v2, minimal quality loss)
   compute_type: int8               # int8 (CPU) | float16 (GPU)
   language: en
+  beam_size: 1                     # 1 = greedy/fastest; 5 = beam search/more accurate
 """
 
 
