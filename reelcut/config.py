@@ -25,21 +25,10 @@ class CutsConfig(BaseModel):
     silence_threshold_db: float = -40.0
     vad_threshold: float = 0.5
     speech_pad_ms: int = 80
-    # Relative amplitude ceiling for breath classification: a gap is only treated
-    # as a breath if its RMS is below this fraction of the track's peak amplitude.
-    # Prevents loud noise bursts from being misclassified as breaths.
+    word_end_scan_ms: int = 50
     breath_amplitude_ratio: float = 0.15
-    # Failure tolerance (jumpcutter-style): if fewer than this fraction of samples
-    # in a gap exceed the absolute noise floor, classify the whole gap as silence
-    # even if a single transient spike raises the RMS. Prevents fragmentation.
     failure_tolerance_ratio: float = 0.02
-    # Drop keep segments shorter than this after cuts are applied. Prevents
-    # sub-word fragments (clicks, partial phonemes) from becoming isolated clips.
-    # Adjacent cuts around a dropped segment are merged into one.
     min_keep_ms: int = 50
-    # Minimum phrase length (in words) for duplicate-take detection. Repeated
-    # sequences shorter than this are ignored to avoid cutting naturally repeated
-    # short phrases (e.g. "you know", "I think"). Set to 0 to disable entirely.
     min_retake_words: int = 0
 
 
@@ -141,16 +130,36 @@ input:
   # clips_folder: ./clips/         # optional, for multi-clip
 
 cuts:
-  min_silence_ms: 100              # cut gaps longer than this
-  min_breath_ms: 60                # cut breaths longer than this
-  breath_detection: true
-  silence_threshold_db: -40        # -40 catches typical room noise; raise if over-cutting
-  vad_threshold: 0.5
-  speech_pad_ms: 80                # ms kept before each word on a cut (raise for more breathing room)
-  breath_amplitude_ratio: 0.15     # breath RMS must be < 15% of track peak
-  failure_tolerance_ratio: 0.02    # allow 2% of samples to spike above noise floor
-  min_keep_ms: 50                  # drop keep segments shorter than this (ms)
-  min_retake_words: 4              # duplicate-take detection: min words in a repeated phrase (0 = off)
+  # --- What gets cut ---
+  min_silence_ms: 100              # gaps longer than this are cut. Raise to preserve more natural pauses;
+                                   # lower to cut more aggressively.
+  min_breath_ms: 60                # breath sounds longer than this are cut. Raise to keep more breaths
+                                   # (more natural); lower to remove even short breaths.
+  breath_detection: true           # set false to treat all non-silent gaps as noise (faster, less precise)
+  silence_threshold_db: -40        # noise floor for silence detection. Raise (e.g. -35) if background noise
+                                   # is causing over-cutting; lower (e.g. -50) if silences aren't being detected.
+
+  # --- Word boundary precision ---
+  speech_pad_ms: 80                # ms of audio kept before each word's start timestamp on a cut.
+                                   # WhisperX start timestamps run 80-150ms late — this pad stops the
+                                   # beginning of words getting clipped. Raise if sentence starts sound
+                                   # cut off; lower if you hear too much silence before words.
+  word_end_scan_ms: 50             # how far (ms) to scan backward from a word's end timestamp to find
+                                   # the true silence onset. Stops sentence endings getting clipped by
+                                   # stop consonants ("t","p","k") that look like silence at wider windows.
+                                   # Raise if trailing silence is being left in; lower if word ends are clipped.
+
+  # --- Advanced ---
+  vad_threshold: 0.5               # Silero VAD sensitivity for hallucination filtering (0-1). Lower = more
+                                   # words kept; higher = more hallucinated words dropped.
+  breath_amplitude_ratio: 0.15     # breath RMS must be below this fraction of track peak amplitude.
+                                   # Prevents loud noise bursts being misclassified as breaths.
+  failure_tolerance_ratio: 0.02    # fraction of samples allowed to spike above noise floor before a gap
+                                   # is considered non-silent. Prevents single transients fragmenting cuts.
+  min_keep_ms: 50                  # drop kept segments shorter than this after cutting. Prevents isolated
+                                   # sub-word fragments ("a", "I") becoming their own clip.
+  min_retake_words: 4              # duplicate-take detection: min words in a repeated phrase to trigger a
+                                   # retake cut. 0 = disabled.
 
 output:
   format: "9:16"
@@ -175,7 +184,7 @@ captions:
   stroke_width: 3
 
 whisper:
-  model: medium                    # medium (4-5× faster than large-v2, minimal quality loss)
+  model: medium                    # medium (4-5x faster than large-v2, minimal quality loss)
   compute_type: int8               # int8 (CPU) | float16 (GPU)
   language: en
   beam_size: 1                     # 1 = greedy/fastest; 5 = beam search/more accurate

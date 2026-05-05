@@ -251,17 +251,17 @@ def _build_gaps(
         raw_start = words[i].end
         gap_end = words[i + 1].start
 
-        # For normal words use a tight 50ms scan window — wide windows cause
-        # _find_silence_onset to land inside stop-consonant closures ("t","p","k")
-        # which briefly look like silence and clip the end of the word.
-        # Only widen the window when Whisper has over-extended the end timestamp
-        # past the next word's start (impossible gap), since the pre-pass already
-        # handles the long-word case before we reach here.
+        # For normal words use a tight scan window (word_end_scan_ms) — wide
+        # windows cause _find_silence_onset to land inside stop-consonant closures
+        # ("t","p","k") which briefly look like silence and clip the word end.
+        # Only widen when Whisper has over-extended the end timestamp past the
+        # next word's start (impossible gap); the long-word pre-pass above already
+        # handles the stretched-timestamp case before we reach here.
         word_duration = words[i].end - words[i].start
         if raw_start > gap_end or word_duration > 1.5:
             scan_s = max(0.20, raw_start - words[i].start)
         else:
-            scan_s = 0.05
+            scan_s = config.word_end_scan_ms / 1000.0
         effective_start = _find_silence_onset(audio, sr, raw_start, scan_s=scan_s, config=config)
 
         duration_ms = (gap_end - effective_start) * 1000
