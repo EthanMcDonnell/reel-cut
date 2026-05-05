@@ -179,6 +179,55 @@ def _find_silence_onset(
     return before_t
 
 
+def _find_speech_end_forward(
+    audio: np.ndarray,
+    sr: int,
+    word_start: float,
+    word_end: float,
+    config: CutsConfig,
+    min_silence_ms: float = 100.0,
+) -> float:
+    """Scan forward from word_start to find the first sustained silence within the word span.
+
+    WhisperX sometimes stretches a word's end timestamp to cover the entire following
+    silence (especially for short function words like "The", "But"). This makes the
+    inter-word gap trivially small and invisible to the gap detector. This function
+    finds the true end of speech so the word can be clamped before gap detection.
+
+    Returns a time in [word_start, word_end]. Returns word_end unchanged if no
+    sustained silence is found (the word is genuinely long, e.g. a held vowel).
+    """
+    frame_size = max(64, int(0.010 * sr))  # 10ms frames
+    required_frames = max(1, int(min_silence_ms / 10))
+    silence_thresh = float(10 ** (config.silence_threshold_db / 20))
+
+    start_sample = int(word_start * sr)
+    end_sample = int(word_end * sr)
+
+    consecutive_silent = 0
+    first_silent_pos: int | None = None
+
+    for pos in range(start_sample, end_sample, frame_size):
+        frame = audio[pos : pos + frame_size]
+        if len(frame) < 64:
+            break
+        fraction_above = float(np.mean(np.abs(frame) > silence_thresh))
+        if fraction_above < config.failure_tolerance_ratio:
+            if consecutive_silent == 0:
+                first_silent_pos = pos
+            consecutive_silent += 1
+            if consecutive_silent >= required_frames:
+                return first_silent_pos / sr  # type: ignore[operator]
+        else:
+            consecutive_silent = 0
+            first_silent_pos = None
+
+    return word_end
+
+
+_LONG_WORD_DUR_S = 1.5  # words longer than this are suspect for alignment errors
+
+
 def _build_gaps(
     words: list[WordTimestamp],
     audio: np.ndarray,
@@ -188,12 +237,31 @@ def _build_gaps(
 ) -> list[Gap]:
     gaps: list[Gap] = []
 
+    # Pre-pass: clamp words whose WhisperX-assigned duration is suspiciously long.
+    # WhisperX sometimes stretches a short word's end timestamp across the entire
+    # silence that follows it. The inter-word gap is then only a few ms and is never
+    # cut. Scanning forward finds the true speech end and restores a real gap.
+    for word in words[:-1]:
+        if word.end - word.start > _LONG_WORD_DUR_S:
+            true_end = _find_speech_end_forward(audio, sr, word.start, word.end, config)
+            if true_end < word.end - 0.050:  # at least 50ms of silence found
+                word.end = true_end
+
     for i in range(len(words) - 1):
         raw_start = words[i].end
         gap_end = words[i + 1].start
 
-        # Find where audio truly goes silent — may be before Whisper's word end
-        effective_start = _find_silence_onset(audio, sr, raw_start, scan_s=0.20, config=config)
+        # Use a small fixed window for normal words to avoid scanning into the word
+        # body (consonant closures look like silence and trigger mid-word cuts).
+        # Extend the scan window when Whisper over-extends the end timestamp past
+        # the next word's start, OR when the word has a suspiciously long reported
+        # duration — both are signs of a Whisper timestamp stretched into silence.
+        word_duration = words[i].end - words[i].start
+        if raw_start > gap_end or word_duration > 1.5:
+            scan_s = max(0.20, raw_start - words[i].start)
+        else:
+            scan_s = 0.20
+        effective_start = _find_silence_onset(audio, sr, raw_start, scan_s=scan_s, config=config)
 
         duration_ms = (gap_end - effective_start) * 1000
 

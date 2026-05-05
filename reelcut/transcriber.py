@@ -26,6 +26,7 @@ class WordTimestamp:
     end: float     # seconds
     confidence: float = 1.0
     clip_path: str = ""  # source clip, used in multi-clip workflows
+    keep: bool = True    # False = outtake or retake; set by EDL construction
 
 
 def transcribe(wav_path: str | Path, config: WhisperConfig) -> list[WordTimestamp]:
@@ -125,6 +126,9 @@ def align(
                 ))
 
         if aligned:
+            # Drop alignment failures: wav2vec2 returns start=end=0 for words it
+            # could not locate in the audio. These break gap detection when sorted.
+            aligned = [w for w in aligned if not (w.start == 0.0 and w.end == 0.0)]
             return aligned, f"WhisperX wav2vec2 ({device})"
 
     except ImportError:

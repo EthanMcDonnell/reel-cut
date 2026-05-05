@@ -192,20 +192,7 @@ def _run_pipeline(cfg, output_path: Path, verbose: bool, dry_run: bool) -> list[
                 w.clip_path = str(clip_path)
             all_words.extend(words)
 
-        # --- Transcript artifact ---
         transcript_path = output_dir / f"{output_path.stem}.transcript.json"
-        transcript_data = [
-            {
-                "word": w.word,
-                "start": round(w.start, 3),
-                "end": round(w.end, 3),
-                "confidence": round(w.confidence, 3),
-                "clip": Path(w.clip_path).name,
-            }
-            for w in all_words
-        ]
-        transcript_path.write_text(json.dumps(transcript_data, indent=2))
-        console.print(f"  Transcript → {transcript_path}  ({len(all_words)} words)")
 
         # --- Retake detection (scriptless only — script mode handles this via last-take-wins) ---
         retake_ranges: dict[str, list[tuple[float, float]]] = {}
@@ -277,7 +264,22 @@ def _run_pipeline(cfg, output_path: Path, verbose: bool, dry_run: bool) -> list[
         # Apply retake cuts (works in both script and scriptless modes)
         if retake_ranges:
             from .edl import apply_retake_cuts
-            edl = apply_retake_cuts(edl, retake_ranges)
+            edl = apply_retake_cuts(edl, retake_ranges, all_words)
+
+        # Transcript artifact — written after EDL so keep=True/False reflects final decisions
+        transcript_data = [
+            {
+                "word": w.word,
+                "start": round(w.start, 3),
+                "end": round(w.end, 3),
+                "confidence": round(w.confidence, 3),
+                "clip": Path(w.clip_path).name,
+                "keep": w.keep,
+            }
+            for w in all_words
+        ]
+        transcript_path.write_text(json.dumps(transcript_data, indent=2))
+        console.print(f"  Transcript → {transcript_path}  ({len(all_words)} words, {sum(1 for w in all_words if w.keep)} kept)")
 
         edl_path = output_dir / f"{output_path.stem}.edl.json"
         save_edl(edl, edl_path)
@@ -298,7 +300,7 @@ def _run_pipeline(cfg, output_path: Path, verbose: bool, dry_run: bool) -> list[
             return warnings
 
         # --- Caption rendering ---
-        caption_words = _remap_words_to_edited_timeline(all_words, [e for e in edl if e.keep])
+        caption_words = _remap_kept_words(all_words, edl)
 
         srt_path = output_dir / f"{output_path.stem}.srt"
         from .caption import write_srt
@@ -411,38 +413,66 @@ def preview_edl(
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _remap_words_to_edited_timeline(
-    words: list,
-    keep_entries: list,
-) -> list:
-    """Remap WordTimestamp objects from original clip time to edited video time.
+def _remap_kept_words(words: list, edl: list) -> list:
+    """Remap kept WordTimestamp objects from source clip time to output video time.
 
-    Each keep EDL entry maps a [start, end] range in the source clip to a
-    contiguous block in the edited timeline. Words that fall within a keep
-    entry are shifted to their corresponding edited-timeline position.
-    Words that were cut are dropped.
+    Uses the EDL cut entries to compute per-word timestamp offsets rather than
+    a timing-overlap check, so no word that was explicitly marked keep=True can
+    fall through due to floating-point boundary conditions.
+
+    For each clip, the output timeline starts at 0 (single clip) or at the end
+    of the previous clip's kept duration (multi-clip). Within a clip, each cut
+    interval shifts subsequent words earlier by the duration of that cut.
     """
     from .transcriber import WordTimestamp
 
+    # Determine clip order from EDL (first appearance wins)
+    clip_order: list[str] = []
+    for entry in edl:
+        if entry.source_clip not in clip_order:
+            clip_order.append(entry.source_clip)
+
+    # Per clip: total kept duration, start of first kept segment, cut intervals
+    keep_dur: dict[str, float] = {}
+    first_keep_start: dict[str, float] = {}
+    cut_intervals: dict[str, list[tuple[float, float]]] = {}
+
+    for entry in edl:
+        c = entry.source_clip
+        if entry.keep:
+            keep_dur[c] = keep_dur.get(c, 0.0) + (entry.end - entry.start)
+            if c not in first_keep_start:
+                first_keep_start[c] = entry.start
+        else:
+            cut_intervals.setdefault(c, []).append((entry.start, entry.end))
+
+    # Cumulative output offset where each clip's contribution begins
+    clip_base: dict[str, float] = {}
+    acc = 0.0
+    for c in clip_order:
+        clip_base[c] = acc
+        acc += keep_dur.get(c, 0.0)
+
     remapped = []
-    edited_offset = 0.0
-    for entry in keep_entries:
-        seg_dur = entry.end - entry.start
-        for w in words:
-            if w.clip_path != entry.source_clip:
-                continue
-            # Include words that overlap the keep range
-            if w.start >= entry.start and w.start < entry.end:
-                new_start = edited_offset + (w.start - entry.start)
-                new_end = edited_offset + min(w.end, entry.end) - entry.start
-                remapped.append(WordTimestamp(
-                    word=w.word,
-                    start=new_start,
-                    end=new_end,
-                    confidence=w.confidence,
-                    clip_path=w.clip_path,
-                ))
-        edited_offset += seg_dur
+    for w in words:
+        if not w.keep:
+            continue
+        c = w.clip_path
+        cuts = cut_intervals.get(c, [])
+        first_start = first_keep_start.get(c, 0.0)
+        # Only count cuts within the kept region (after first keep start).
+        # Pre-keep cuts are already absorbed by subtracting first_start.
+        cut_offset = sum(e - s for s, e in cuts if s >= first_start and e <= w.start)
+        intra = w.start - first_start - cut_offset
+        new_start = clip_base.get(c, 0.0) + intra
+        new_end = new_start + (w.end - w.start)
+        remapped.append(WordTimestamp(
+            word=w.word,
+            start=round(max(0.0, new_start), 4),
+            end=round(max(0.0, new_end), 4),
+            confidence=w.confidence,
+            clip_path=c,
+        ))
 
     return sorted(remapped, key=lambda w: w.start)
 

@@ -57,23 +57,40 @@ def _load_session():
 
 
 def _infer(session, audio: np.ndarray) -> list[float]:
-    """Run frame-by-frame inference. Returns per-frame speech probabilities."""
+    """Run frame-by-frame inference. Returns per-frame speech probabilities.
+
+    Supports both Silero VAD v4 (separate h/c states) and v5 (single state tensor).
+    The model version is detected from the session's input names.
+    """
     pad = (_WINDOW - len(audio) % _WINDOW) % _WINDOW
     if pad:
         audio = np.pad(audio, (0, pad))
 
-    h = np.zeros((2, 1, 64), dtype=np.float32)
-    c = np.zeros((2, 1, 64), dtype=np.float32)
     sr = np.array(_SR, dtype=np.int64)
-
+    input_names = {inp.name for inp in session.get_inputs()}
     probs: list[float] = []
-    for i in range(0, len(audio), _WINDOW):
-        chunk = audio[i : i + _WINDOW].reshape(1, -1).astype(np.float32)
-        out, h, c = session.run(
-            ["output", "hn", "cn"],
-            {"input": chunk, "sr": sr, "h": h, "c": c},
-        )
-        probs.append(float(out[0][0]))
+
+    if "state" in input_names:
+        # v5: single combined state (2, 1, 128)
+        state = np.zeros((2, 1, 128), dtype=np.float32)
+        for i in range(0, len(audio), _WINDOW):
+            chunk = audio[i : i + _WINDOW].reshape(1, -1).astype(np.float32)
+            out, state = session.run(
+                ["output", "stateN"],
+                {"input": chunk, "sr": sr, "state": state},
+            )
+            probs.append(float(out[0][0]))
+    else:
+        # v4: separate h and c states (2, 1, 64)
+        h = np.zeros((2, 1, 64), dtype=np.float32)
+        c = np.zeros((2, 1, 64), dtype=np.float32)
+        for i in range(0, len(audio), _WINDOW):
+            chunk = audio[i : i + _WINDOW].reshape(1, -1).astype(np.float32)
+            out, h, c = session.run(
+                ["output", "hn", "cn"],
+                {"input": chunk, "sr": sr, "h": h, "c": c},
+            )
+            probs.append(float(out[0][0]))
 
     return probs
 

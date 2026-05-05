@@ -39,6 +39,13 @@ def generate_edl(
     if not words:
         return []
 
+    # Mark words: kept if they appear in an aligned segment, outtake otherwise.
+    # seg.words are slices of the original words list (same objects), so identity
+    # comparison is reliable and avoids floating-point timestamp edge cases.
+    segment_word_ids = {id(w) for seg in segments for w in seg.words}
+    for w in words:
+        w.keep = id(w) in segment_word_ids
+
     entries: list[EDLEntry] = []
 
     # Index words by clip for accurate snapping
@@ -124,6 +131,10 @@ def generate_scriptless_edl(
     if not words:
         return []
 
+    # All words are kept in scriptless mode — only silence between them is cut.
+    for w in words:
+        w.keep = True
+
     pad_s = speech_pad_ms / 1000.0
 
     # Keyed by original word boundary (words[i].end, words[i+1].start) for fast lookup
@@ -173,6 +184,7 @@ def generate_scriptless_edl(
 def apply_retake_cuts(
     entries: list[EDLEntry],
     retake_ranges: dict[str, list[tuple[float, float]]],
+    words: list[WordTimestamp] | None = None,
 ) -> list[EDLEntry]:
     """Split EDL keep-entries at retake boundaries and mark retake regions as cuts.
 
@@ -180,6 +192,7 @@ def apply_retake_cuts(
         entries: Existing EDL entry list.
         retake_ranges: Mapping of source_clip path → list of (start_s, end_s)
             time ranges that should be cut as retakes.
+        words: If provided, words inside retake ranges are marked keep=False.
 
     Returns:
         New EDL entry list with retake regions marked as cut (reason="retake"),
@@ -187,6 +200,15 @@ def apply_retake_cuts(
     """
     if not retake_ranges:
         return entries
+
+    if words is not None:
+        for w in words:
+            if not w.keep:
+                continue
+            for r_start, r_end in retake_ranges.get(w.clip_path, []):
+                if r_start <= w.start < r_end:
+                    w.keep = False
+                    break
 
     result: list[EDLEntry] = []
     for entry in entries:
