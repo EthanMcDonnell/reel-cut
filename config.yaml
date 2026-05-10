@@ -1,0 +1,77 @@
+input:
+  footage: ./input/
+  # script: ./script.txt           # optional — provide for outtake removal; omit for silence-cut-only mode
+  # clips_folder: ./clips/         # optional, for multi-clip
+
+cuts:
+  # --- What gets cut ---
+  min_silence_ms: 200              # gaps longer than this are cut. Raise to preserve more natural pauses;
+                                   # lower to cut more aggressively.
+  min_breath_ms: 100               # breath sounds longer than this are cut. Raise to keep more breaths
+                                   # (more natural); lower to remove even short breaths.
+  breath_detection: true           # set false to treat all non-silent gaps as noise (faster, less precise)
+  silence_threshold_db: -45        # noise floor for silence detection. Raise (e.g. -40) if background noise
+                                   # is causing over-cutting; lower (e.g. -50) if silences aren't being detected.
+
+  # --- Word boundary precision ---
+  speech_pad_ms: 150               # ms of audio kept before each word's start timestamp on a cut.
+                                   # WhisperX start timestamps run 80-150ms late — this pad stops the
+                                   # beginning of words getting clipped. Raise if sentence starts sound
+                                   # cut off; lower if you hear too much silence before words.
+  word_end_scan_ms: 50             # how far (ms) to scan backward from a word's end timestamp to find
+                                   # the true silence onset. Stops sentence endings getting clipped by
+                                   # stop consonants ("t","p","k") that look like silence at wider windows.
+                                   # Raise if trailing silence is being left in; lower if word ends are clipped.
+
+  # --- Advanced ---
+  vad_threshold: 0.5               # Silero VAD sensitivity for hallucination filtering (0-1). Lower = more
+                                   # words kept; higher = more hallucinated words dropped.
+  breath_amplitude_ratio: 0.15     # breath RMS must be below this fraction of track peak amplitude.
+                                   # Prevents loud noise bursts being misclassified as breaths.
+  failure_tolerance_ratio: 0.02    # fraction of samples allowed to spike above noise floor before a gap
+                                   # is considered non-silent. Prevents single transients fragmenting cuts.
+  min_keep_ms: 200                 # drop kept segments shorter than this after cutting. Prevents isolated
+                                   # sub-word fragments ("a", "I") becoming their own clip.
+  min_retake_words: 0              # duplicate-take detection: min words in a repeated phrase to trigger a
+                                   # retake cut. 0 = disabled.
+
+
+output:
+  format: "9:16"
+  resolution: [1080, 1920]
+  fps: 30
+  codec: h264
+  audio_bitrate: 128k
+  max_duration_s: 90
+  location: ./output/
+
+captions:
+  enabled: true
+  style: word_highlight            # word_highlight | full_line | none
+  font: SFCompact
+  size: 60
+  color: "#FFFFFF"
+  highlight_color: "#FFD700"
+  position: center                 # top | center | bottom
+  stroke: false
+  stroke_color: "#000000"
+  stroke_width: 3
+
+whisper:
+  model: large-v2
+  compute_type: int8               # int8 (CPU) | float16 (GPU)
+  language: en
+  beam_size: 4                     # 1 = greedy/fastest but error-prone; 5 = beam search, considers multiple
+                                   # candidates before committing to a word — significantly reduces errors
+                                   # on numbers, proper nouns, and ambiguous phrases. 2-3x slower than 1.
+  initial_prompt: "Software engineering, AI, 6 months, 12 months, years of experience, developer, product"
+                                   # primes Whisper toward expected vocabulary — significantly improves
+                                   # accuracy on numbers and domain terms. Update to match your content.
+  condition_on_previous_text: false # false = each Whisper segment is decoded independently, preventing a
+                                   # missed/hallucinated segment from derailing the rest of the transcript.
+                                   # true = segments share context, slightly more fluent but hallucinations
+                                   # can cascade across segment boundaries.
+  min_alignment_confidence: 0.1   # WhisperX wav2vec2 alignment score below which a word is dropped.
+                                   # Scores near 0 (e.g. 0.03) mean wav2vec2 could not locate the word in
+                                   # the audio — a strong signal the word was hallucinated by Whisper.
+                                   # Raise (e.g. 0.2) to be more aggressive; set 0.0 to disable.

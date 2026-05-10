@@ -5,6 +5,7 @@ import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import NamedTuple
 
 from .config import WhisperConfig
 
@@ -54,6 +55,8 @@ def transcribe(wav_path: str | Path, config: WhisperConfig) -> list[WordTimestam
         language=config.language,
         word_timestamps=True,
         beam_size=config.beam_size,
+        initial_prompt=config.initial_prompt,
+        condition_on_previous_text=config.condition_on_previous_text,
         vad_filter=False,         # disabled: Silero VAD (PyTorch) conflicts with CTranslate2 OpenMP on macOS
     )
 
@@ -80,6 +83,11 @@ def align(
 ) -> tuple[list[WordTimestamp], str]:
     """Refine word timestamps via WhisperX wav2vec2 forced alignment.
 
+    Numeric tokens (e.g. '732', '4') are expanded to their spoken form before
+    alignment so wav2vec2 can locate them phonetically, then collapsed back
+    afterward.  Any word that still can't be aligned falls back to its original
+    Whisper timestamp.
+
     Returns (words, status_message) — caller is responsible for logging.
     Falls back to faster-whisper word timestamps if whisperx is unavailable
     or the alignment model can't be loaded (e.g. Intel Mac / no GPU).
@@ -91,7 +99,10 @@ def align(
         import whisperx
 
         audio = whisperx.load_audio(str(wav_path))
-        segments = _words_to_whisperx_segments(words)
+
+        # Expand numeric tokens to spoken form so wav2vec2 can align them.
+        expanded_words, expansion = _expand_numeric_words(words)
+        segments = _words_to_whisperx_segments(expanded_words)
 
         import signal
         _has_sigalrm = hasattr(signal, "SIGALRM")
@@ -114,10 +125,10 @@ def align(
             return_char_alignments=False,
         )
 
-        aligned: list[WordTimestamp] = []
+        aligned_flat: list[WordTimestamp] = []
         for segment in result.get("segments", []):
             for w in segment.get("words", []):
-                aligned.append(WordTimestamp(
+                aligned_flat.append(WordTimestamp(
                     word=w.get("word", "").strip(),
                     start=w.get("start", 0.0),
                     end=w.get("end", 0.0),
@@ -125,10 +136,18 @@ def align(
                     clip_path=str(wav_path),
                 ))
 
-        if aligned:
+        if aligned_flat:
             # Drop alignment failures: wav2vec2 returns start=end=0 for words it
             # could not locate in the audio. These break gap detection when sorted.
-            aligned = [w for w in aligned if not (w.start == 0.0 and w.end == 0.0)]
+            aligned_flat = [w for w in aligned_flat if not (w.start == 0.0 and w.end == 0.0)]
+            # Collapse expanded tokens back to original words, falling back to
+            # Whisper timestamps for any word that still couldn't be aligned.
+            aligned = _collapse_expanded_words(expansion, aligned_flat)
+            # Drop words where alignment confidence is too low — these are typically
+            # Whisper hallucinations that wav2vec2 couldn't locate in the audio.
+            min_conf = config.min_alignment_confidence
+            if min_conf > 0:
+                aligned = [w for w in aligned if w.confidence >= min_conf]
             return aligned, f"WhisperX wav2vec2 ({device})"
 
     except ImportError:
@@ -205,8 +224,167 @@ def filter_silent_words(
 
 
 # ---------------------------------------------------------------------------
+# Numeric expansion / collapse for WhisperX alignment
+# ---------------------------------------------------------------------------
+
+class _Expansion(NamedTuple):
+    orig_word: WordTimestamp
+    tokens: list[str]   # spoken-form tokens (same as [orig_word.word] if not numeric)
+
+
+def _expand_numeric_words(
+    words: list[WordTimestamp],
+) -> tuple[list[WordTimestamp], list[_Expansion]]:
+    """Replace numeric word tokens with their spoken-form equivalents.
+
+    Returns a flat list of WordTimestamp objects (one per spoken token) and
+    an expansion record for each original word so the results can be collapsed
+    back after WhisperX alignment.  Non-numeric words are passed through unchanged
+    with a single-element token list.
+    """
+    expanded: list[WordTimestamp] = []
+    expansion: list[_Expansion] = []
+
+    for w in words:
+        tokens = _spoken_tokens(w.word)
+        expansion.append(_Expansion(orig_word=w, tokens=tokens))
+
+        n = len(tokens)
+        if n == 1:
+            expanded.append(w)
+        else:
+            # Distribute the original Whisper duration evenly across tokens so
+            # WhisperX has a reasonable starting window for each spoken sub-word.
+            dur = (w.end - w.start) / n
+            for j, tok in enumerate(tokens):
+                expanded.append(WordTimestamp(
+                    word=tok,
+                    start=w.start + j * dur,
+                    end=w.start + (j + 1) * dur,
+                    confidence=w.confidence,
+                    clip_path=w.clip_path,
+                ))
+
+    return expanded, expansion
+
+
+def _collapse_expanded_words(
+    expansion: list[_Expansion],
+    aligned: list[WordTimestamp],
+) -> list[WordTimestamp]:
+    """Collapse WhisperX-aligned expanded tokens back to original words.
+
+    For each original word:
+    - Non-numeric (n=1): if the current aligned token matches by text, use its
+      timestamp; otherwise the word was dropped — restore from original Whisper.
+    - Numeric (n>1): greedily consume aligned tokens that match the expected spoken
+      sub-words in sequence.  Any sub-words that were dropped by wav2vec2 are
+      skipped.  If at least one sub-word aligned, the span of the matched tokens
+      becomes the word's timestamp; otherwise fall back to the original timestamp.
+    """
+    result: list[WordTimestamp] = []
+    ai = 0  # current position in aligned
+
+    for exp in expansion:
+        orig = exp.orig_word
+        n = len(exp.tokens)
+
+        if n == 1:
+            # Non-numeric word — take the aligned token if text matches.
+            if ai < len(aligned) and _norm_word(aligned[ai].word) == _norm_word(exp.tokens[0]):
+                w = aligned[ai]
+                ai += 1
+                result.append(WordTimestamp(
+                    word=orig.word, start=w.start, end=w.end,
+                    confidence=w.confidence, clip_path=orig.clip_path,
+                ))
+            else:
+                # Dropped by WhisperX — restore Whisper timestamp, don't advance ai.
+                result.append(orig)
+        else:
+            # Numeric word expanded to n tokens — consume matching tokens greedily.
+            batch: list[WordTimestamp] = []
+            tmp_ai = ai
+            for tok in exp.tokens:
+                if tmp_ai < len(aligned) and _norm_word(aligned[tmp_ai].word) == _norm_word(tok):
+                    batch.append(aligned[tmp_ai])
+                    tmp_ai += 1
+                # else: this sub-word was dropped by wav2vec2 — skip it.
+
+            if batch:
+                ai = tmp_ai
+                confidence = sum(b.confidence for b in batch) / len(batch)
+                result.append(WordTimestamp(
+                    word=orig.word,
+                    start=batch[0].start,
+                    end=batch[-1].end,
+                    confidence=confidence,
+                    clip_path=orig.clip_path,
+                ))
+            else:
+                # Nothing aligned at all — restore original Whisper timestamp.
+                result.append(orig)
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Number → spoken tokens
+# ---------------------------------------------------------------------------
+
+_ONES = [
+    "zero", "one", "two", "three", "four", "five", "six", "seven", "eight",
+    "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen",
+    "sixteen", "seventeen", "eighteen", "nineteen",
+]
+_TENS = ["", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"]
+
+
+def _int_to_words(n: int) -> str:
+    """Convert a non-negative integer ≤ 999,999 to its English spoken form."""
+    if n < 0:
+        return "negative " + _int_to_words(-n)
+    if n < 20:
+        return _ONES[n]
+    if n < 100:
+        tens = _TENS[n // 10]
+        ones = _ONES[n % 10] if n % 10 else ""
+        return tens + (" " + ones if ones else "")
+    if n < 1_000:
+        rest = n % 100
+        return _ONES[n // 100] + " hundred" + (" " + _int_to_words(rest) if rest else "")
+    if n < 1_000_000:
+        rest = n % 1_000
+        return _int_to_words(n // 1_000) + " thousand" + (" " + _int_to_words(rest) if rest else "")
+    return str(n)  # fallback for very large numbers
+
+
+def _spoken_tokens(word: str) -> list[str]:
+    """Return the spoken-form token list for a word.
+
+    Purely numeric tokens (optionally prefixed by '-' and/or suffixed by
+    punctuation, e.g. '-2026', '732', '-31431,') are converted to English
+    words.  All other tokens are returned unchanged as a single-element list.
+    """
+    stripped = word.strip()
+    core = stripped.lstrip("-").rstrip(".,!?;:\"'")
+    if not core or not core.isdigit():
+        return [word]
+    try:
+        spoken = _int_to_words(int(core))
+        return spoken.split()
+    except (ValueError, OverflowError):
+        return [word]
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _norm_word(w: str) -> str:
+    """Lowercase + strip trailing punctuation for word matching."""
+    return w.strip().lower().rstrip(".,!?;:'\"")
+
 
 def _words_to_whisperx_segments(words: list[WordTimestamp]) -> list[dict]:
     """Group words into segments for whisperx alignment input."""

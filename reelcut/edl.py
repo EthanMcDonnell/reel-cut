@@ -61,6 +61,13 @@ def generate_edl(
         clip_words = words_by_clip.get(seg.clip_path, words)
         start = _snap_to_sentence_start(seg.words[0].start, clip_words)
         end = _snap_to_sentence_end(seg.words[-1].end, clip_words)
+        # If the last word of this segment is shorter than min_keep_ms, extend the
+        # interval end so the word has at least min_keep_ms ms of audio context.
+        # WhisperX can assign very narrow windows to sub-tokens of compound words
+        # (e.g. "-2026" in "CVE-2026-31431"), making them acoustically inaudible.
+        last_word = seg.words[-1]
+        if (last_word.end - last_word.start) * 1000 < min_keep_ms:
+            end = max(end, last_word.start + min_keep_ms / 1000.0)
         keep_intervals.append((start, end, seg.clip_path))
 
     # Merge overlapping/adjacent keep intervals (same clip)
@@ -160,6 +167,15 @@ def generate_scriptless_edl(
             if gap and gap.cut:
                 cut_start = gap.effective_start          # true silence onset
                 cut_end   = nxt.start - pad_s            # keep natural lead before next word
+
+                # If the word immediately before this cut is shorter than min_keep_ms,
+                # push cut_start forward so the word has a minimum audible window.
+                # WhisperX can assign < 50 ms to sub-tokens of compound words (e.g.
+                # "-2026" in "CVE-2026-31431"), making them inaudible even when kept.
+                curr_dur_ms = (curr.end - curr.start) * 1000
+                if curr_dur_ms < min_keep_ms:
+                    extended = curr.start + min_keep_ms / 1000.0
+                    cut_start = min(extended, cut_end - 0.010)
 
                 if cut_end > cut_start + 0.010:          # only cut if ≥10 ms remains
                     entries.append(EDLEntry(

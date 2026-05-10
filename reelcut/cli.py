@@ -35,26 +35,6 @@ console = Console()
 err_console = Console(stderr=True)
 
 
-# ---------------------------------------------------------------------------
-# reelcut init
-# ---------------------------------------------------------------------------
-
-@app.command()
-def init(
-    output: str = typer.Option("config.yaml", "--output", "-o", help="Path for the generated config file."),
-) -> None:
-    """Generate a default config.yaml in the current directory."""
-    from .config import generate_default_config
-
-    try:
-        path = generate_default_config(output)
-        console.print(f"[green]Created[/green] {path}")
-        console.print("Edit the [bold]input.footage[/bold] and [bold]input.script[/bold] fields, then run:")
-        console.print(f"  reelcut run {path}")
-    except FileExistsError as exc:
-        err_console.print(f"[red]Error:[/red] {exc}")
-        raise typer.Exit(1)
-
 
 # ---------------------------------------------------------------------------
 # reelcut run
@@ -145,6 +125,9 @@ def _run_pipeline(cfg, output_path: Path, verbose: bool, dry_run: bool) -> list[
         tmp = Path(tmpdir)
         clips = _collect_clips(cfg)
         all_words = []
+        all_raw_words: list = []     # Stage 1: before alignment, for debug report
+        clip_info: list[dict] = []   # per-clip alignment/VAD metadata
+        gaps_by_clip: dict[str, list] = {}  # for debug timeline
 
         for clip_path in clips:
             wav = tmp / (Path(clip_path).stem + ".wav")
@@ -164,6 +147,18 @@ def _run_pipeline(cfg, output_path: Path, verbose: bool, dry_run: bool) -> list[
             _tlog(time.perf_counter() - t, f"{len(words)} words")
             _vlog(verbose, f"  {len(words)} words from faster-whisper")
 
+            # Save Stage 1 snapshot before alignment mutates timestamps.
+            # align() returns new objects in the success path; we copy here so the
+            # fallback path (which returns the same list) also stays independent.
+            from .transcriber import WordTimestamp as _WT
+            for w in words:
+                w.clip_path = str(clip_path)
+            all_raw_words.extend(
+                _WT(word=w.word, start=w.start, end=w.end,
+                    confidence=w.confidence, clip_path=w.clip_path)
+                for w in words
+            )
+
             # --- Forced alignment ---
             console.print(f"[bold]Step 3[/bold] Aligning timestamps for {Path(clip_path).name}…")
             t = time.perf_counter()
@@ -171,6 +166,7 @@ def _run_pipeline(cfg, output_path: Path, verbose: bool, dry_run: bool) -> list[
             align_ok = "Whisper timestamps" not in align_method
             align_color = "green" if align_ok else "yellow"
             console.print(f"  Alignment: [{align_color}]{align_method}[/{align_color}]")
+            _warn_wide_words(words, console)
 
             # --- VAD hallucination filter ---
             before = len(words)
@@ -191,6 +187,12 @@ def _run_pipeline(cfg, output_path: Path, verbose: bool, dry_run: bool) -> list[
             for w in words:
                 w.clip_path = str(clip_path)
             all_words.extend(words)
+            clip_info.append({
+                "clip": str(clip_path),
+                "align_method": align_method,
+                "vad_method": vad_method,
+                "hallucinations_dropped": dropped,
+            })
 
         transcript_path = output_dir / f"{output_path.stem}.transcript.json"
 
@@ -223,6 +225,7 @@ def _run_pipeline(cfg, output_path: Path, verbose: bool, dry_run: bool) -> list[
             clip_words = [w for w in all_words if w.clip_path == str(clip_path)]
             clip_gaps = detect_gaps(clip_words, wav, cfg.cuts)
             gaps.extend(clip_gaps)
+            gaps_by_clip[str(clip_path)] = clip_gaps
             n_cut = sum(1 for g in clip_gaps if g.cut)
             _vlog(verbose, f"  {Path(clip_path).name}: {n_cut}/{len(clip_gaps)} gaps will be cut")
         n_cut_total = sum(1 for g in gaps if g.cut)
@@ -295,12 +298,31 @@ def _run_pipeline(cfg, output_path: Path, verbose: bool, dry_run: bool) -> list[
                 f"Output duration {summary['total_keep_s']}s exceeds max_duration_s={cfg.output.max_duration_s}s"
             )
 
+        # Remap kept words to output timeline — needed for both debug report and captions.
+        caption_words = _remap_kept_words(all_words, edl)
+
+        # --- Debug report ---
+        from .debug_report import write_debug_report
+        debug_path = output_dir / f"{output_path.stem}.debug.txt"
+        try:
+            write_debug_report(
+                debug_path,
+                clip_paths=clips,
+                config=cfg,
+                raw_words=all_raw_words,
+                aligned_words=all_words,
+                gaps_by_clip=gaps_by_clip,
+                edl=edl,
+                caption_words=caption_words,
+                clip_info=clip_info,
+            )
+            console.print(f"  Debug report → {debug_path}")
+        except Exception as exc:
+            console.print(f"  [yellow]Debug report failed: {exc}[/yellow]")
+
         if dry_run:
             console.print("[yellow]--dry-run:[/yellow] skipping render.")
             return warnings
-
-        # --- Caption rendering ---
-        caption_words = _remap_kept_words(all_words, edl)
 
         srt_path = output_dir / f"{output_path.stem}.srt"
         from .caption import write_srt
@@ -491,6 +513,27 @@ def _collect_clips(cfg) -> list[str]:
             raise typer.BadParameter(f"No video files found in clips_folder: {folder}")
         return [str(c) for c in clips]
     return [cfg.input.footage]
+
+
+_WIDE_WORD_THRESHOLD_S = 1.5
+
+
+def _warn_wide_words(words: list, console: Console) -> None:
+    """Warn about words with suspiciously wide spans — a reliable signal that
+    Whisper missed speech in that region and WhisperX stretched the surrounding
+    words to fill the gap."""
+    wide = [(w, w.end - w.start) for w in words if (w.end - w.start) >= _WIDE_WORD_THRESHOLD_S]
+    if not wide:
+        return
+    console.print(f"  [yellow]⚠ {len(wide)} suspiciously wide word(s) — likely missed speech:[/yellow]")
+    for w, span in wide:
+        start_m, start_s = divmod(w.start, 60)
+        end_m, end_s = divmod(w.end, 60)
+        console.print(
+            f"    [yellow]\"{w.word}\"[/yellow]  "
+            f"{int(start_m)}:{start_s:05.2f} → {int(end_m)}:{end_s:05.2f}  "
+            f"([yellow]{span:.1f}s[/yellow])"
+        )
 
 
 def _tlog(elapsed: float, label: str = "") -> None:

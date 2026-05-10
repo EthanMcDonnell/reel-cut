@@ -130,7 +130,10 @@ def _extract_segments(
                 src.video
                 .trim(start=entry.start, end=entry.end)
                 .setpts("PTS-STARTPTS")
-                .filter("fps", fps=fps)  # VFR → CFR; prevents per-segment A/V drift at concat
+                # No fps filter here: applying per-segment VFR→CFR causes video and
+                # audio durations to diverge slightly each segment (-shortest clips one),
+                # and the error accumulates across all keep segments into audible A/V drift.
+                # CFR conversion happens once in _final_encode on the full concat stream.
             )
             audio = (
                 src.audio
@@ -237,9 +240,11 @@ def _final_encode(
 
     def _build_streams() -> tuple:
         main = ffmpeg.input(str(input_path))
-        video = main.video
-        # Fix accumulated A/V drift from VFR source material: async resampling
-        # adjusts audio timing by up to 1000 samples/s to stay locked to video PTS.
+        # VFR → CFR once on the full concatenated stream. Doing this per-segment
+        # (in _extract_segments) causes cumulative A/V drift when -shortest clips
+        # differing video/audio durations at each segment boundary.
+        video = main.video.filter("fps", fps=fps)
+        # async resampling keeps audio locked to video PTS after the fps conversion.
         audio = main.audio.filter("aresample", **{"async": 1000})
         if caption_seq is not None:
             seq_dir, min_frame = caption_seq
