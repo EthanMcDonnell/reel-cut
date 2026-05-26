@@ -14,7 +14,11 @@ from .transcriber import WordTimestamp
 CaptionStyle = Literal["word_highlight", "full_line", "none"]
 
 # Words grouped into display lines (max N words per line)
-_WORDS_PER_LINE = 4
+_WORDS_PER_LINE = 10
+
+_MARGIN = 40        # fallback; overridden at render time by config.margin_pct
+_SHADOW_OFFSET = 3  # solid black drop shadow shift (px)
+_LINE_SPACING = 10  # px between wrapped rows
 
 
 def write_srt(words: list[WordTimestamp], path: str | Path) -> None:
@@ -84,7 +88,7 @@ def render_caption_frames(
             continue
 
         line_words, active_idx = cache_entry
-        cache_key = (tuple(w.word for w in line_words), active_idx)
+        cache_key = tuple(w.word for w in line_words)
 
         # Reuse previous frame image if nothing changed
         if cache_key == prev_key and prev_path:
@@ -128,89 +132,54 @@ def _render_frame(
     img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
 
-    if config.style == "full_line":
-        text = " ".join(word.word for word in line_words)
-        _draw_text_centered(draw, text, font, config, w, y_pos)
-
-    elif config.style == "word_highlight":
-        # Measure total line width to center it
-        parts: list[tuple[str, bool]] = [
-            (word.word, i == active_idx) for i, word in enumerate(line_words)
-        ]
-        _draw_highlighted_line(draw, parts, font, font_highlight, config, w, y_pos)
+    text = " ".join(word.word for word in line_words)
+    margin = int(w * config.margin_pct / 100)
+    _draw_text_wrapped(draw, text, font, config, w, y_pos, margin)
 
     return img
 
 
-def _draw_text_centered(
+def _draw_text_wrapped(
     draw: ImageDraw.ImageDraw,
     text: str,
     font: ImageFont.FreeTypeFont,
     config: CaptionsConfig,
     canvas_w: int,
     y: int,
+    margin: int = _MARGIN,
 ) -> None:
-    bbox = draw.textbbox((0, 0), text, font=font)
-    text_w = bbox[2] - bbox[0]
-    x = (canvas_w - text_w) // 2
+    """Draw text centered with solid black shadow, wrapping so no line exceeds canvas width."""
+    max_w = canvas_w - 2 * margin
+    words = text.split()
 
-    if config.stroke:
-        draw.text((x, y), text, font=font, fill=config.stroke_color,
-                  stroke_width=config.stroke_width, stroke_fill=config.stroke_color)
-    draw.text((x, y), text, font=font, fill=config.color)
-
-
-def _draw_highlighted_line(
-    draw: ImageDraw.ImageDraw,
-    parts: list[tuple[str, bool]],  # (word, is_active)
-    font: ImageFont.FreeTypeFont,
-    font_highlight: ImageFont.FreeTypeFont,
-    config: CaptionsConfig,
-    canvas_w: int,
-    y: int,
-) -> None:
-    gap = 14  # pixel gap between words
-    pad_x, pad_y = 14, 8  # block background padding
-    offset = 5  # black block offset (shadow shift in px)
-
-    # Measure all word widths and heights
-    widths: list[int] = []
-    heights: list[int] = []
-    for word, active in parts:
-        f = font_highlight if active else font
-        bbox = draw.textbbox((0, 0), word, font=f)
-        widths.append(bbox[2] - bbox[0])
-        heights.append(bbox[3] - bbox[1])
-
-    text_h = max(heights) if heights else 0
-    # Active words carry pad_x*2 extra width for their highlight box; inactive do not
-    total_w = sum(
-        (w + pad_x * 2) if active else w
-        for w, (_, active) in zip(widths, parts)
-    ) + gap * (len(parts) - 1)
-    x = (canvas_w - total_w) // 2
-
-    for i, (word, active) in enumerate(parts):
-        f = font_highlight if active else font
-        w = widths[i]
-        h = text_h
-
-        if active:
-            box_x0, box_y0 = x, y - pad_y
-            box_x1, box_y1 = x + w + pad_x * 2, y + h + pad_y
-            # Shadow block behind the active word highlight
-            draw.rectangle(
-                [box_x0 + offset, box_y0 + offset, box_x1 + offset, box_y1 + offset],
-                fill=(0, 0, 0, 180),
-            )
-            draw.rectangle([box_x0, box_y0, box_x1, box_y1], fill=config.highlight_color)
-            draw.text((x + pad_x, y), word, font=f, fill="#FFFFFF")
-            x += w + pad_x * 2 + gap
+    display_lines: list[str] = []
+    current: list[str] = []
+    for word in words:
+        candidate = " ".join(current + [word])
+        bbox = draw.textbbox((0, 0), candidate, font=font)
+        if bbox[2] - bbox[0] <= max_w or not current:
+            current.append(word)
         else:
-            # Inactive words: plain white text with a subtle drop shadow
-            draw.text((x + 2, y + 2), word, font=f, fill=(0, 0, 0, 160))
-            draw.text((x, y), word, font=f, fill=config.color)
-            x += w + gap
+            display_lines.append(" ".join(current))
+            current = [word]
+    if current:
+        display_lines.append(" ".join(current))
+
+    sample_bbox = draw.textbbox((0, 0), display_lines[0], font=font)
+    line_h = sample_bbox[3] - sample_bbox[1]
+
+    total_h = line_h * len(display_lines) + _LINE_SPACING * (len(display_lines) - 1)
+    start_y = y - total_h // 2
+
+    for i, line in enumerate(display_lines):
+        bbox = draw.textbbox((0, 0), line, font=font)
+        line_w = bbox[2] - bbox[0]
+        x = (canvas_w - line_w) // 2
+        x = max(margin, min(x, canvas_w - margin - line_w))
+        cur_y = start_y + i * (line_h + _LINE_SPACING)
+
+        draw.text((x + _SHADOW_OFFSET, cur_y + _SHADOW_OFFSET), line, font=font, fill=(0, 0, 0, 255))
+        draw.text((x, cur_y), line, font=font, fill=config.color)
 
 
 # ---------------------------------------------------------------------------

@@ -30,6 +30,10 @@ class CutsConfig(BaseModel):
     failure_tolerance_ratio: float = 0.02
     min_keep_ms: int = 50
     min_retake_words: int = 0
+    min_word_confidence: float = 0.5
+    low_confidence_threshold: float = 0.8
+    low_confidence_min_gap_ms: int = 500
+    preserve_start_s: float = 0.0
 
 
 class OutputConfig(BaseModel):
@@ -63,6 +67,20 @@ class CaptionsConfig(BaseModel):
     stroke: bool = True
     stroke_color: str = "#000000"
     stroke_width: int = 3
+    margin_pct: float = 8.0  # % of video width kept free on each side (left + right)
+
+
+class ImagesConfig(BaseModel):
+    enabled: bool = False
+    auto_detect: bool = True           # match all transcript words against logos manifest
+    require_capitalized: bool = True   # only auto-detect words Whisper capitalized (proper-noun signal)
+    keywords: list[str] = []           # explicit logo slugs to always match regardless of capitalization
+    exclude: list[str] = []            # logo slugs to never match
+    position: Literal["top", "center", "bottom"] = "top"
+    size_pct: float = 25.0             # logo width as % of video width
+    display_duration_s: float = 2.0
+    fade_duration_s: float = 0.25
+    margin_pct: float = 5.0            # % of video height from edge to logo
 
 
 class WhisperConfig(BaseModel):
@@ -97,6 +115,7 @@ class ReelCutConfig(BaseModel):
     cuts: CutsConfig = Field(default_factory=CutsConfig)
     output: OutputConfig = Field(default_factory=OutputConfig)
     captions: CaptionsConfig = Field(default_factory=CaptionsConfig)
+    images: ImagesConfig = Field(default_factory=ImagesConfig)
     whisper: WhisperConfig = Field(default_factory=WhisperConfig)
 
 

@@ -271,7 +271,19 @@ def _build_gaps(
 
         gap_type = _classify_gap(audio, sr, effective_start, gap_end, duration_ms, config, peak_amplitude)
 
-        if gap_type == "breath":
+        prev_conf = words[i].confidence
+        next_conf = words[i + 1].confidence
+        min_conf = min(prev_conf, next_conf)
+
+        if config.preserve_start_s > 0 and effective_start < config.preserve_start_s:
+            should_cut = False
+        elif min_conf < config.min_word_confidence:
+            # Hard floor: adjacent word too uncertain to trust the gap boundary
+            should_cut = False
+        elif min_conf < config.low_confidence_threshold:
+            # Low confidence zone: require a substantially longer gap
+            should_cut = duration_ms >= config.low_confidence_min_gap_ms
+        elif gap_type == "breath":
             should_cut = duration_ms >= config.min_breath_ms
         else:
             should_cut = duration_ms >= config.min_silence_ms

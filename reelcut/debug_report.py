@@ -23,6 +23,7 @@ def write_debug_report(
     edl: list["EDLEntry"],
     caption_words: list["WordTimestamp"] | None,
     clip_info: list[dict],
+    image_cues: list | None = None,
 ) -> None:
     """Write a single debug file covering every pipeline stage.
 
@@ -149,6 +150,25 @@ def write_debug_report(
                 elif nxt.start - w.end > 0.010:
                     dur_ms = (nxt.start - w.end) * 1000
                     _w(f"  {_ts(w.end):>9}→{_ts(nxt.start):<10}  {'(no gap)':<10}  {dur_ms:.0f}ms (below threshold)")
+    _w("")
+
+    # -------------------------------------------------------------------------
+    # Image overlays
+    # -------------------------------------------------------------------------
+    _w("--- IMAGE OVERLAYS ---")
+    if not config.images.enabled:
+        _w("  (disabled)")
+    elif image_cues is None:
+        _w("  (not available — dry-run mode)")
+    elif not image_cues:
+        _w("  0 logos matched (no transcript words matched any gilbarbara/logos shortname)")
+    else:
+        _w(f"  {len(image_cues)} logo(s) detected")
+        _w(f"  {'KEYWORD':<20}  {'OUTPUT TIME':<22}  FILE")
+        _w(f"  {'─'*20}  {'─'*22}  {'─'*40}")
+        for cue in image_cues:
+            time_range = f"{_ts(cue.start)} → {_ts(cue.end)}"
+            _w(f"  {cue.keyword:<20}  {time_range:<22}  {cue.image_path}")
     _w("")
 
     # -------------------------------------------------------------------------

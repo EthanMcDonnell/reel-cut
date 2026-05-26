@@ -301,6 +301,12 @@ def _run_pipeline(cfg, output_path: Path, verbose: bool, dry_run: bool) -> list[
         # Remap kept words to output timeline — needed for both debug report and captions.
         caption_words = _remap_kept_words(all_words, edl)
 
+        # Detect image cues here so they appear in the debug report.
+        image_cues = None
+        if cfg.images.enabled:
+            from .image_finder import detect_image_cues
+            image_cues = detect_image_cues(caption_words, cfg.images)
+
         # --- Debug report ---
         from .debug_report import write_debug_report
         debug_path = output_dir / f"{output_path.stem}.debug.txt"
@@ -315,6 +321,7 @@ def _run_pipeline(cfg, output_path: Path, verbose: bool, dry_run: bool) -> list[
                 edl=edl,
                 caption_words=caption_words,
                 clip_info=clip_info,
+                image_cues=image_cues,
             )
             console.print(f"  Debug report → {debug_path}")
         except Exception as exc:
@@ -340,6 +347,21 @@ def _run_pipeline(cfg, output_path: Path, verbose: bool, dry_run: bool) -> list[
                 resolution=tuple(cfg.output.resolution),
             )
             _tlog(time.perf_counter() - t, f"{len(caption_frames)} frames")
+
+        if cfg.images.enabled and image_cues:
+            console.print("[bold]Step 6c/6[/bold] Rendering image overlays…")
+            t = time.perf_counter()
+            from .image_overlay import render_image_frames, merge_with_caption_frames
+            img_dir = tmp / "image_frames"
+            image_frames = render_image_frames(
+                image_cues, cfg.images, img_dir,
+                fps=cfg.output.fps,
+                resolution=tuple(cfg.output.resolution),
+            )
+            caption_frames = merge_with_caption_frames(
+                caption_frames, image_frames, tuple(cfg.output.resolution),
+            )
+            _tlog(time.perf_counter() - t, f"{len(image_cues)} logo(s): {[c.keyword for c in image_cues]}")
 
         # --- Render ---
         from .renderer import _USE_VIDEOTOOLBOX
