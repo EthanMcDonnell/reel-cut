@@ -1,4 +1,4 @@
-"""CLI — typer commands: init, run, transcribe, preview-edl."""
+"""CLI — typer commands: transcribe (phase 1), render (phase 2), run (end-to-end)."""
 from __future__ import annotations
 
 # Fix: PyTorch OpenMP deadlock (issue #17199) — must be set before any torch/ctranslate2 import
@@ -12,10 +12,9 @@ if sys.platform == "darwin":
     except RuntimeError:
         pass
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
-os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")  # macOS: suppress duplicate OpenMP runtime error
-os.environ.setdefault("OMP_NUM_THREADS", "1")          # prevent OMP fork-safety segfault (ctranslate2 + torch)
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+os.environ.setdefault("OMP_NUM_THREADS", "1")
 
-import json
 import tempfile
 import time
 import traceback
@@ -35,18 +34,132 @@ console = Console()
 err_console = Console(stderr=True)
 
 
+# ---------------------------------------------------------------------------
+# reelcut transcribe  (Phase 1)
+# ---------------------------------------------------------------------------
+
+@app.command()
+def transcribe(
+    config_path: str = typer.Argument("config.yaml", help="Path to config.yaml"),
+    slug: str | None = typer.Option(None, "--slug", help="Video slug (overrides script-derived slug)."),
+    footage: str | None = typer.Option(None, "--footage", help="Path to footage file or folder (overrides config)."),
+    verbose: bool = typer.Option(False, "--verbose", "-v"),
+) -> None:
+    """Phase 1: transcribe footage → .captions.json files ready for LLM editing."""
+    from .config import load_config
+    try:
+        cfg = load_config(config_path)
+    except (FileNotFoundError, ValueError) as exc:
+        err_console.print(f"[red]Config error:[/red] {exc}")
+        raise typer.Exit(1)
+
+    if footage:
+        cfg.input.footage = footage
+
+    if not cfg.input.footage:
+        err_console.print("[red]Error:[/red] no footage specified — pass --footage <path> or set input.footage in config.yaml")
+        raise typer.Exit(1)
+
+    slug = _resolve_slug(cfg, slug)
+    output_dir = _assets_or_ts_dir(cfg, slug)
+
+    input_folder = Path(cfg.input.footage)
+    clips_folder = cfg.input.clips_folder
+
+    if clips_folder:
+        # Multi-clip mode: all clips → one captions doc
+        clips = _collect_clips(cfg)
+        stem = slug or Path(clips[0]).stem
+        captions_path = output_dir / f"{stem}.captions.json"
+        console.rule(f"[bold]Multi-clip → {captions_path.name}[/bold]")
+        doc = _phase1(cfg, clips, output_dir, verbose)
+        from .captions_doc import save_captions_doc
+        save_captions_doc(doc, captions_path)
+        console.print(f"[green]Captions doc →[/green] {captions_path}")
+    elif input_folder.is_dir():
+        # Folder mode: each video file → one captions doc
+        videos = _list_videos(input_folder)
+        if not videos:
+            console.print(f"[yellow]No video files found in {input_folder}[/yellow]")
+            raise typer.Exit(0)
+        console.print(f"[bold]{len(videos)} video(s) to transcribe[/bold]\n")
+        for i, video in enumerate(videos, 1):
+            console.rule(f"[bold]{i}/{len(videos)}[/bold] {video.name}")
+            cfg.input.footage = str(video)
+            captions_path = output_dir / f"{video.stem}.captions.json"
+            try:
+                doc = _phase1(cfg, [str(video)], output_dir, verbose)
+                from .captions_doc import save_captions_doc
+                save_captions_doc(doc, captions_path)
+                console.print(f"[green]Captions doc →[/green] {captions_path}")
+            except Exception as exc:
+                err_console.print(f"[red]Failed:[/red] {video.name} — {exc}")
+                if verbose:
+                    err_console.print(traceback.format_exc())
+    else:
+        # Single video
+        clips = [str(input_folder)]
+        stem = slug or input_folder.stem
+        captions_path = output_dir / f"{stem}.captions.json"
+        doc = _phase1(cfg, clips, output_dir, verbose)
+        from .captions_doc import save_captions_doc
+        save_captions_doc(doc, captions_path)
+        console.print(f"[green]Captions doc →[/green] {captions_path}")
+
+    console.print(
+        "\n[bold]Next:[/bold] edit the .captions.json (fix captions, add images entries), "
+        "then run [cyan]reelcut render config.yaml <captions.json>[/cyan]"
+    )
+
 
 # ---------------------------------------------------------------------------
-# reelcut run
+# reelcut render  (Phase 2)
+# ---------------------------------------------------------------------------
+
+@app.command()
+def render(
+    config_path: str = typer.Argument("config.yaml", help="Path to config.yaml"),
+    captions_path: str = typer.Argument(..., help="Path to .captions.json from transcribe step"),
+    slug: str | None = typer.Option(None, "--slug", help="Video slug (overrides script-derived slug)."),
+    verbose: bool = typer.Option(False, "--verbose", "-v"),
+) -> None:
+    """Phase 2: render final video from a (possibly LLM-edited) .captions.json."""
+    from .captions_doc import load_captions_doc
+    from .config import load_config
+    try:
+        cfg = load_config(config_path)
+    except (FileNotFoundError, ValueError) as exc:
+        err_console.print(f"[red]Config error:[/red] {exc}")
+        raise typer.Exit(1)
+
+    cap_path = Path(captions_path)
+    if not cap_path.exists():
+        err_console.print(f"[red]Error:[/red] captions file not found: {cap_path}")
+        raise typer.Exit(1)
+
+    doc = load_captions_doc(cap_path)
+    slug = _resolve_slug(cfg, slug) or cap_path.parent.name
+    out_dir = Path(cfg.output.location)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    output_path = out_dir / f"{slug}.mp4"
+
+    console.rule(f"[bold]Rendering → {output_path}[/bold]")
+    _phase2(cfg, doc, output_path, verbose)
+
+
+# ---------------------------------------------------------------------------
+# reelcut run  (end-to-end convenience)
 # ---------------------------------------------------------------------------
 
 @app.command()
 def run(
     config_path: str = typer.Argument("config.yaml", help="Path to config.yaml"),
+    slug: str | None = typer.Option(None, "--slug", help="Video slug (overrides script-derived slug)."),
     verbose: bool = typer.Option(False, "--verbose", "-v"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Generate EDL without rendering."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Run phase 1 only (no render)."),
 ) -> None:
-    """Process all videos in input.footage folder, moving each to done/ when complete."""
+    """End-to-end: transcribe + render without LLM editing step. Moves footage to done/."""
+    from .captions_doc import save_captions_doc
     from .config import load_config
     try:
         cfg = load_config(config_path)
@@ -59,18 +172,7 @@ def run(
         err_console.print(f"[red]Error:[/red] input.footage must be a folder: {input_folder}")
         raise typer.Exit(1)
 
-    if cfg.input.script is not None:
-        script_path = Path(cfg.input.script)
-        if not script_path.exists():
-            err_console.print(f"[red]Error:[/red] script not found: {script_path}")
-            raise typer.Exit(1)
-
-    video_exts = {".mp4", ".mov", ".mkv"}
-    videos = sorted(
-        [p for p in input_folder.iterdir() if p.suffix.lower() in video_exts],
-        key=lambda p: p.stat().st_mtime,
-    )
-
+    videos = _list_videos(input_folder)
     if not videos:
         console.print(f"[yellow]No video files found in {input_folder}[/yellow]")
         raise typer.Exit(0)
@@ -78,20 +180,30 @@ def run(
     done_dir = Path("done")
     done_dir.mkdir(exist_ok=True)
 
-    output_dir = Path(cfg.output.location)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    slug = _resolve_slug(cfg, slug)
+    assets_dir = _assets_or_ts_dir(cfg, slug)
+    vid_out_dir = Path(cfg.output.location)
+    vid_out_dir.mkdir(parents=True, exist_ok=True)
 
     console.print(f"[bold]{len(videos)} video(s) to process[/bold]\n")
 
     all_warnings: list[str] = []
     for i, video in enumerate(videos, 1):
         console.rule(f"[bold]{i}/{len(videos)}[/bold] {video.name}")
-
         cfg.input.footage = str(video)
-        out_path = output_dir / f"{video.stem}.mp4"
+        stem = slug or video.stem
+        out_path = vid_out_dir / f"{stem}.mp4"
+        cap_path = assets_dir / f"{stem}.captions.json"
 
         try:
-            warnings = _run_pipeline(cfg, out_path, verbose, dry_run)
+            doc = _phase1(cfg, [str(video)], assets_dir, verbose)
+            save_captions_doc(doc, cap_path)
+
+            if dry_run:
+                console.print(f"[yellow]--dry-run:[/yellow] skipping render. Captions → {cap_path}")
+                continue
+
+            warnings = _phase2(cfg, doc, out_path, verbose)
             all_warnings.extend(warnings)
         except Exception as exc:
             err_console.print(f"[red]Failed:[/red] {video.name} — {exc}")
@@ -108,58 +220,125 @@ def run(
     _exit_with_warnings(all_warnings)
 
 
-def _run_pipeline(cfg, output_path: Path, verbose: bool, dry_run: bool) -> list[str]:
-    """Run the full pipeline for a single configured footage file. Returns warnings."""
-    from .audio import extract_audio, normalize_audio
-    from .caption import render_caption_frames
-    from .edl import generate_scriptless_edl, generate_edl, save_edl, edl_summary
-    from .gap_detector import detect_gaps
-    from .renderer import render as do_render
-    from .transcriber import transcribe, align, filter_words_by_vad, filter_silent_words
+# ---------------------------------------------------------------------------
+# reelcut preview-edl
+# ---------------------------------------------------------------------------
 
-    warnings: list[str] = []
-    output_dir = output_path.parent
-    use_script = cfg.input.script is not None
+@app.command(name="preview-edl")
+def preview_edl(
+    captions_path: str = typer.Argument(..., help="Path to .captions.json file."),
+) -> None:
+    """Print a summary of the EDL embedded in a .captions.json file."""
+    from .captions_doc import load_captions_doc
+
+    path = Path(captions_path)
+    if not path.exists():
+        err_console.print(f"[red]Error:[/red] file not found: {path}")
+        raise typer.Exit(1)
+
+    doc = load_captions_doc(path)
+
+    keep_entries = [e for e in doc.edl if e.keep]
+    cut_entries = [e for e in doc.edl if not e.keep]
+    total_keep_s = round(sum(e.end - e.start for e in keep_entries), 2)
+    total_cut_s = round(sum(e.end - e.start for e in cut_entries), 2)
+
+    console.print(f"\n[bold]Captions doc:[/bold] {captions_path}")
+    console.print(f"  Words         : {len(doc.words)}")
+    console.print(f"  Keep segments : {len(keep_entries)}")
+    console.print(f"  Cut segments  : {len(cut_entries)}")
+    console.print(f"  Keep duration : [green]{total_keep_s}s[/green]")
+    console.print(f"  Cut duration  : [red]{total_cut_s}s[/red]")
+    console.print(f"  Images        : {len(doc.images)}")
+
+    table = Table("#", "Clip", "Start", "End", "Duration", "Keep", "Reason")
+    for i, entry in enumerate(doc.edl):
+        keep_str = "[green]KEEP[/green]" if entry.keep else "[red]CUT[/red]"
+        dur = round(entry.end - entry.start, 3)
+        table.add_row(
+            str(i),
+            Path(entry.source_clip).name,
+            f"{entry.start:.3f}s",
+            f"{entry.end:.3f}s",
+            f"{dur}s",
+            keep_str,
+            entry.reason,
+        )
+    console.print(table)
+
+
+# ---------------------------------------------------------------------------
+# reelcut timeline
+# ---------------------------------------------------------------------------
+
+@app.command()
+def timeline(
+    captions_path: str = typer.Argument(..., help="Path to .captions.json file"),
+) -> None:
+    """Print output-timeline word positions remapped from the current EDL."""
+    from .captions_doc import load_captions_doc
+    from .edl import EDLEntry
+    from .transcriber import WordTimestamp
+
+    path = Path(captions_path)
+    if not path.exists():
+        err_console.print(f"[red]Error:[/red] file not found: {path}")
+        raise typer.Exit(1)
+
+    doc = load_captions_doc(path)
+
+    edl = [
+        EDLEntry(start=e.start, end=e.end, keep=e.keep, source_clip=e.source_clip, reason=e.reason)
+        for e in doc.edl
+    ]
+    source_words = [
+        WordTimestamp(word=w.word, start=w.start, end=w.end, confidence=1.0, clip_path=w.source_clip)
+        for w in doc.words
+    ]
+    output_words = _remap_kept_words(source_words, edl)
+
+    total = output_words[-1].end if output_words else 0.0
+    console.print(f"\n[bold]Output timeline[/bold] — {len(output_words)} words, {total:.2f}s total\n")
+    for w in output_words:
+        console.print(f"  {w.start:>8.3f}s → {w.end:<8.3f}s  {w.word}")
+
+
+# ---------------------------------------------------------------------------
+# Phase 1 — transcription core
+# ---------------------------------------------------------------------------
+
+def _phase1(cfg, clips: list[str], output_dir: Path, verbose: bool):
+    """Transcribe clips, build EDL, return CaptionsDoc. No rendering."""
+    from .audio import extract_audio, normalize_audio
+    from .captions_doc import CaptionWord, CaptionsDoc, EdlEntry
+    from .edl import generate_scriptless_edl, edl_summary
+    from .gap_detector import detect_gaps
+    from .transcriber import transcribe as do_transcribe, align, filter_words_by_vad, filter_silent_words, WordTimestamp
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
-        clips = _collect_clips(cfg)
-        all_words = []
-        all_raw_words: list = []     # Stage 1: before alignment, for debug report
-        clip_info: list[dict] = []   # per-clip alignment/VAD metadata
-        gaps_by_clip: dict[str, list] = {}  # for debug timeline
+        all_words: list = []
+        all_raw_words: list = []
+        clip_info: list[dict] = []
 
         for clip_path in clips:
             wav = tmp / (Path(clip_path).stem + ".wav")
 
-            # --- Audio extraction ---
             console.print(f"[bold]Step 1[/bold] Extracting audio: {Path(clip_path).name}…")
-            _vlog(verbose, f"  → {wav}")
             t = time.perf_counter()
             extract_audio(clip_path, wav)
             normalize_audio(wav)
             _tlog(time.perf_counter() - t, "done")
 
-            # --- Transcription ---
             console.print(f"[bold]Step 2[/bold] Transcribing {Path(clip_path).name}…")
             t = time.perf_counter()
-            words = transcribe(wav, cfg.whisper)
+            words = do_transcribe(wav, cfg.whisper)
             _tlog(time.perf_counter() - t, f"{len(words)} words")
-            _vlog(verbose, f"  {len(words)} words from faster-whisper")
 
-            # Save Stage 1 snapshot before alignment mutates timestamps.
-            # align() returns new objects in the success path; we copy here so the
-            # fallback path (which returns the same list) also stays independent.
-            from .transcriber import WordTimestamp as _WT
             for w in words:
                 w.clip_path = str(clip_path)
-            all_raw_words.extend(
-                _WT(word=w.word, start=w.start, end=w.end,
-                    confidence=w.confidence, clip_path=w.clip_path)
-                for w in words
-            )
+            all_raw_words.extend(words)
 
-            # --- Forced alignment ---
             console.print(f"[bold]Step 3[/bold] Aligning timestamps for {Path(clip_path).name}…")
             t = time.perf_counter()
             words, align_method = align(words, wav, cfg.whisper)
@@ -168,7 +347,6 @@ def _run_pipeline(cfg, output_path: Path, verbose: bool, dry_run: bool) -> list[
             console.print(f"  Alignment: [{align_color}]{align_method}[/{align_color}]")
             _warn_wide_words(words, console)
 
-            # --- VAD hallucination filter ---
             before = len(words)
             try:
                 words = filter_words_by_vad(words, wav, threshold=cfg.cuts.vad_threshold)
@@ -194,11 +372,9 @@ def _run_pipeline(cfg, output_path: Path, verbose: bool, dry_run: bool) -> list[
                 "hallucinations_dropped": dropped,
             })
 
-        transcript_path = output_dir / f"{output_path.stem}.transcript.json"
-
-        # --- Retake detection (scriptless only — script mode handles this via last-take-wins) ---
+        # Retake detection
         retake_ranges: dict[str, list[tuple[float, float]]] = {}
-        if not use_script and cfg.cuts.min_retake_words > 0:
+        if cfg.cuts.repetition_detection:
             from .retake_detector import detect_retakes
             console.print("[bold]Step 3b[/bold] Detecting duplicate takes…")
             t = time.perf_counter()
@@ -207,7 +383,6 @@ def _run_pipeline(cfg, output_path: Path, verbose: bool, dry_run: bool) -> list[
                 ranges = detect_retakes(clip_words, cfg.cuts.min_retake_words)
                 if ranges:
                     retake_ranges[str(clip_path)] = ranges
-                    _vlog(verbose, f"  {Path(clip_path).name}: {len(ranges)} retake region(s) found")
             total_retakes = sum(len(v) for v in retake_ranges.values())
             if total_retakes:
                 total_s = sum(e - s for v in retake_ranges.values() for s, e in v)
@@ -216,81 +391,35 @@ def _run_pipeline(cfg, output_path: Path, verbose: bool, dry_run: bool) -> list[
                 console.print("  No duplicate takes found")
             _tlog(time.perf_counter() - t)
 
-        # --- Gap detection (always runs — primary cut driver) ---
+        # Gap detection
         console.print("[bold]Step 4[/bold] Detecting silences, breaths, and gaps…")
         t = time.perf_counter()
         gaps = []
+        gaps_by_clip: dict[str, list] = {}
         for clip_path in clips:
             wav = tmp / (Path(clip_path).stem + ".wav")
             clip_words = [w for w in all_words if w.clip_path == str(clip_path)]
             clip_gaps = detect_gaps(clip_words, wav, cfg.cuts)
-            gaps.extend(clip_gaps)
             gaps_by_clip[str(clip_path)] = clip_gaps
-            n_cut = sum(1 for g in clip_gaps if g.cut)
-            _vlog(verbose, f"  {Path(clip_path).name}: {n_cut}/{len(clip_gaps)} gaps will be cut")
+            gaps.extend(clip_gaps)
         n_cut_total = sum(1 for g in gaps if g.cut)
         _tlog(time.perf_counter() - t, f"{n_cut_total}/{len(gaps)} gaps cut")
 
-        # --- EDL generation ---
+        # EDL generation
         console.print("[bold]Step 5[/bold] Building EDL…")
         t = time.perf_counter()
-        if use_script:
-            # Script mode: gap cuts + outtake removal
-            from .script_aligner import align_to_script
-            console.print("  Script provided — removing outtakes…")
-            result = align_to_script(all_words, cfg.input.script)
+        warnings: list[str] = []
+        edl = generate_scriptless_edl(all_words, gaps, min_keep_ms=cfg.cuts.min_keep_ms, speech_pad_ms=cfg.cuts.speech_pad_ms)
 
-            if result.missing_lines:
-                msg = f"{len(result.missing_lines)} script word(s) have no matching footage: {result.missing_lines[:5]}"
-                warnings.append(msg)
-                console.print(f"  [yellow]Warning:[/yellow] {msg}")
-
-            total_words = len(all_words)
-            outtake_words = sum(len(o) for o in result.outtakes)
-            if total_words > 0:
-                outtake_pct = outtake_words / total_words * 100
-                _vlog(verbose, f"  {len(result.segments)} segments, {outtake_pct:.0f}% outtakes")
-                if outtake_pct > 30:
-                    msg = (
-                        f"{outtake_pct:.0f}% of transcript was not matched to the script "
-                        "and will be cut. Check your script matches what you recorded."
-                    )
-                    warnings.append(msg)
-                    console.print(f"  [yellow]Warning:[/yellow] {msg}")
-
-            edl = generate_edl(result.segments, gaps, all_words, min_keep_ms=cfg.cuts.min_keep_ms)
-        else:
-            # Scriptless mode: gap cuts only, all speech kept
-            console.print("  No script — keeping all speech, cutting silences/breaths…")
-            edl = generate_scriptless_edl(all_words, gaps, min_keep_ms=cfg.cuts.min_keep_ms, speech_pad_ms=cfg.cuts.speech_pad_ms)
-
-        # Apply retake cuts (works in both script and scriptless modes)
         if retake_ranges:
             from .edl import apply_retake_cuts
             edl = apply_retake_cuts(edl, retake_ranges, all_words)
 
-        # Transcript artifact — written after EDL so keep=True/False reflects final decisions
-        transcript_data = [
-            {
-                "word": w.word,
-                "start": round(w.start, 3),
-                "end": round(w.end, 3),
-                "confidence": round(w.confidence, 3),
-                "clip": Path(w.clip_path).name,
-                "keep": w.keep,
-            }
-            for w in all_words
-        ]
-        transcript_path.write_text(json.dumps(transcript_data, indent=2))
-        console.print(f"  Transcript → {transcript_path}  ({len(all_words)} words, {sum(1 for w in all_words if w.keep)} kept)")
-
-        edl_path = output_dir / f"{output_path.stem}.edl.json"
-        save_edl(edl, edl_path)
         summary = edl_summary(edl)
         console.print(
             f"({time.perf_counter() - t:.1f}s) "
             f"[green]keep {summary['total_keep_s']}s[/green] / "
-            f"[red]cut {summary['total_cut_s']}s[/red] → {edl_path}"
+            f"[red]cut {summary['total_cut_s']}s[/red]"
         )
 
         if summary["total_keep_s"] > cfg.output.max_duration_s:
@@ -298,47 +427,96 @@ def _run_pipeline(cfg, output_path: Path, verbose: bool, dry_run: bool) -> list[
                 f"Output duration {summary['total_keep_s']}s exceeds max_duration_s={cfg.output.max_duration_s}s"
             )
 
-        # Remap kept words to output timeline — needed for both debug report and captions.
+        # Remap words to output timeline
         caption_words = _remap_kept_words(all_words, edl)
 
-        # Detect image cues here so they appear in the debug report.
-        image_cues = None
-        if cfg.images.enabled:
-            from .image_finder import detect_image_cues
-            image_cues = detect_image_cues(caption_words, cfg.images)
+        if warnings:
+            for w in warnings:
+                console.print(f"  [yellow]Warning:[/yellow] {w}")
 
-        # --- Debug report ---
+        # Debug report
         from .debug_report import write_debug_report
-        debug_path = output_dir / f"{output_path.stem}.debug.txt"
-        try:
-            write_debug_report(
-                debug_path,
-                clip_paths=clips,
-                config=cfg,
-                raw_words=all_raw_words,
-                aligned_words=all_words,
-                gaps_by_clip=gaps_by_clip,
-                edl=edl,
-                caption_words=caption_words,
-                clip_info=clip_info,
-                image_cues=image_cues,
+        debug_path = output_dir / f"{Path(clips[0]).stem}.debug.txt"
+        write_debug_report(
+            debug_path,
+            clip_paths=clips,
+            config=cfg,
+            raw_words=all_raw_words,
+            aligned_words=all_words,
+            gaps_by_clip=gaps_by_clip,
+            edl=edl,
+            caption_words=caption_words,
+            clip_info=clip_info,
+            image_cues=None,
+        )
+        console.print(f"[green]Debug report  →[/green] {debug_path}")
+
+        # Build captions doc
+        doc_edl = [
+            EdlEntry(
+                source_clip=e.source_clip,
+                start=round(e.start, 4),
+                end=round(e.end, 4),
+                keep=e.keep,
+                reason=e.reason,
             )
-            console.print(f"  Debug report → {debug_path}")
-        except Exception as exc:
-            console.print(f"  [yellow]Debug report failed: {exc}[/yellow]")
+            for e in edl
+        ]
+        doc_words = [
+            CaptionWord(word=w.word, start=w.start, end=w.end, source_clip=w.clip_path)
+            for w in all_words
+            if w.keep
+        ]
+        return CaptionsDoc(
+            source_clips=clips,
+            edl=doc_edl,
+            words=doc_words,
+            images=[],
+        )
 
-        if dry_run:
-            console.print("[yellow]--dry-run:[/yellow] skipping render.")
-            return warnings
 
-        srt_path = output_dir / f"{output_path.stem}.srt"
-        from .caption import write_srt
-        write_srt(caption_words, srt_path)
-        console.print(f"  SRT → {srt_path}")
+# ---------------------------------------------------------------------------
+# Phase 2 — render core
+# ---------------------------------------------------------------------------
 
+def _phase2(cfg, doc, output_path: Path, verbose: bool) -> list[str]:
+    """Render final video from a CaptionsDoc. Returns warnings."""
+    from .caption import render_caption_frames
+    from .captions_doc import ImageSpec
+    from .edl import EDLEntry
+    from .image_finder import ImageCue, detect_image_cues
+    from .renderer import render as do_render
+    from .transcriber import WordTimestamp
+
+    warnings: list[str] = []
+    output_dir = output_path.parent
+
+    # Convert EdlEntry (captions_doc) → EDLEntry (edl module) for renderer
+    edl = [
+        EDLEntry(
+            start=e.start,
+            end=e.end,
+            keep=e.keep,
+            source_clip=e.source_clip,
+            reason=e.reason,
+        )
+        for e in doc.edl
+    ]
+
+    # Remap source-clip-time words to output-timeline using current EDL
+    source_words = [
+        WordTimestamp(word=w.word, start=w.start, end=w.end, confidence=1.0, clip_path=w.source_clip)
+        for w in doc.words
+    ]
+    caption_words = _remap_kept_words(source_words, edl)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp = Path(tmpdir)
+
+        # Caption frames
         caption_frames = []
         if cfg.captions.enabled and cfg.captions.style != "none":
-            console.print("[bold]Step 6b/6[/bold] Rendering caption frames…")
+            console.print("[bold]Step 6a/6[/bold] Rendering caption frames…")
             t = time.perf_counter()
             cap_dir = tmp / "captions"
             caption_frames = render_caption_frames(
@@ -348,22 +526,48 @@ def _run_pipeline(cfg, output_path: Path, verbose: bool, dry_run: bool) -> list[
             )
             _tlog(time.perf_counter() - t, f"{len(caption_frames)} frames")
 
-        if cfg.images.enabled and image_cues:
-            console.print("[bold]Step 6c/6[/bold] Rendering image overlays…")
+        # Image cues: logos (auto-detected from words) + people/screenshots (from captions doc)
+        all_image_cues: list[ImageCue] = []
+        if cfg.images.enabled:
+            logo_cues = detect_image_cues(caption_words, cfg.images)
+            all_image_cues.extend(logo_cues)
+            if logo_cues:
+                console.print(f"  Logos detected: {[c.keyword for c in logo_cues]}")
+
+            remap, clip_order = _build_edl_remap(edl)
+            fallback_clip = clip_order[0] if clip_order else ""
+            for spec in doc.images:
+                clip = spec.source_clip or fallback_clip
+                remapped_start = remap(clip, spec.start)
+                remapped_end = remap(clip, spec.end)
+                remapped_spec = type(spec)(
+                    type=spec.type,
+                    start=remapped_start,
+                    end=remapped_end,
+                    source_clip=clip,
+                    name=spec.name,
+                    path=spec.path,
+                )
+                cue = _resolve_image_spec(remapped_spec, cfg.images.display_duration_s)
+                if cue:
+                    all_image_cues.append(cue)
+
+        if cfg.images.enabled and all_image_cues:
+            console.print(f"[bold]Step 6b/6[/bold] Rendering image overlays ({len(all_image_cues)} total)…")
             t = time.perf_counter()
             from .image_overlay import render_image_frames, merge_with_caption_frames
             img_dir = tmp / "image_frames"
             image_frames = render_image_frames(
-                image_cues, cfg.images, img_dir,
+                all_image_cues, cfg.images, img_dir,
                 fps=cfg.output.fps,
                 resolution=tuple(cfg.output.resolution),
             )
             caption_frames = merge_with_caption_frames(
                 caption_frames, image_frames, tuple(cfg.output.resolution),
             )
-            _tlog(time.perf_counter() - t, f"{len(image_cues)} logo(s): {[c.keyword for c in image_cues]}")
+            _tlog(time.perf_counter() - t)
 
-        # --- Render ---
+        # Final render
         from .renderer import _USE_VIDEOTOOLBOX
         encoder = "h264_videotoolbox (hardware)" if _USE_VIDEOTOOLBOX else "libx264 (software)"
         console.print(f"[bold]Step 6c/6[/bold] Rendering final video… encoder: [cyan]{encoder}[/cyan]")
@@ -374,109 +578,90 @@ def _run_pipeline(cfg, output_path: Path, verbose: bool, dry_run: bool) -> list[
     return warnings
 
 
-# ---------------------------------------------------------------------------
-# reelcut transcribe
-# ---------------------------------------------------------------------------
+def _resolve_image_spec(spec, display_duration_s: float):
+    """Resolve an ImageSpec from the captions doc to an ImageCue."""
+    from .image_finder import ImageCue
 
-@app.command()
-def transcribe(
-    video: str = typer.Argument(..., help="Path to video file."),
-    model: str = typer.Option("large-v2", help="Whisper model size."),
-    language: str = typer.Option("en", help="Language code."),
-    compute_type: str = typer.Option("int8", help="int8 | float16"),
-    verbose: bool = typer.Option(False, "--verbose", "-v"),
-) -> None:
-    """Transcribe a video file and print word-level timestamps."""
-    from .audio import extract_audio
-    from .config import WhisperConfig
-    from .transcriber import transcribe as do_transcribe, align
-
-    wcfg = WhisperConfig(model=model, compute_type=compute_type, language=language)  # type: ignore[arg-type]
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        wav = Path(tmpdir) / "audio.wav"
-        console.print("Extracting audio…")
-        extract_audio(video, wav)
-
-        console.print("Transcribing…")
-        words = do_transcribe(wav, wcfg)
-
-        console.print("Aligning timestamps…")
-        words = align(words, wav, wcfg)
-
-    table = Table("#", "Word", "Start", "End", "Conf")
-    for i, w in enumerate(words):
-        table.add_row(str(i), w.word, f"{w.start:.3f}s", f"{w.end:.3f}s", f"{w.confidence:.2f}")
-    console.print(table)
-    console.print(f"\n{len(words)} words total.")
-
-
-# ---------------------------------------------------------------------------
-# reelcut preview-edl
-# ---------------------------------------------------------------------------
-
-@app.command(name="preview-edl")
-def preview_edl(
-    edl_path: str = typer.Argument(..., help="Path to .edl.json file."),
-) -> None:
-    """Print a summary of an EDL file in the terminal."""
-    from .edl import load_edl, edl_summary
-
-    try:
-        edl = load_edl(edl_path)
-    except FileNotFoundError as exc:
-        err_console.print(f"[red]Error:[/red] {exc}")
-        raise typer.Exit(1)
-
-    summary = edl_summary(edl)
-
-    console.print(f"\n[bold]EDL:[/bold] {edl_path}")
-    console.print(f"  Keep segments : {summary['keep_segments']}")
-    console.print(f"  Cut segments  : {summary['cut_segments']}")
-    console.print(f"  Keep duration : [green]{summary['total_keep_s']}s[/green]")
-    console.print(f"  Cut duration  : [red]{summary['total_cut_s']}s[/red]")
-    console.print(f"  Cut reasons   : {summary['reasons']}")
-
-    table = Table("#", "Clip", "Start", "End", "Duration", "Keep", "Reason")
-    for i, entry in enumerate(edl):
-        keep_str = "[green]KEEP[/green]" if entry.keep else "[red]CUT[/red]"
-        dur = round(entry.end - entry.start, 3)
-        table.add_row(
-            str(i),
-            Path(entry.source_clip).name,
-            f"{entry.start:.3f}s",
-            f"{entry.end:.3f}s",
-            f"{dur}s",
-            keep_str,
-            entry.reason,
+    if spec.type == "person":
+        if not spec.name:
+            return None
+        from .entity_resolver import resolve_entity_image
+        img = resolve_entity_image(spec.name, "person")
+        if img is None:
+            console.print(f"  [yellow]Could not resolve Wikipedia image for: {spec.name}[/yellow]")
+            return None
+        return ImageCue(
+            keyword=spec.name,
+            start=spec.start,
+            end=spec.end,
+            image_path=str(img),
         )
-    console.print(table)
+
+    elif spec.type == "screenshot":
+        if not spec.path:
+            return None
+        p = Path(spec.path)
+        if not p.exists():
+            console.print(f"  [yellow]Screenshot not found: {spec.path}[/yellow]")
+            return None
+        return ImageCue(
+            keyword=f"{p.parent.name}_{p.stem}",
+            start=spec.start,
+            end=spec.end,
+            image_path=str(p),
+        )
+
+    else:
+        console.print(f"  [yellow]Unknown image type: {spec.type}[/yellow]")
+        return None
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _remap_kept_words(words: list, edl: list) -> list:
-    """Remap kept WordTimestamp objects from source clip time to output video time.
+def _resolve_slug(cfg, slug_arg: str | None) -> str | None:
+    if slug_arg:
+        return slug_arg
+    return None
 
-    Uses the EDL cut entries to compute per-word timestamp offsets rather than
-    a timing-overlap check, so no word that was explicitly marked keep=True can
-    fall through due to floating-point boundary conditions.
 
-    For each clip, the output timeline starts at 0 (single clip) or at the end
-    of the previous clip's kept duration (multi-clip). Within a clip, each cut
-    interval shifts subsequent words earlier by the duration of that cut.
-    """
-    from .transcriber import WordTimestamp
+def _assets_or_ts_dir(cfg, slug: str | None) -> Path:
+    """Return assets/<slug>/ if slug is known, otherwise output/<timestamp>/."""
+    if slug:
+        d = Path(cfg.assets.location) / slug
+    else:
+        d = Path(cfg.output.location) / time.strftime("%Y-%m-%d_%H-%M-%S")
+    d.mkdir(parents=True, exist_ok=True)
+    return d
 
-    # Determine clip order from EDL (first appearance wins)
+
+def _list_videos(folder: Path) -> list[Path]:
+    video_exts = {".mp4", ".mov", ".mkv"}
+    return sorted(
+        [p for p in folder.iterdir() if p.suffix.lower() in video_exts],
+        key=lambda p: p.stat().st_mtime,
+    )
+
+
+def _collect_clips(cfg) -> list[str]:
+    clips_folder = cfg.input.clips_folder
+    if clips_folder:
+        folder = Path(clips_folder)
+        clips = _list_videos(folder)
+        if not clips:
+            raise typer.BadParameter(f"No video files found in clips_folder: {folder}")
+        return [str(c) for c in clips]
+    return [cfg.input.footage]
+
+
+def _build_edl_remap(edl: list):
+    """Pre-compute EDL remap tables. Returns callable (source_clip, t) -> output_t."""
     clip_order: list[str] = []
     for entry in edl:
         if entry.source_clip not in clip_order:
             clip_order.append(entry.source_clip)
 
-    # Per clip: total kept duration, start of first kept segment, cut intervals
     keep_dur: dict[str, float] = {}
     first_keep_start: dict[str, float] = {}
     cut_intervals: dict[str, list[tuple[float, float]]] = {}
@@ -490,60 +675,48 @@ def _remap_kept_words(words: list, edl: list) -> list:
         else:
             cut_intervals.setdefault(c, []).append((entry.start, entry.end))
 
-    # Cumulative output offset where each clip's contribution begins
     clip_base: dict[str, float] = {}
     acc = 0.0
     for c in clip_order:
         clip_base[c] = acc
         acc += keep_dur.get(c, 0.0)
 
+    def remap(source_clip: str, t: float) -> float:
+        cuts = cut_intervals.get(source_clip, [])
+        first_start = first_keep_start.get(source_clip, 0.0)
+        cut_offset = sum(e - s for s, e in cuts if s >= first_start and e <= t)
+        intra = t - first_start - cut_offset
+        return round(max(0.0, clip_base.get(source_clip, 0.0) + intra), 4)
+
+    return remap, clip_order
+
+
+def _remap_kept_words(words: list, edl: list) -> list:
+    """Remap kept WordTimestamp objects from source clip time to output video time."""
+    from .transcriber import WordTimestamp
+
+    remap, _ = _build_edl_remap(edl)
     remapped = []
     for w in words:
         if not w.keep:
             continue
-        c = w.clip_path
-        cuts = cut_intervals.get(c, [])
-        first_start = first_keep_start.get(c, 0.0)
-        # Only count cuts within the kept region (after first keep start).
-        # Pre-keep cuts are already absorbed by subtracting first_start.
-        cut_offset = sum(e - s for s, e in cuts if s >= first_start and e <= w.start)
-        intra = w.start - first_start - cut_offset
-        new_start = clip_base.get(c, 0.0) + intra
+        new_start = remap(w.clip_path, w.start)
         new_end = new_start + (w.end - w.start)
         remapped.append(WordTimestamp(
             word=w.word,
             start=round(max(0.0, new_start), 4),
             end=round(max(0.0, new_end), 4),
             confidence=w.confidence,
-            clip_path=c,
+            clip_path=w.clip_path,
         ))
 
     return sorted(remapped, key=lambda w: w.start)
-
-
-def _collect_clips(cfg) -> list[str]:
-    """Return ordered list of source clip paths from config."""
-    clips_folder = cfg.input.clips_folder
-    if clips_folder:
-        folder = Path(clips_folder)
-        video_exts = {".mp4", ".mov", ".mkv"}
-        clips = sorted(
-            [p for p in folder.iterdir() if p.suffix.lower() in video_exts],
-            key=lambda p: p.stat().st_mtime,
-        )
-        if not clips:
-            raise typer.BadParameter(f"No video files found in clips_folder: {folder}")
-        return [str(c) for c in clips]
-    return [cfg.input.footage]
 
 
 _WIDE_WORD_THRESHOLD_S = 1.5
 
 
 def _warn_wide_words(words: list, console: Console) -> None:
-    """Warn about words with suspiciously wide spans — a reliable signal that
-    Whisper missed speech in that region and WhisperX stretched the surrounding
-    words to fill the gap."""
     wide = [(w, w.end - w.start) for w in words if (w.end - w.start) >= _WIDE_WORD_THRESHOLD_S]
     if not wide:
         return
@@ -561,6 +734,7 @@ def _warn_wide_words(words: list, console: Console) -> None:
 def _tlog(elapsed: float, label: str = "") -> None:
     msg = f"  → {label} ({elapsed:.1f}s)" if label else f"  → {elapsed:.1f}s"
     console.print(msg)
+
 
 def _vlog(verbose: bool, msg: str) -> None:
     if verbose:

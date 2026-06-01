@@ -21,25 +21,6 @@ _SHADOW_OFFSET = 3  # solid black drop shadow shift (px)
 _LINE_SPACING = 10  # px between wrapped rows
 
 
-def write_srt(words: list[WordTimestamp], path: str | Path) -> None:
-    """Write word-grouped captions to an SRT subtitle file."""
-    path = Path(path)
-    lines = _group_into_lines(words, _WORDS_PER_LINE)
-    with path.open("w", encoding="utf-8") as f:
-        for i, line_words in enumerate(lines, 1):
-            start = line_words[0].start
-            end = line_words[-1].end
-            text = " ".join(w.word for w in line_words)
-            f.write(f"{i}\n{_srt_ts(start)} --> {_srt_ts(end)}\n{text}\n\n")
-
-
-def _srt_ts(seconds: float) -> str:
-    h = int(seconds // 3600)
-    m = int((seconds % 3600) // 60)
-    s = int(seconds % 60)
-    ms = int(round((seconds % 1) * 1000))
-    return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
-
 
 @dataclass
 class CaptionFrame:

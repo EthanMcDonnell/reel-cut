@@ -193,3 +193,17 @@ venv/
 output/
 done/
 .DS_Store
+
+.venv/
+.env
+/logs
+/scrape/db
+scripts/refresh_scrapes.sh
+.claude/settings.json
+content.db
+.DS_Store
+/scrape/screenshots
+/videos
+/experimentation
+/scrape/runs/
+/assets

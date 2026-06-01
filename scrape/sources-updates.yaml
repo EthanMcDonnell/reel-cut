@@ -1,0 +1,140 @@
+# Update Video Sources
+# For "what's new" / release recap videos covering recent tool and platform updates.
+# Focused on Claude Code, Anthropic, and adjacent AI dev tooling.
+
+# db_sort: date  — most recent articles first (default)
+# db_sort: score — highest relevance score first, then date
+db_sort: date
+
+sources:
+  # ── Claude / Anthropic ──
+
+  - name: Anthropic News
+    company: Anthropic
+    fetch: playwright
+    homepage: https://www.anthropic.com/news
+
+  - name: Anthropic Engineering
+    company: Anthropic
+    fetch: scrape
+    homepage: https://www.anthropic.com/engineering
+
+  - name: Ars Technica AI
+    company: Ars Technica
+    fetch: rss
+    rss: https://arstechnica.com/ai/feed/
+    homepage: https://arstechnica.com/ai
+    output_limit: 10
+
+  - name: Hacker News
+    company: Community
+    fetch: rss
+    rss: https://news.ycombinator.com/rss
+    homepage: https://news.ycombinator.com
+    output_limit: 10
+
+    # ── Anthropic ──
+  - name: Reddit u/ClaudeOfficial
+    company: Anthropic
+    fetch: reddit
+    reddit_user: ClaudeOfficial
+    scrape_limit: 10
+    init_score: 5
+
+  # ── Community / Subreddits ──
+
+  - name: Reddit r/technology
+    company: Community
+    fetch: reddit
+    reddit_subreddit: technology
+    reddit_sort: top
+    reddit_time: day
+    scrape_limit: 25
+    output_limit: 10
+    require_link: true
+
+  - name: Reddit r/BetterOffline
+    company: Community
+    fetch: reddit
+    reddit_subreddit: BetterOffline
+    reddit_sort: top
+    reddit_time: day
+    scrape_limit: 25
+    output_limit: 5
+    require_link: true
+
+  - name: Reddit r/accelerate
+    company: Community
+    fetch: reddit
+    reddit_subreddit: accelerate
+    reddit_sort: top
+    reddit_time: day
+    scrape_limit: 25
+    output_limit: 5
+    require_link: true
+
+  - name: Reddit r/ClaudeAI
+    company: Community
+    fetch: reddit
+    reddit_subreddit: ClaudeAI
+    reddit_sort: top
+    reddit_time: day
+    scrape_limit: 25
+    output_limit: 3
+    require_link: true
+
+  - name: Reddit r/ArtificialInteligence
+    company: Community
+    fetch: reddit
+    reddit_subreddit: ArtificialInteligence
+    reddit_sort: top
+    reddit_time: day
+    scrape_limit: 25
+    output_limit: 5
+    require_link: true
+
+  - name: Reddit r/technews
+    company: Community
+    fetch: reddit
+    reddit_subreddit: technews
+    reddit_sort: top
+    reddit_time: day
+    scrape_limit: 25
+    output_limit: 10
+    require_link: true
+
+# ─── Keyword Configuration ────────────────────────────────────────────────────
+# Focused on Anthropic, Claude, and OpenAI updates.
+
+strong_keywords:
+  - anthropic
+  - claude
+  - opus
+  - sonnet
+  - haiku
+  - openai
+  - chatgpt
+
+title_keywords:
+
+weak_keywords:
+
+
+# For update videos we WANT announcements — minimal exclusions
+excluded_keywords:
+  - "we're hiring"
+  - "job opening"
+  - "apply now"
+
+excluded_url_patterns:
+  - /careers/
+  - /jobs/
+
+# Lower threshold — release notes are naturally short on keywords
+min_relevance_score: 0
+
+# Tighter lookback — update videos should cover recent news
+lookback_days: 3
+
+# Rolling retention — articles older than this many days are pruned from the db on each merge
+db_retention_days: 4

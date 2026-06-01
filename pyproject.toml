@@ -25,6 +25,16 @@ dependencies = [
     "numpy<2",
     "onnxruntime",
     "cairosvg",
+    "anthropic",
+    # scrape/ dependencies
+    "httpx",
+    "feedparser",
+    "beautifulsoup4",
+    "lxml",
+    "python-dateutil",
+    "python-dotenv",
+    "praw",
+    "playwright",
 ]
 
 [project.scripts]

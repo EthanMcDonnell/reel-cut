@@ -1,7 +1,5 @@
-input:
-  footage: ./input/
-  # script: ./script.txt           # optional — provide for outtake removal; omit for silence-cut-only mode
-  # clips_folder: ./clips/         # optional, for multi-clip
+assets:
+  location: ./assets               # working files per video (captions.json, debug.txt, screenshots, manifest)
 
 cuts:
   # --- What gets cut ---
@@ -32,8 +30,7 @@ cuts:
                                    # is considered non-silent. Prevents single transients fragmenting cuts.
   min_keep_ms: 200                 # drop kept segments shorter than this after cutting. Prevents isolated
                                    # sub-word fragments ("a", "I") becoming their own clip.
-  min_retake_words: 0              # duplicate-take detection: min words in a repeated phrase to trigger a
-                                   # retake cut. 0 = disabled.
+  repetition_detection: false      # detect and cut repeated takes (earlier occurrence cut, last take kept)
   min_word_confidence: 0.5         # hard floor: if either adjacent word's alignment confidence is below
                                    # this, the gap is never cut regardless of duration.
   low_confidence_threshold: 0.8    # soft threshold: if either adjacent word is below this (but above
@@ -76,11 +73,13 @@ images:
                                  # set false to match all words, or add lowercase brands to keywords instead
   keywords: []                   # logo slugs to always match regardless of capitalisation (e.g. [python])
   exclude: []                    # logo slugs to never match (last-resort override)
-  position: center                  # top | center | bottom  (top keeps logos clear of center captions)
+  # people and screenshots are specified in the .captions.json images array (filled in by LLM between phases)
+  position: center               # top | center | bottom  (top keeps logos clear of center captions)
   size_pct: 50                   # logo width as % of video width
   display_duration_s: 2.0        # seconds to show logo after its keyword is first spoken
-  fade_duration_s: 0            # fade in and out duration in seconds (0 to disable)
-  
+  fade_duration_s: 0             # fade in and out duration in seconds (0 to disable)
+
+
 
 whisper:
   model: large-v2

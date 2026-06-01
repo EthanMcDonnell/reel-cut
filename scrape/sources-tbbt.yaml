@@ -1,0 +1,397 @@
+# Tech behind big tech Sources
+# fetch: rss      - working RSS feed, used directly
+# fetch: scrape   - no RSS; falls back to HTML scraping
+# fetch: playwright - requires headless browser (JS-rendered pages)
+# fetch: manual   - neither works automatically; visit homepage manually
+
+# db_sort: date  — most recent articles first
+# db_sort: score — highest relevance score first, then date (default for tbbt)
+db_sort: score
+
+sources:
+  # ── Tier 1: Consistently publish system design content ──
+  - name: Cloudflare Blog
+    company: Cloudflare
+    fetch: rss
+    rss: https://blog.cloudflare.com/rss/
+    homepage: https://blog.cloudflare.com
+
+  - name: Netflix Tech Blog
+    company: Netflix
+    fetch: rss
+    rss: https://netflixtechblog.com/feed
+    homepage: https://netflixtechblog.com
+    insecure: true # Medium-hosted; intermediate cert not in standard CA bundle
+
+  - name: Meta Engineering
+    company: Meta
+    fetch: rss
+    rss: https://engineering.fb.com/feed/
+    homepage: https://engineering.fb.com
+
+  - name: AWS Architecture Blog
+    company: AWS
+    fetch: rss
+    rss: https://aws.amazon.com/blogs/architecture/feed/
+    homepage: https://aws.amazon.com/blogs/architecture/
+
+  - name: Spotify Engineering
+    company: Spotify
+    fetch: rss
+    rss: https://engineering.atspotify.com/feed/
+    homepage: https://engineering.atspotify.com
+
+  - name: GitHub Engineering
+    company: GitHub
+    fetch: rss
+    rss: https://github.blog/engineering/feed/
+    homepage: https://github.blog/category/engineering/
+
+  - name: Stripe Engineering
+    company: Stripe
+    fetch: scrape
+    homepage: https://stripe.com/blog/engineering
+
+  - name: Shopify Engineering
+    company: Shopify
+    fetch: scrape
+    homepage: https://shopify.engineering
+
+  - name: Slack Engineering
+    company: Slack
+    fetch: rss
+    rss: https://slack.engineering/feed/
+    homepage: https://slack.engineering
+
+  - name: Dropbox Tech
+    company: Dropbox
+    fetch: rss
+    rss: https://dropbox.tech/feed/
+    homepage: https://dropbox.tech
+
+  - name: Discord Blog
+    company: Discord
+    fetch: rss
+    rss: https://discord.com/blog/rss.xml
+    homepage: https://discord.com/blog
+
+  - name: Airbnb Engineering
+    company: Airbnb
+    fetch: rss
+    rss: https://medium.com/feed/airbnb-engineering
+    homepage: https://medium.com/airbnb-engineering
+
+  - name: Pinterest Engineering
+    company: Pinterest
+    fetch: rss
+    rss: https://medium.com/feed/pinterest-engineering
+    homepage: https://medium.com/pinterest-engineering
+
+  - name: Reddit Engineering
+    company: Reddit
+    fetch: rss
+    rss: https://www.reddit.com/r/RedditEng/.rss
+    homepage: https://www.reddit.com/r/RedditEng/
+
+  - name: Atlassian Engineering
+    company: Atlassian
+    fetch: rss
+    rss: https://www.atlassian.com/engineering/feed
+    homepage: https://www.atlassian.com/engineering
+
+  - name: Canva Engineering
+    company: Canva
+    fetch: rss
+    rss: https://www.canva.dev/blog/engineering/feed.xml
+    homepage: https://www.canva.dev/blog/engineering/
+
+  # ── Tier 2: Good sources, sometimes noisy ──
+  - name: Snap Engineering
+    company: Snap
+    fetch: scrape
+    homepage: https://eng.snap.com/blog
+
+  - name: Google Research Blog
+    company: Google
+    fetch: rss
+    rss: https://research.google/blog/rss/
+    homepage: https://research.google/blog/
+
+  - name: OpenAI Engineering
+    company: OpenAI
+    fetch: rss
+    rss: https://openai.com/news/rss.xml
+    homepage: https://openai.com/news/engineering/
+
+  - name: Microsoft Engineering
+    company: Microsoft
+    fetch: rss
+    rss: https://devblogs.microsoft.com/engineering-at-microsoft/feed/
+    homepage: https://devblogs.microsoft.com/engineering-at-microsoft/
+
+  - name: Datadog Engineering
+    company: Datadog
+    fetch: rss
+    rss: https://www.datadoghq.com/blog/engineering/index.xml
+    homepage: https://www.datadoghq.com/blog/engineering/
+
+  - name: Confluent Blog
+    company: Confluent
+    fetch: rss
+    rss: https://www.confluent.io/rss.xml
+    homepage: https://www.confluent.io/blog/
+
+  - name: Grab Tech
+    company: Grab
+    fetch: rss
+    rss: https://engineering.grab.com/feed.xml
+    homepage: https://engineering.grab.com
+
+  - name: Etsy Engineering
+    company: Etsy
+    fetch: rss
+    rss: https://www.etsy.com/codeascraft/rss
+    homepage: https://www.etsy.com/codeascraft
+
+  - name: PayPal Engineering
+    company: PayPal
+    fetch: rss
+    rss: https://medium.com/feed/paypal-tech
+    homepage: https://medium.com/paypal-tech
+
+  - name: Yelp Engineering
+    company: Yelp
+    fetch: rss
+    rss: https://engineeringblog.yelp.com/feed.xml
+    homepage: https://engineeringblog.yelp.com
+
+  - name: Google DeepMind Blog
+    company: Google DeepMind
+    fetch: rss
+    rss: https://deepmind.google/blog/feed
+    homepage: https://deepmind.google/blog/
+
+  - name: Amazon Science Blog
+    company: Amazon
+    fetch: rss
+    rss: https://www.amazon.science/index.rss
+    homepage: https://www.amazon.science/blog
+
+  - name: Apple Machine Learning
+    company: Apple
+    fetch: rss
+    rss: https://machinelearning.apple.com/rss.xml
+    homepage: https://machinelearning.apple.com/
+
+  - name: Databricks Engineering
+    company: Databricks
+    fetch: rss
+    rss: https://www.databricks.com/blog/category/engineering/feed.xml
+    homepage: https://www.databricks.com/blog/category/engineering
+
+  - name: NVIDIA Technical Blog
+    company: NVIDIA
+    fetch: rss
+    rss: https://developer.nvidia.com/blog/feed
+    homepage: https://developer.nvidia.com/blog/
+
+  - name: eBay Tech Blog
+    company: eBay
+    fetch: rss
+    rss: https://innovation.ebayinc.com/tech/rss/
+    homepage: https://innovation.ebayinc.com/tech/
+
+  - name: Tinder Engineering
+    company: Tinder
+    fetch: rss
+    rss: https://medium.com/feed/tinder-engineering
+    homepage: https://medium.com/tinder-engineering
+
+  - name: Instacart Tech
+    company: Instacart
+    fetch: rss
+    rss: https://tech.instacart.com/rss/
+    homepage: https://tech.instacart.com
+
+  - name: Salesforce Engineering
+    company: Salesforce
+    fetch: rss
+    rss: https://engineering.salesforce.com/feed/
+    homepage: https://engineering.salesforce.com
+
+  - name: Booking.com Tech
+    company: Booking.com
+    fetch: rss
+    rss: https://medium.com/feed/booking-com-development
+    homepage: https://medium.com/booking-com-development
+
+  - name: Walmart Global Tech
+    company: Walmart
+    fetch: rss
+    rss: https://medium.com/feed/walmartglobaltech
+    homepage: https://medium.com/walmartglobaltech
+
+  - name: Waymo Blog
+    company: Waymo
+    fetch: rss
+    rss: https://waymo.com/blog/rss.xml
+    homepage: https://waymo.com/blog/
+
+  - name: Coinbase Engineering
+    company: Coinbase
+    fetch: scrape
+    homepage: https://www.coinbase.com/blog/engineering
+
+  - name: Lyft Engineering
+    company: Lyft
+    fetch: rss
+    rss: https://eng.lyft.com/feed
+    homepage: https://eng.lyft.com
+    insecure: true # Medium-hosted; intermediate cert not in standard CA bundle
+
+  - name: Reddit u/ClaudeOfficial
+    company: Anthropic
+    fetch: reddit
+    reddit_user: ClaudeOfficial
+    limit: 3
+
+  - name: Claude Code Releases
+    company: Anthropic
+    fetch: rss
+    rss: https://github.com/anthropics/claude-code/releases.atom
+    homepage: https://github.com/anthropics/claude-code/releases
+
+  - name: Anthropic Engineering
+    company: Anthropic
+    fetch: scrape
+    homepage: https://www.anthropic.com/engineering
+
+  # ── Manual sources (no RSS/scrape — check homepages periodically) ──
+  - name: LinkedIn Engineering
+    company: LinkedIn
+    fetch: manual
+    homepage: https://engineering.linkedin.com/blog
+
+  - name: Uber Engineering
+    company: Uber
+    fetch: manual
+    homepage: https://eng.uber.com
+
+  - name: DoorDash Engineering
+    company: DoorDash
+    fetch: manual
+    homepage: https://doordash.engineering
+
+  - name: Robinhood Engineering
+    company: Robinhood
+    fetch: manual
+    homepage: https://robinhood.engineering
+
+  - name: Figma Engineering
+    company: Figma
+    fetch: playwright
+    homepage: https://www.figma.com/blog/
+
+  - name: Notion Tech
+    company: Notion
+    fetch: playwright
+    homepage: https://www.notion.com/blog/topic/tech
+
+  - name: Twitch Engineering
+    company: Twitch
+    fetch: manual
+    homepage: https://blog.twitch.tv/en/tags/engineering/
+
+  - name: Twitter / X Engineering
+    company: Twitter
+    fetch: manual
+    homepage: https://blog.x.com/engineering/en_us
+
+  - name: Google Cloud Blog
+    company: Google
+    fetch: playwright
+    homepage: https://cloud.google.com/blog/products/databases
+
+  - name: Amazon Builders Library
+    company: Amazon Web Services
+    fetch: manual
+    homepage: https://aws.amazon.com/builders-library/
+
+  - name: Meta AI Blog
+    company: Meta AI
+    fetch: playwright
+    homepage: https://ai.meta.com/blog/
+
+  - name: Anthropic Research
+    company: Anthropic
+    fetch: playwright
+    homepage: https://www.anthropic.com/research
+
+  - name: Quora Engineering
+    company: Quora
+    fetch: manual
+    homepage: https://quoraengineering.quora.com
+
+# ─── Keyword Configuration ────────────────────────────────────────────────────
+#
+# Scoring: strong keyword = 3pts, weak keyword in title = 2pts / in excerpt = 1pt,
+# title_keyword (title only) = 3pts. Needs >= min_relevance_score to pass.
+
+strong_keywords:
+
+title_keywords:
+
+
+weak_keywords:
+
+# Exclude articles whose title or excerpt contains any of these (case-insensitive)
+excluded_keywords:
+  - "introducing "
+  - "gpt-4"
+  - "gpt 4"
+  - "dall-e"
+  - "stable diffusion"
+  - "midjourney"
+  - "introducing our"
+  - "we're excited to announce"
+  - "we are excited to announce"
+  - "announcing "
+  - "launches "
+  - "launch of"
+  - "releasing "
+  - "release of"
+  - "now generally available"
+  - "now available"
+  - "product update"
+  - "software update"
+  - "free tier"
+  - "get started with"
+  - "hiring"
+  - "we're hiring"
+  - "career"
+  - "job opening"
+  - "apply now"
+  - "is here"
+  # Internal tooling / ops — low video potential
+  - backup catalog
+  - process metrics
+  - key suite
+  - observability pipeline
+
+# Exclude articles whose URL path contains any of these
+excluded_url_patterns:
+  - /careers/
+  - /jobs/
+  - /press/
+  - /announcement/
+  - /policy/
+  - /safety/
+
+# Relevance threshold — articles below this score are excluded
+min_relevance_score: 0
+
+# Rolling retention — articles older than this many days are pruned from the db on each merge
+db_retention_days: 200
+
+# Only consider articles published within this many days
+lookback_days: 200

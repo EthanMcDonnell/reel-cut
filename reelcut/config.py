@@ -13,8 +13,7 @@ from pydantic import BaseModel, Field, field_validator
 # ---------------------------------------------------------------------------
 
 class InputConfig(BaseModel):
-    footage: str
-    script: str | None = None   # optional — omit for scriptless silence-removal mode
+    footage: str = ""
     clips_folder: str | None = None
 
 
@@ -29,7 +28,8 @@ class CutsConfig(BaseModel):
     breath_amplitude_ratio: float = 0.15
     failure_tolerance_ratio: float = 0.02
     min_keep_ms: int = 50
-    min_retake_words: int = 0
+    repetition_detection: bool = False
+    min_retake_words: int = 4
     min_word_confidence: float = 0.5
     low_confidence_threshold: float = 0.8
     low_confidence_min_gap_ms: int = 500
@@ -83,6 +83,7 @@ class ImagesConfig(BaseModel):
     margin_pct: float = 5.0            # % of video height from edge to logo
 
 
+
 class WhisperConfig(BaseModel):
     model: str = "medium"
     compute_type: Literal["int8", "float16", "float32"] = "int8"
@@ -110,10 +111,14 @@ class WhisperConfig(BaseModel):
         return v
 
 
+class AssetsConfig(BaseModel):
+    location: str = "./assets"
+
+
 class ReelCutConfig(BaseModel):
-    input: InputConfig
     cuts: CutsConfig = Field(default_factory=CutsConfig)
     output: OutputConfig = Field(default_factory=OutputConfig)
+    assets: AssetsConfig = Field(default_factory=AssetsConfig)
     captions: CaptionsConfig = Field(default_factory=CaptionsConfig)
     images: ImagesConfig = Field(default_factory=ImagesConfig)
     whisper: WhisperConfig = Field(default_factory=WhisperConfig)
