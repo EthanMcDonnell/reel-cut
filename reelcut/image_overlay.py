@@ -26,7 +26,6 @@ def render_image_frames(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     w, h = resolution
-    target_w = int(w * config.size_pct / 100)
     fade_frames = int(config.fade_duration_s * fps)
     margin_px = int(h * config.margin_pct / 100)
 
@@ -37,6 +36,9 @@ def render_image_frames(
             logo = Image.open(cue.image_path).convert("RGBA")
         except Exception:
             continue
+
+        size_pct = config.logo_overlay_size_pct if cue.type == "logo" else config.overlay_size_pct
+        target_w = int(w * size_pct / 100)
 
         # Resize maintaining aspect ratio
         logo_h = int(target_w * logo.height / logo.width)

@@ -91,9 +91,9 @@ Outputs written to `assets/<slug>/`:
 
 Use `/produce-video <slug>`. See `.claude/commands/produce-video.md`.
 
-1. Runs `.venv/bin/reelcut timeline assets/<slug>/<slug>.captions.json` → output-timeline word positions
+1. Runs `.venv/bin/reelcut timeline assets/<slug>/<slug>.captions.json` → output-timeline word positions (orientation only — do not use these times in image entries)
 2. Reads script from Obsidian + manifest from `assets/<slug>/`
-3. Assigns image timings (screenshots + people), populates `images` array in captions.json
+3. Assigns image timings in **source-clip time** (from the `words` array in captions.json), populates `images` array
 4. Runs `.venv/bin/reelcut render config.yaml assets/<slug>/<slug>.captions.json` → `output/<slug>.mp4`
 
 ```bash
@@ -165,9 +165,11 @@ Entry point is `cli.py` (Typer). Config schema validated by Pydantic in `config.
 
 ## Configuration
 
-YAML config sections: `input`, `cuts`, `output`, `assets`, `captions`, `images`, `whisper`. See `config.yaml` for an annotated example.
+YAML config sections: `cuts`, `output`, `assets`, `captions`, `images`, `whisper`. See `config.yaml` for an annotated example.
 
-**Slug derivation**: pass `--slug <slug>` explicitly on any CLI command. Falls back to stem of `input.script` if no `--slug` provided. When neither is set, output goes to a timestamped subdirectory of `output.location`.
+**Never edit config.yaml during any phase.** All footage paths are passed via `--footage` CLI arg. config.yaml has no `input:` section — that block is only used internally by the `reelcut run` end-to-end command (not the phase-by-phase workflow).
+
+**Slug derivation**: always pass `--slug <slug>` explicitly. When no slug is given, output goes to a timestamped subdirectory of `output.location`.
 
 Key `images` fields (config.yaml):
 - `images.auto_detect` — match all capitalised transcript words against gilbarbara/logos manifest

@@ -45,16 +45,18 @@ Then read both output files:
 Work through the EDL and word list looking for the following, in order of priority:
 
 ### Multiple takes (genuine repeated content)
-Same sentence or phrase appearing twice in the `words` array (or Stage 2 of the debug) — the second occurrence is the intended take. Set `keep: false` on EDL entries covering the earlier take. The earlier take region in Stage 2 will have `[OUTTAKE]` marks on the words.
+Look for the same sentence or near-identical phrase (allow one differing word) appearing more than once across the `words` array and Stage 2 of the debug. The last occurrence is the intended take. Set `keep: false` on EDL entries covering all earlier occurrences.
 
 ### Bad silence cuts
 Cut segments that are very short (< 80ms) between two kept segments — may indicate a cut landing mid-word. Cross-reference the word timestamps: if a cut's `start`/`end` overlaps with a word's `start`/`end` in the `words` array, restore it (`keep: true`, `reason: "restored — mid-word cut"`).
 
-### Over-aggressive cuts
-Kept segments shorter than 200ms isolated between two cuts on both sides — likely a stray breath or word fragment. If no word in the `words` array falls in this segment, cut it (`keep: false`, `reason: "removed — fragment"`).
-
 ### Hallucinated words
 Words in the `words` array with very low alignment confidence (< 0.15) and no correspondence in the spoken content, especially at clip boundaries. Remove from the `words` array. Do not touch the EDL for this.
+
+### Mid-sentence cuts
+The pipeline protects against mid-sentence cuts below ~1500ms, so any cut appearing mid-sentence (word before the cut has no sentence-ending punctuation) is unexpected. Check the words on both sides:
+- If they form a continuous phrase AND the cut is < 800ms — likely a breath or hesitation, restore it (`keep: true`, `reason: "restored — mid-sentence cut"`).
+- If the cut is > 800ms — do not auto-restore. Flag it in the Step 5 report as needing a human listen: the gap may contain a restart attempt or noise that would sound worse restored than cut.
 
 ### Long unexplained cuts
 Cut segments > 3s in the middle of apparent speech (not at a natural paragraph break). Check Stage 2 of the debug — if the region contains speech words, restore with `keep: true` and add any missing words back.
@@ -71,7 +73,7 @@ Words present in Stage 1 (raw Whisper) with good confidence (≥ 0.5) that are a
 After edits, re-run preview to confirm:
 
 ```bash
-.venv/bin/reelcut preview-edl "assets/<video-slug>/<video-slug>.captions.json"
+.venv/bin/reelcut preview-edl "assets/<video-slug>/<actual-captions-filename>.captions.json"
 ```
 
 ## Step 5 — Report

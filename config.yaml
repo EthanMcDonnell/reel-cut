@@ -30,6 +30,9 @@ cuts:
                                    # is considered non-silent. Prevents single transients fragmenting cuts.
   min_keep_ms: 200                 # drop kept segments shorter than this after cutting. Prevents isolated
                                    # sub-word fragments ("a", "I") becoming their own clip.
+  mid_sentence_cut_floor_ms: 1500  # gaps below this duration (ms) are never cut unless the preceding word
+                                   # ends with sentence-ending punctuation (. ! ? , ; :). Prevents jump
+                                   # cuts landing mid-phrase from restarts or pauses mid-delivery.
   repetition_detection: false      # detect and cut repeated takes (earlier occurrence cut, last take kept)
   min_word_confidence: 0.5         # hard floor: if either adjacent word's alignment confidence is below
                                    # this, the gap is never cut regardless of duration.
@@ -38,9 +41,12 @@ cuts:
                                    # to qualify for a cut.
   low_confidence_min_gap_ms: 100   # minimum gap duration (ms) required to cut when adjacent word
                                    # confidence is between min_word_confidence and low_confidence_threshold.
-  preserve_start_s: 0.0            # seconds from the start of the clip where no cuts will be made.
+  preserve_start_s: 0.3            # seconds from the start of the clip where no cuts will be made.
                                    # Set e.g. 2.0 to leave the first 2 seconds untouched — useful when
                                    # the opening line has uncertain alignment or you want a clean intro.
+  preserve_end_s: 0.3              # seconds from the end of the clip where no cuts will be made.
+                                   # Set e.g. 1.0 to leave the final second untouched — useful when
+                                   # the closing line has uncertain alignment or you want a clean outro.
 
 
 output:
@@ -75,8 +81,9 @@ images:
   exclude: []                    # logo slugs to never match (last-resort override)
   # people and screenshots are specified in the .captions.json images array (filled in by LLM between phases)
   position: center               # top | center | bottom  (top keeps logos clear of center captions)
-  size_pct: 50                   # logo width as % of video width
-  display_duration_s: 2.0        # seconds to show logo after its keyword is first spoken
+  logo_overlay_size_pct: 40      # logo width as % of video width
+  overlay_size_pct: 50           # person/screenshot width as % of video width
+  display_duration_s: 1.0        # seconds to show logo after its keyword is first spoken
   fade_duration_s: 0             # fade in and out duration in seconds (0 to disable)
 
 

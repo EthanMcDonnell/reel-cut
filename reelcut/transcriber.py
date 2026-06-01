@@ -140,12 +140,14 @@ def align(
             # Drop alignment failures: wav2vec2 returns start=end=0 for words it
             # could not locate in the audio. These break gap detection when sorted.
             aligned_flat = [w for w in aligned_flat if not (w.start == 0.0 and w.end == 0.0)]
-            # Collapse expanded tokens back to original words, falling back to
-            # Whisper timestamps for any word that still couldn't be aligned.
-            aligned = _collapse_expanded_words(expansion, aligned_flat)
-            # Drop words where alignment confidence is too low — these are typically
-            # Whisper hallucinations that wav2vec2 couldn't locate in the audio.
             min_conf = config.min_alignment_confidence
+            # Collapse expanded tokens back to original words. Words that wav2vec2
+            # returned with confidence below min_conf fall back to their Whisper
+            # timestamps rather than being dropped — short function words ("at", "for")
+            # routinely score just below the threshold despite being real.
+            aligned = _collapse_expanded_words(expansion, aligned_flat, min_conf=min_conf)
+            # Final safety net: drop any word still below min_conf after collapse.
+            # These are words wav2vec2 couldn't locate AND Whisper's own score was low.
             if min_conf > 0:
                 aligned = [w for w in aligned if w.confidence >= min_conf]
             return aligned, f"WhisperX wav2vec2 ({device})"
@@ -271,12 +273,16 @@ def _expand_numeric_words(
 def _collapse_expanded_words(
     expansion: list[_Expansion],
     aligned: list[WordTimestamp],
+    min_conf: float = 0.0,
 ) -> list[WordTimestamp]:
     """Collapse WhisperX-aligned expanded tokens back to original words.
 
     For each original word:
-    - Non-numeric (n=1): if the current aligned token matches by text, use its
-      timestamp; otherwise the word was dropped — restore from original Whisper.
+    - Non-numeric (n=1): if the current aligned token matches by text AND its
+      confidence is >= min_conf, use its timestamp.  If the word is absent or
+      its confidence is too low, restore from the original Whisper timestamp so
+      the word isn't silently dropped (short function words like "at"/"for" often
+      align below threshold despite being real speech).
     - Numeric (n>1): greedily consume aligned tokens that match the expected spoken
       sub-words in sequence.  Any sub-words that were dropped by wav2vec2 are
       skipped.  If at least one sub-word aligned, the span of the matched tokens
@@ -290,8 +296,11 @@ def _collapse_expanded_words(
         n = len(exp.tokens)
 
         if n == 1:
-            # Non-numeric word — take the aligned token if text matches.
-            if ai < len(aligned) and _norm_word(aligned[ai].word) == _norm_word(exp.tokens[0]):
+            # Non-numeric word — take the aligned token if text matches and confidence
+            # is acceptable; otherwise restore the original Whisper timestamp.
+            if (ai < len(aligned)
+                    and _norm_word(aligned[ai].word) == _norm_word(exp.tokens[0])
+                    and aligned[ai].confidence >= min_conf):
                 w = aligned[ai]
                 ai += 1
                 result.append(WordTimestamp(
@@ -299,7 +308,12 @@ def _collapse_expanded_words(
                     confidence=w.confidence, clip_path=orig.clip_path,
                 ))
             else:
-                # Dropped by WhisperX — restore Whisper timestamp, don't advance ai.
+                # Absent or low-confidence alignment — restore Whisper timestamp.
+                # Advance ai past a matching-but-low-confidence token so later words
+                # don't consume it.
+                if (ai < len(aligned)
+                        and _norm_word(aligned[ai].word) == _norm_word(exp.tokens[0])):
+                    ai += 1
                 result.append(orig)
         else:
             # Numeric word expanded to n tokens — consume matching tokens greedily.

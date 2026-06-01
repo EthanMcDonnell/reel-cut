@@ -141,12 +141,14 @@ Wait for the saved file path before continuing.
 
 After the script is saved, capture visual evidence of every claim used that will also be used for the video.
 
-### Step 4.1: Extract verbatim snippets
+### Step 4.1: Extract verbatim snippets with context
 
-For each source URL used in the script, identify up to 6 verbatim phrases that were quoted, paraphrased, or used as factual support in the script. Each snippet must:
-- Appear **verbatim** in `FULL_CONTENT` and be explicitly referenced or used as supporting content for specific section of video
+For each source URL used in the script, identify up to 6 verbatim phrases that were quoted, paraphrased, or used as factual support in the script. For each snippet, also write a `context` — a short description of the specific script sentence or section it supports, written so it can be understood without re-reading the script. Each snippet must:
+- Appear **verbatim** in `FULL_CONTENT` and be explicitly referenced or used as supporting content for a specific section of the video
 - Be 10–80 characters — long enough to be unique on the page, short enough to match reliably
 - Be the **exact** phrase from the article (copy directly from `FULL_CONTENT`)
+
+The `context` field should answer "which script line does this screenshot visualise?" — e.g. `"Script line: 'GitHub is replacing PRUs with AI Credits' — supports the billing change claim"`. Keep it to one sentence.
 
 ### Step 4.2: Run the screenshot tool
 
@@ -156,7 +158,7 @@ For each source URL, run:
 .venv/bin/python scrape/screenshot.py \
   --url "<source_url>" \
   --output-dir "assets/<video-slug>/" \
-  --snippets '["verbatim phrase 1", "verbatim phrase 2", ...]'
+  --snippets '[{"text": "verbatim phrase 1", "context": "Script line: ..."}, {"text": "verbatim phrase 2", "context": "Script line: ..."}, ...]'
 ```
 
 Where `<video-slug>` matches the saved script filename (without `.md`).

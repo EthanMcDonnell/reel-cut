@@ -14,6 +14,7 @@ class ImageCue:
     start: float      # output timeline start (seconds)
     end: float        # output timeline end (seconds)
     image_path: str   # absolute path to resolved PNG
+    type: str = "logo"  # "logo" | "person" | "screenshot"
 
 
 def detect_image_cues(

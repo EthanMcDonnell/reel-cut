@@ -115,7 +115,7 @@ async def _block_ancestor(page, el) -> object:
     return el
 
 
-async def capture(url: str, output_dir: Path, snippets: list[str] | None = None) -> dict:
+async def capture(url: str, output_dir: Path, snippets: list[str | dict] | None = None) -> dict:
     try:
         from playwright.async_api import async_playwright
     except ImportError:
@@ -128,6 +128,7 @@ async def capture(url: str, output_dir: Path, snippets: list[str] | None = None)
     source_dir = output_dir / _url_prefix(url)
     source_dir.mkdir(parents=True, exist_ok=True)
     files = []
+    file_entries = []  # (fname, snippet_text, context) for each successfully captured snippet
 
     async with async_playwright() as pw:
         browser = await pw.chromium.launch(headless=True, args=STEALTH_ARGS)
@@ -147,20 +148,6 @@ async def capture(url: str, output_dir: Path, snippets: list[str] | None = None)
         except Exception:
             pass
 
-        # --- Title/heading screenshot ---
-        title_el = await _find_title(page)
-        fname = "title.png"
-        if title_el:
-            await title_el.screenshot(path=str(source_dir / fname))
-            files.append(fname)
-        else:
-            # Fallback: crop the top 250px of the viewport
-            await page.screenshot(
-                path=str(source_dir / fname),
-                clip={_KX: 0, _KY: 0, _KW: 390, _KH: 250},
-            )
-            files.append(fname)
-
         # --- Snippet-targeted paragraph screenshots ---
         # bytes([95,115,115,95,42,46,106,115]) == b'_ss_*.js'
         _js_dir = Path(__file__).parent
@@ -168,8 +155,18 @@ async def capture(url: str, output_dir: Path, snippets: list[str] | None = None)
             f.read_text() for f in sorted(_js_dir.glob(bytes([95, 115, 115, 95, 42, 46, 106, 115]).decode()))
         )
 
-        if snippets:
-            for i, snippet in enumerate(snippets, start=1):
+        snippet_texts = []
+        snippet_contexts = []
+        for s in (snippets or []):
+            if isinstance(s, dict):
+                snippet_texts.append(s.get("text", ""))
+                snippet_contexts.append(s.get("context", ""))
+            else:
+                snippet_texts.append(s)
+                snippet_contexts.append("")
+
+        if snippet_texts:
+            for i, (snippet, context) in enumerate(zip(snippet_texts, snippet_contexts), start=1):
                 anchor = snippet[:80].strip().lower()
                 try:
                     el = await page.evaluate_handle(_js_find, anchor)
@@ -209,6 +206,7 @@ async def capture(url: str, output_dir: Path, snippets: list[str] | None = None)
                     fname = f"snippet-{i:02d}.png"
                     await page.screenshot(path=str(source_dir / fname), clip=clip)
                     files.append(fname)
+                    file_entries.append((fname, snippet, context))
                     await page.evaluate(_js_unhighlight)
                 except Exception:
                     continue
@@ -216,15 +214,13 @@ async def capture(url: str, output_dir: Path, snippets: list[str] | None = None)
         await browser.close()
 
     subdir = source_dir.name
-    title_entry = [{"file": f"{subdir}/{files[0]}", "snippet": None}] if files else []
-    snippet_files = files[1:] if files else files
     snippet_entries = [
-        {"file": f"{subdir}/{f}", "snippet": s}
-        for f, s in zip(snippet_files, snippets or [])
+        {"file": f"{subdir}/{f}", "snippet": s, "context": c}
+        for f, s, c in file_entries
     ]
     source_entry = {
         "url": url,
-        "screenshots": title_entry + snippet_entries,
+        "screenshots": snippet_entries,
     }
     manifest_path = output_dir / "manifest.json"
     existing = json.loads(manifest_path.read_text()) if manifest_path.exists() else []

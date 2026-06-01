@@ -126,6 +126,7 @@ def generate_scriptless_edl(
     gaps: list[Gap],
     min_keep_ms: int = 50,
     speech_pad_ms: int = 30,
+    mid_sentence_cut_floor_ms: int = 3000,
 ) -> list[EDLEntry]:
     """Build an EDL with no script: keep all speech, cut at every marked gap.
 
@@ -134,6 +135,10 @@ def generate_scriptless_edl(
       - nxt.start - pad_s    (leave a safety margin before the next word starts)
 
     This prevents clipping word edges when Whisper timestamps are off by ±30 ms.
+
+    mid_sentence_cut_floor_ms: gaps below this duration are not cut unless the
+    preceding word ends with sentence-ending punctuation. Prevents jarring jump
+    cuts landing in the middle of a phrase (e.g. mid-sentence restarts).
     """
     if not words:
         return []
@@ -164,7 +169,9 @@ def generate_scriptless_edl(
             nxt = clip_words[i + 1]
             gap = gap_map.get((round(curr.end, 4), round(nxt.start, 4)))
 
-            if gap and gap.cut:
+            if gap and gap.cut and (
+                _is_sentence_end(curr) or gap.duration_ms >= mid_sentence_cut_floor_ms
+            ):
                 cut_start = gap.effective_start          # true silence onset
                 cut_end   = nxt.start - pad_s            # keep natural lead before next word
 

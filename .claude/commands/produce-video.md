@@ -30,7 +30,7 @@ Read all three:
 2. **Screenshot manifest**: `assets/<video-slug>/manifest.json`
 3. **captions.json**: `assets/<video-slug>/<actual-captions-filename>.captions.json` (the file found in Step 1)
 
-The manifest maps each `snippet-NN.png` filename to the verbatim source text it was captured from.
+The manifest maps each `snippet-NN.png` to two fields: `snippet` (verbatim source text captured from the article) and `context` (the script sentence or section it supports, written at produce-script time). Use `context` as the primary guide when locating the timestamp — it directly names the script line being visualised. Fall back to matching `snippet` text if `context` is absent.
 
 ## Step 3 — Assign image timings
 
@@ -38,7 +38,7 @@ Image timings are stored in **source-clip time** (same as `words` and `edl`). Th
 
 Work through every screenshot in the manifest (skip `body.png`):
 
-1. Locate the snippet text in the script — find the sentence or clause it directly supports
+1. Use the `context` field to identify the script sentence or section the screenshot supports. If `context` is absent, locate the `snippet` text in the script instead
 2. Find the words covering that moment in the `words` array of captions.json — use their `start`, `end`, and `source_clip` values
 3. Set the image to span 3–4 seconds centred on that moment, using source-clip timestamps from the `words` array. Cap at the sentence duration if shorter
 4. Set `type: "screenshot"`, `source_clip` to the `source_clip` from the anchor words, and `path` to the absolute path: `/Users/ethanmcdonnell/Documents/reel-cut/assets/<video-slug>/<filename>`

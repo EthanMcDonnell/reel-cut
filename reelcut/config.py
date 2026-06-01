@@ -12,11 +12,6 @@ from pydantic import BaseModel, Field, field_validator
 # Schema
 # ---------------------------------------------------------------------------
 
-class InputConfig(BaseModel):
-    footage: str = ""
-    clips_folder: str | None = None
-
-
 class CutsConfig(BaseModel):
     min_silence_ms: int = 100
     min_breath_ms: int = 60
@@ -30,10 +25,12 @@ class CutsConfig(BaseModel):
     min_keep_ms: int = 50
     repetition_detection: bool = False
     min_retake_words: int = 4
+    mid_sentence_cut_floor_ms: int = 3000
     min_word_confidence: float = 0.5
     low_confidence_threshold: float = 0.8
     low_confidence_min_gap_ms: int = 500
     preserve_start_s: float = 0.0
+    preserve_end_s: float = 0.0
 
 
 class OutputConfig(BaseModel):
@@ -77,7 +74,8 @@ class ImagesConfig(BaseModel):
     keywords: list[str] = []           # explicit logo slugs to always match regardless of capitalization
     exclude: list[str] = []            # logo slugs to never match
     position: Literal["top", "center", "bottom"] = "top"
-    size_pct: float = 25.0             # logo width as % of video width
+    logo_overlay_size_pct: float = 25.0  # logo width as % of video width
+    overlay_size_pct: float = 50.0     # person/screenshot width as % of video width
     display_duration_s: float = 2.0
     fade_duration_s: float = 0.25
     margin_pct: float = 5.0            # % of video height from edge to logo

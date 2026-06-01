@@ -42,7 +42,8 @@ err_console = Console(stderr=True)
 def transcribe(
     config_path: str = typer.Argument("config.yaml", help="Path to config.yaml"),
     slug: str | None = typer.Option(None, "--slug", help="Video slug (overrides script-derived slug)."),
-    footage: str | None = typer.Option(None, "--footage", help="Path to footage file or folder (overrides config)."),
+    footage: str | None = typer.Option(None, "--footage", help="Path to footage file or folder."),
+    clips_folder: str | None = typer.Option(None, "--clips-folder", help="Folder of ordered clips to stitch into one captions doc."),
     verbose: bool = typer.Option(False, "--verbose", "-v"),
 ) -> None:
     """Phase 1: transcribe footage → .captions.json files ready for LLM editing."""
@@ -53,22 +54,16 @@ def transcribe(
         err_console.print(f"[red]Config error:[/red] {exc}")
         raise typer.Exit(1)
 
-    if footage:
-        cfg.input.footage = footage
-
-    if not cfg.input.footage:
-        err_console.print("[red]Error:[/red] no footage specified — pass --footage <path> or set input.footage in config.yaml")
+    if not footage and not clips_folder:
+        err_console.print("[red]Error:[/red] no footage specified — pass --footage <path> or --clips-folder <folder>")
         raise typer.Exit(1)
 
     slug = _resolve_slug(cfg, slug)
     output_dir = _assets_or_ts_dir(cfg, slug)
 
-    input_folder = Path(cfg.input.footage)
-    clips_folder = cfg.input.clips_folder
-
     if clips_folder:
         # Multi-clip mode: all clips → one captions doc
-        clips = _collect_clips(cfg)
+        clips = _collect_clips(clips_folder)
         stem = slug or Path(clips[0]).stem
         captions_path = output_dir / f"{stem}.captions.json"
         console.rule(f"[bold]Multi-clip → {captions_path.name}[/bold]")
@@ -76,35 +71,36 @@ def transcribe(
         from .captions_doc import save_captions_doc
         save_captions_doc(doc, captions_path)
         console.print(f"[green]Captions doc →[/green] {captions_path}")
-    elif input_folder.is_dir():
-        # Folder mode: each video file → one captions doc
-        videos = _list_videos(input_folder)
-        if not videos:
-            console.print(f"[yellow]No video files found in {input_folder}[/yellow]")
-            raise typer.Exit(0)
-        console.print(f"[bold]{len(videos)} video(s) to transcribe[/bold]\n")
-        for i, video in enumerate(videos, 1):
-            console.rule(f"[bold]{i}/{len(videos)}[/bold] {video.name}")
-            cfg.input.footage = str(video)
-            captions_path = output_dir / f"{video.stem}.captions.json"
-            try:
-                doc = _phase1(cfg, [str(video)], output_dir, verbose)
-                from .captions_doc import save_captions_doc
-                save_captions_doc(doc, captions_path)
-                console.print(f"[green]Captions doc →[/green] {captions_path}")
-            except Exception as exc:
-                err_console.print(f"[red]Failed:[/red] {video.name} — {exc}")
-                if verbose:
-                    err_console.print(traceback.format_exc())
     else:
-        # Single video
-        clips = [str(input_folder)]
-        stem = slug or input_folder.stem
-        captions_path = output_dir / f"{stem}.captions.json"
-        doc = _phase1(cfg, clips, output_dir, verbose)
-        from .captions_doc import save_captions_doc
-        save_captions_doc(doc, captions_path)
-        console.print(f"[green]Captions doc →[/green] {captions_path}")
+        input_folder = Path(footage)
+        if input_folder.is_dir():
+            # Folder mode: each video file → one captions doc
+            videos = _list_videos(input_folder)
+            if not videos:
+                console.print(f"[yellow]No video files found in {input_folder}[/yellow]")
+                raise typer.Exit(0)
+            console.print(f"[bold]{len(videos)} video(s) to transcribe[/bold]\n")
+            for i, video in enumerate(videos, 1):
+                console.rule(f"[bold]{i}/{len(videos)}[/bold] {video.name}")
+                captions_path = output_dir / f"{video.stem}.captions.json"
+                try:
+                    doc = _phase1(cfg, [str(video)], output_dir, verbose)
+                    from .captions_doc import save_captions_doc
+                    save_captions_doc(doc, captions_path)
+                    console.print(f"[green]Captions doc →[/green] {captions_path}")
+                except Exception as exc:
+                    err_console.print(f"[red]Failed:[/red] {video.name} — {exc}")
+                    if verbose:
+                        err_console.print(traceback.format_exc())
+        else:
+            # Single video
+            clips = [str(input_folder)]
+            stem = slug or input_folder.stem
+            captions_path = output_dir / f"{stem}.captions.json"
+            doc = _phase1(cfg, clips, output_dir, verbose)
+            from .captions_doc import save_captions_doc
+            save_captions_doc(doc, captions_path)
+            console.print(f"[green]Captions doc →[/green] {captions_path}")
 
     console.print(
         "\n[bold]Next:[/bold] edit the .captions.json (fix captions, add images entries), "
@@ -154,6 +150,7 @@ def render(
 @app.command()
 def run(
     config_path: str = typer.Argument("config.yaml", help="Path to config.yaml"),
+    footage: str = typer.Option(..., "--footage", help="Path to folder of footage files."),
     slug: str | None = typer.Option(None, "--slug", help="Video slug (overrides script-derived slug)."),
     verbose: bool = typer.Option(False, "--verbose", "-v"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Run phase 1 only (no render)."),
@@ -167,9 +164,9 @@ def run(
         err_console.print(f"[red]Config error:[/red] {exc}")
         raise typer.Exit(1)
 
-    input_folder = Path(cfg.input.footage)
+    input_folder = Path(footage)
     if not input_folder.is_dir():
-        err_console.print(f"[red]Error:[/red] input.footage must be a folder: {input_folder}")
+        err_console.print(f"[red]Error:[/red] --footage must be a folder: {input_folder}")
         raise typer.Exit(1)
 
     videos = _list_videos(input_folder)
@@ -190,7 +187,6 @@ def run(
     all_warnings: list[str] = []
     for i, video in enumerate(videos, 1):
         console.rule(f"[bold]{i}/{len(videos)}[/bold] {video.name}")
-        cfg.input.footage = str(video)
         stem = slug or video.stem
         out_path = vid_out_dir / f"{stem}.mp4"
         cap_path = assets_dir / f"{stem}.captions.json"
@@ -409,7 +405,7 @@ def _phase1(cfg, clips: list[str], output_dir: Path, verbose: bool):
         console.print("[bold]Step 5[/bold] Building EDL…")
         t = time.perf_counter()
         warnings: list[str] = []
-        edl = generate_scriptless_edl(all_words, gaps, min_keep_ms=cfg.cuts.min_keep_ms, speech_pad_ms=cfg.cuts.speech_pad_ms)
+        edl = generate_scriptless_edl(all_words, gaps, min_keep_ms=cfg.cuts.min_keep_ms, speech_pad_ms=cfg.cuts.speech_pad_ms, mid_sentence_cut_floor_ms=cfg.cuts.mid_sentence_cut_floor_ms)
 
         if retake_ranges:
             from .edl import apply_retake_cuts
@@ -595,6 +591,7 @@ def _resolve_image_spec(spec, display_duration_s: float):
             start=spec.start,
             end=spec.end,
             image_path=str(img),
+            type="person",
         )
 
     elif spec.type == "screenshot":
@@ -609,6 +606,7 @@ def _resolve_image_spec(spec, display_duration_s: float):
             start=spec.start,
             end=spec.end,
             image_path=str(p),
+            type="screenshot",
         )
 
     else:
@@ -644,15 +642,12 @@ def _list_videos(folder: Path) -> list[Path]:
     )
 
 
-def _collect_clips(cfg) -> list[str]:
-    clips_folder = cfg.input.clips_folder
-    if clips_folder:
-        folder = Path(clips_folder)
-        clips = _list_videos(folder)
-        if not clips:
-            raise typer.BadParameter(f"No video files found in clips_folder: {folder}")
-        return [str(c) for c in clips]
-    return [cfg.input.footage]
+def _collect_clips(clips_folder: str) -> list[str]:
+    folder = Path(clips_folder)
+    clips = _list_videos(folder)
+    if not clips:
+        raise typer.BadParameter(f"No video files found in --clips-folder: {folder}")
+    return [str(c) for c in clips]
 
 
 def _build_edl_remap(edl: list):

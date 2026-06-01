@@ -275,7 +275,10 @@ def _build_gaps(
         next_conf = words[i + 1].confidence
         min_conf = min(prev_conf, next_conf)
 
+        clip_duration_s = len(audio) / sr
         if config.preserve_start_s > 0 and effective_start < config.preserve_start_s:
+            should_cut = False
+        elif config.preserve_end_s > 0 and gap_end > clip_duration_s - config.preserve_end_s:
             should_cut = False
         elif min_conf < config.min_word_confidence:
             # Hard floor: adjacent word too uncertain to trust the gap boundary
