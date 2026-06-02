@@ -49,7 +49,11 @@ def transcribe(wav_path: str | Path, config: WhisperConfig) -> list[WordTimestam
         device=device,
         cpu_threads=os.cpu_count() or 4,
     )
+    return _transcribe_with_model(model, wav_path, config)
 
+
+def _transcribe_with_model(model, wav_path: Path, config: WhisperConfig) -> list[WordTimestamp]:
+    """Run transcription on an already-loaded WhisperModel."""
     segments, _ = model.transcribe(
         str(wav_path),
         language=config.language,
@@ -57,6 +61,7 @@ def transcribe(wav_path: str | Path, config: WhisperConfig) -> list[WordTimestam
         beam_size=config.beam_size,
         initial_prompt=config.initial_prompt,
         condition_on_previous_text=config.condition_on_previous_text,
+        no_speech_threshold=config.no_speech_threshold,
         vad_filter=False,         # disabled: Silero VAD (PyTorch) conflicts with CTranslate2 OpenMP on macOS
     )
 
@@ -223,6 +228,97 @@ def filter_silent_words(
             kept.append(w)
 
     return kept
+
+
+def retranscribe_wide_words(
+    words: list[WordTimestamp],
+    wav_path: str | Path,
+    config: WhisperConfig,
+    wide_threshold_s: float = 1.5,
+    clips_dir: Path | None = None,
+) -> list[WordTimestamp]:
+    """Re-run Whisper on wide-word windows to surface hidden false-start words.
+
+    For each word whose aligned span >= wide_threshold_s, extracts that audio
+    slice, transcribes it independently with a lower no_speech_threshold, and
+    replaces the original word with whatever is found. If nothing is found, the
+    original word is kept unchanged.
+
+    Must be called after align() and before VAD filtering so word spans are still
+    at their full WhisperX-assigned width.
+    """
+    import tempfile
+
+    import soundfile as sf
+    from faster_whisper import WhisperModel
+
+    wav_path = Path(wav_path)
+    audio, sample_rate = sf.read(str(wav_path))
+
+    wide_words = [w for w in words if (w.end - w.start) >= wide_threshold_s]
+    if not wide_words:
+        return list(words)
+
+    # Load model once for all wide-word re-runs
+    device = "cuda" if config.compute_type == "float16" else "cpu"
+    model = WhisperModel(
+        config.model,
+        compute_type=config.compute_type,
+        device=device,
+        cpu_threads=os.cpu_count() or 4,
+    )
+    retranscribe_config = config.model_copy(
+        update={"no_speech_threshold": config.retranscribe_no_speech_threshold}
+    )
+
+    if clips_dir is not None:
+        clips_dir.mkdir(parents=True, exist_ok=True)
+
+    result: list[WordTimestamp] = []
+    for word in words:
+        span = word.end - word.start
+        if span < wide_threshold_s:
+            result.append(word)
+            continue
+
+        start_sample = int(word.start * sample_rate)
+        end_sample = int(word.end * sample_rate)
+        chunk = audio[start_sample:end_sample]
+
+        if len(chunk) == 0:
+            result.append(word)
+            continue
+
+        if clips_dir is not None:
+            safe_word = word.word.strip().lstrip("-").rstrip(".,!?;:\"'") or "word"
+            clip_name = f"{word.start:.3f}_{safe_word}.wav"
+            tmp_path = clips_dir / clip_name
+            sf.write(str(tmp_path), chunk, sample_rate)
+            cleanup = False
+        else:
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+                tmp_path = Path(tmp.name)
+            sf.write(str(tmp_path), chunk, sample_rate)
+            cleanup = True
+
+        try:
+            found = _transcribe_with_model(model, tmp_path, retranscribe_config)
+        except Exception:
+            found = []
+        finally:
+            if cleanup:
+                tmp_path.unlink(missing_ok=True)
+
+        if found:
+            for w in found:
+                w.start += word.start
+                w.end += word.start
+                w.clip_path = word.clip_path
+            result.extend(found)
+        else:
+            result.append(word)
+
+    return result
 
 
 # ---------------------------------------------------------------------------

@@ -24,9 +24,7 @@ The user drops their footage into `assets/<video-slug>/` before running this com
 
 Do not edit config.yaml.
 
-Output goes to `assets/<slug>/`:
-- `assets/<slug>/<slug>.captions.json`
-- `assets/<slug>/<slug>.debug.txt`
+Output goes to `assets/<slug>/`, named after the footage stem (e.g. `Teleprompter-2026-01-06_20-59-13.captions.json`). The transcription step prints the actual path.
 
 ## Step 3 — Inspect the EDL
 

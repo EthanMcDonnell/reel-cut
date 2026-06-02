@@ -24,34 +24,33 @@ Use this to understand what is spoken when in the final video. **Do not use thes
 
 ## Step 2 — Read inputs
 
-Read all three:
+Read both:
 
-1. **Script**: `/Users/ethanmcdonnell/Library/Mobile Documents/iCloud~md~obsidian/Documents/Vault/Videos/Videos To Do/<video-slug>.md`
-2. **Screenshot manifest**: `assets/<video-slug>/manifest.json`
-3. **captions.json**: `assets/<video-slug>/<actual-captions-filename>.captions.json` (the file found in Step 1)
+1. **Screenshot manifest**: `assets/<video-slug>/manifest.json`
+2. **captions.json**: `assets/<video-slug>/<actual-captions-filename>.captions.json` (the file found in Step 1)
 
-The manifest maps each `snippet-NN.png` to two fields: `snippet` (verbatim source text captured from the article) and `context` (the script sentence or section it supports, written at produce-script time). Use `context` as the primary guide when locating the timestamp — it directly names the script line being visualised. Fall back to matching `snippet` text if `context` is absent.
+The manifest maps each `snippet-NN.png` to two fields: `snippet` (verbatim source text captured from the article) and `context` (the script sentence or section it supports, written at produce-script time). Use `context` as the primary guide when locating the timestamp — it directly names the script line being visualised. Fall back to matching words from `snippet` against the `words` array if `context` is absent.
 
 ## Step 3 — Assign image timings
 
 Image timings are stored in **source-clip time** (same as `words` and `edl`). The renderer remaps them to output-timeline at render time.
 
-Work through every screenshot in the manifest (skip `body.png`):
+Work through every screenshot in the manifest (skip `body.png`). **Skip any screenshot whose `context` or `snippet` cannot be matched to words in the `words` array — do not invent a placement.**
 
-1. Use the `context` field to identify the script sentence or section the screenshot supports. If `context` is absent, locate the `snippet` text in the script instead
+1. Use the `context` field to identify the moment the screenshot supports. If `context` is absent, match words from `snippet` against the `words` array
 2. Find the words covering that moment in the `words` array of captions.json — use their `start`, `end`, and `source_clip` values
 3. Set the image to span 3–4 seconds centred on that moment, using source-clip timestamps from the `words` array. Cap at the sentence duration if shorter
-4. Set `type: "screenshot"`, `source_clip` to the `source_clip` from the anchor words, and `path` to the absolute path: `/Users/ethanmcdonnell/Documents/reel-cut/assets/<video-slug>/<filename>`
+4. Set `type: "screenshot"`, `source_clip` to the `source_clip` from the anchor words, and `path` to the absolute path: `/Users/ethanmcdonnell/Documents/reel-cut/assets/<video-slug>/<file>` where `<file>` is the `file` field from the manifest (may include a subdirectory)
 
-Then scan the script for named people (founders, executives, engineers mentioned by name). For each:
-- Find where their name is spoken in the `words` array — use those source-clip timestamps
+Then scan the `words` array for person names (consecutive capitalised words that form a full name, e.g. "Reed Hastings", "Sam Altman"). For each name found:
+- Use the source-clip timestamps from those words
 - Add a `type: "person"` entry with `name: "<Full Name>"`, `source_clip` from the anchor word, and `path: ""` — the renderer resolves Wikipedia headshots automatically
 
 Build the complete `images` array — one entry per screenshot, plus any person entries.
 
 ## Step 4 — Update captions.json
 
-Write the `images` array into `assets/<video-slug>/<video-slug>.captions.json` using the Edit tool. Do not modify `edl` or `words`.
+Write the `images` array into the captions file found in Step 1 using the Edit tool. Do not modify `edl` or `words`.
 
 Example entries:
 ```json

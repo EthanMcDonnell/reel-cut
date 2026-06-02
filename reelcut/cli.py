@@ -341,7 +341,14 @@ def _phase1(cfg, clips: list[str], output_dir: Path, verbose: bool):
             align_ok = "Whisper timestamps" not in align_method
             align_color = "green" if align_ok else "yellow"
             console.print(f"  Alignment: [{align_color}]{align_method}[/{align_color}]")
-            _warn_wide_words(words, console)
+            wide_count = sum(1 for w in words if (w.end - w.start) >= cfg.whisper.wide_word_threshold_s)
+            _warn_wide_words(words, console, cfg.whisper.wide_word_threshold_s)
+            if wide_count:
+                from .transcriber import retranscribe_wide_words
+                console.print(f"  Retranscribing {wide_count} wide-word window(s)…")
+                clips_dir = output_dir / "retranscribe-clips"
+                words = retranscribe_wide_words(words, wav, cfg.whisper, cfg.whisper.wide_word_threshold_s, clips_dir)
+                _warn_wide_words(words, console, cfg.whisper.wide_word_threshold_s)
 
             before = len(words)
             try:
@@ -711,8 +718,8 @@ def _remap_kept_words(words: list, edl: list) -> list:
 _WIDE_WORD_THRESHOLD_S = 1.5
 
 
-def _warn_wide_words(words: list, console: Console) -> None:
-    wide = [(w, w.end - w.start) for w in words if (w.end - w.start) >= _WIDE_WORD_THRESHOLD_S]
+def _warn_wide_words(words: list, console: Console, threshold_s: float = _WIDE_WORD_THRESHOLD_S) -> None:
+    wide = [(w, w.end - w.start) for w in words if (w.end - w.start) >= threshold_s]
     if not wide:
         return
     console.print(f"  [yellow]⚠ {len(wide)} suspiciously wide word(s) — likely missed speech:[/yellow]")

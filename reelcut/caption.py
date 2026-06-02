@@ -19,6 +19,7 @@ _WORDS_PER_LINE = 10
 _MARGIN = 40        # fallback; overridden at render time by config.margin_pct
 _SHADOW_OFFSET = 3  # solid black drop shadow shift (px)
 _LINE_SPACING = 10  # px between wrapped rows
+_CAPTION_GRACE_S = 0.3  # seconds caption stays visible after the last word in a line ends
 
 
 
@@ -251,8 +252,27 @@ def _best_face_index(path: str) -> int:
 def _group_into_lines(
     words: list[WordTimestamp],
     words_per_line: int,
+    gap_break_s: float = _CAPTION_GRACE_S,
 ) -> list[list[WordTimestamp]]:
-    return [words[i : i + words_per_line] for i in range(0, len(words), words_per_line)]
+    """Group words into display lines. Breaks on word-count limit OR a timing gap >= gap_break_s.
+
+    gap_break_s matches _CAPTION_GRACE_S in _active_word_at: any gap that would cause the
+    caption to expire and reappear gets a line break so the reappearing text is new content.
+    """
+    if not words:
+        return []
+    lines: list[list[WordTimestamp]] = []
+    current: list[WordTimestamp] = [words[0]]
+    for w in words[1:]:
+        gap = w.start - current[-1].end
+        if len(current) >= words_per_line or gap >= gap_break_s:
+            lines.append(current)
+            current = [w]
+        else:
+            current.append(w)
+    if current:
+        lines.append(current)
+    return lines
 
 
 def _build_frame_cache(
@@ -296,6 +316,6 @@ def _active_word_at(words: list[WordTimestamp], t: float) -> int | None:
     if last_idx is None:
         return None
     # Hide after a short grace period past the last word's end
-    if t > words[last_idx].end + 0.3:
+    if t > words[last_idx].end + _CAPTION_GRACE_S:
         return None
     return last_idx

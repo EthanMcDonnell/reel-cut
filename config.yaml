@@ -88,21 +88,24 @@ images:
 
 
 
+# ---------------------------------------------------------------------------
+# Whisper / transcription
+# ---------------------------------------------------------------------------
 whisper:
-  model: large-v2
-  compute_type: int8               # int8 (CPU) | float16 (GPU)
-  language: en
-  beam_size: 4                     # 1 = greedy/fastest but error-prone; 5 = beam search, considers multiple
-                                   # candidates before committing to a word — significantly reduces errors
-                                   # on numbers, proper nouns, and ambiguous phrases. 2-3x slower than 1.
-  initial_prompt: "Software engineering, AI, 6 months, 12 months, years of experience, developer, product"
-                                   # primes Whisper toward expected vocabulary — significantly improves
-                                   # accuracy on numbers and domain terms. Update to match your content.
-  condition_on_previous_text: false # false = each Whisper segment is decoded independently, preventing a
-                                   # missed/hallucinated segment from derailing the rest of the transcript.
-                                   # true = segments share context, slightly more fluent but hallucinations
-                                   # can cascade across segment boundaries.
-  min_alignment_confidence: 0.1   # WhisperX wav2vec2 alignment score below which a word is dropped.
-                                   # Scores near 0 (e.g. 0.03) mean wav2vec2 could not locate the word in
-                                   # the audio — a strong signal the word was hallucinated by Whisper.
-                                   # Raise (e.g. 0.2) to be more aggressive; set 0.0 to disable.
+  model: large-v2                  # default: medium
+  compute_type: int8               # default: int8  |  int8 (CPU) | float16 (GPU)
+  language: en                     # default: en
+  beam_size: 4                     # default: 1  |  1 = greedy/fastest but error-prone; higher = beam search,
+                                   # considers multiple candidates — reduces errors on numbers and proper nouns.
+  initial_prompt: "Software engineering, AI, 6 months, 12 months, years of experience, developer"
+                                   # default: null  |  primes Whisper toward expected vocabulary. Update to match content.
+  condition_on_previous_text: false # default: false  |  true = segments share context (more fluent but
+                                   # hallucinations can cascade); false = each segment decoded independently.
+  min_alignment_confidence: 0.1   # default: 0.1  |  WhisperX wav2vec2 score below which a word is dropped.
+                                   # Raise (e.g. 0.2) to drop more; set 0.0 to disable.
+  no_speech_threshold: 0.6        # default: 0.6  |  faster-whisper threshold for skipping silent segments.
+                                   # Lower to force transcription of uncertain segments.
+  retranscribe_no_speech_threshold: 0.3  # default: 0.3  |  used when re-running Whisper on wide-word windows
+                                   # to surface false starts hidden in large aligned spans.
+  wide_word_threshold_s: 1.0      # default: 1.5  |  aligned word span (seconds) above which a word triggers
+                                   # retranscription. Lower (e.g. 1.0) to catch more false starts.

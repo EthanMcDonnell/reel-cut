@@ -36,7 +36,7 @@ Determine the prompt type and resolve it to a `topic_package`. Try each check in
 
   This uses the correct fetch method (rss/scrape/playwright/reddit) based on the source config. Use the returned `title`, `content`, `company`, and `series` fields as the research base.
 - If `single_scrape.py` returns an error or empty content, fall back to WebFetch as a last resort.
-- Set `series` from the returned `series` field if present; otherwise infer from content (tbbt for eng blog posts, updates for Claude/AI tooling, misc otherwise).
+- Set `series` from the returned `series` field if present; otherwise infer from content (tbbt for eng blog posts, updates for Claude/AI tooling).
 - **Mark as read:** if the article's URL matches an entry in the tbbt or updates table, run: `.venv/bin/python scrape/query.py mark-done <series> "<url>"`
 
 ### 2. If the prompt looks like a DB reference (article ID, title fragment, or `db:<keyword>`)
@@ -135,7 +135,11 @@ Pass the full `topic_package` and confirmed hook (PATTERN + TEXT). The skill han
 
 Wait for the saved file path before continuing.
 
-**If the prompt resolved from a misc series file and that file has a `status:` frontmatter field:** update it from `new` to `done` using the Edit tool.
+**Mark the videos ideas `status:` frontmatter field:** update it from `new` to `done` using the Edit tool.
+
+## Stage 3.5 — Stop-Slop Review
+
+Invoke the `stop-slop` skill on the saved script file as a dedicated pass. Its sole job is catching slop patterns missed during writing. Apply all fixes directly to the saved file.
 
 ## Stage 4 — Source Screenshots
 
@@ -147,6 +151,8 @@ For each source URL used in the script, identify up to 6 verbatim phrases that w
 - Appear **verbatim** in `FULL_CONTENT` and be explicitly referenced or used as supporting content for a specific section of the video
 - Be 10–80 characters — long enough to be unique on the page, short enough to match reliably
 - Be the **exact** phrase from the article (copy directly from `FULL_CONTENT`)
+
+**Good snippet candidates:** direct quotes from named people, key statistics or numbers, specific named claims (dollar figures, dates, product names). **Skip:** narrative or process descriptions — even if used in the script, a step-by-step explanation doesn't make useful visual evidence.
 
 The `context` field should answer "which script line does this screenshot visualise?" — e.g. `"Script line: 'GitHub is replacing PRUs with AI Credits' — supports the billing change claim"`. Keep it to one sentence.
 

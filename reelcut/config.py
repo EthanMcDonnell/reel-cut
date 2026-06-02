@@ -90,6 +90,9 @@ class WhisperConfig(BaseModel):
     initial_prompt: str | None = None
     condition_on_previous_text: bool = False
     min_alignment_confidence: float = 0.1
+    no_speech_threshold: float = 0.6
+    retranscribe_no_speech_threshold: float = 0.3
+    wide_word_threshold_s: float = 1.5
 
     @field_validator("compute_type")
     @classmethod
