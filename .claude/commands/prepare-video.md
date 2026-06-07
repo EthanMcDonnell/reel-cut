@@ -1,12 +1,12 @@
 ---
 name: prepare-video
-description: Phase 1 — Wire footage path into config, run reelcut transcription, then review and fix EDL anomalies (bad cuts, multiple takes, silence issues) in captions.json.
+description: Wire footage path into config, run reelcut transcription, then review and fix EDL anomalies (bad cuts, multiple takes, silence issues) in captions.json.
 tools: Read, Edit, Bash
 model: sonnet
 permissionMode: default
 ---
 
-Runs reelcut Phase 1 transcription for a video slug, then reviews and corrects anomalies in the resulting captions.json.
+Runs reelcut transcription for a video slug, then reviews and corrects anomalies in the resulting captions.json.
 
 Arguments: `$ARGUMENTS` — expected format: `<video-slug>`
 
@@ -21,8 +21,6 @@ The user drops their footage into `assets/<video-slug>/` before running this com
 ```bash
 .venv/bin/reelcut transcribe config.yaml --slug <video-slug> --footage "assets/<video-slug>/"
 ```
-
-Do not edit config.yaml.
 
 Output goes to `assets/<slug>/`, named after the footage stem (e.g. `Teleprompter-2026-01-06_20-59-13.captions.json`). The transcription step prints the actual path.
 
@@ -43,7 +41,7 @@ Then read both output files:
 Work through the EDL and word list looking for the following, in order of priority:
 
 ### Multiple takes (genuine repeated content)
-Look for the same sentence or near-identical phrase (allow one differing word) appearing more than once across the `words` array and the aligned debug file (`*.debug.aligned.txt`). The last occurrence is the intended take. Set `keep: false` on EDL entries covering all earlier occurrences.
+Look for the same sentence or near-identical phrase (allow one differing word) appearing more than once across the `words` array and the aligned debug file (`*.debug.post-vad.txt`). The last occurrence is the intended take. Set `keep: false` on EDL entries covering all earlier occurrences, and remove their words from the `words` array (see editing rules).
 
 ### Multiple takes packed inside a single KEEP segment
 If all occurrences of a repeated phrase fall within the time range of a single KEEP EDL entry (no existing entry boundary to flip), the pipeline could not split them automatically. Fix it manually:
@@ -68,16 +66,16 @@ The pipeline protects against mid-sentence cuts below ~1500ms, so any cut appear
 - If the cut is > 800ms — do not auto-restore. Flag it in the Step 5 report as needing a human listen: the gap may contain a restart attempt or noise that would sound worse restored than cut.
 
 ### Long unexplained cuts
-Cut segments > 3s in the middle of apparent speech (not at a natural paragraph break). Check `*.debug.aligned.txt` — if the region contains speech words, restore with `keep: true` and add any missing words back.
+Cut segments > 3s in the middle of apparent speech (not at a natural paragraph break). Check `*.debug.post-vad.txt` — if the region contains speech words, restore with `keep: true` and add any missing words back.
 
 ### Dropped alignment words
-Words present in `*.debug.raw.txt` (raw Whisper) with good confidence (≥ 0.5) that are absent from `*.debug.aligned.txt` and the `words` array — dropped by WhisperX alignment, not hallucinations. Common victims: short function words ('at', 'for', 'a', 'the') between two longer words. If the word clearly belongs in the sentence and was spoken, add it back to the `words` array with estimated timestamps by splitting the gap evenly between the surrounding words. Use the raw timestamps as a cross-check.
+Words present in `*.debug.raw.txt` (raw Whisper) with good confidence (≥ 0.5) that are absent from `*.debug.post-vad.txt` and the `words` array — dropped by WhisperX alignment, not hallucinations. Common victims: short function words ('at', 'for', 'a', 'the') between two longer words. If the word clearly belongs in the sentence and was spoken, add it back to the `words` array with estimated timestamps by splitting the gap evenly between the surrounding words. Use the raw timestamps as a cross-check.
 
 **Editing rules:**
 - Change `"keep"` and `"reason"` fields in `edl` entries only — never modify `start`/`end` timestamps on existing entries
 - You may INSERT new EDL entries to split a packed-takes KEEP segment — new entries must use the same `source_clip` and together span the exact same time range as the entry they replace
 - Remove hallucinated entries from the `words` array by deleting the object
-- Remove false-start words from the `words` array when splitting a packed-takes segment (delete words whose timestamps fall in the new CUT range)
+- Whenever a segment changes to keep: false (direct flip or packed-takes split), delete all words from the `words` array whose timestamps fall within that segment's range
 - Add back dropped-but-real words with estimated timestamps (split the surrounding gap)
 - Do not touch any other fields
 
@@ -94,3 +92,4 @@ Summarise:
 - Anomalies found and what was done for each
 - Any remaining issues that need a human listen (ambiguous takes, uncertain boundaries)
 - Next step: `/produce-video <slug>`
+

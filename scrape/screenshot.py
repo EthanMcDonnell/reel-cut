@@ -19,8 +19,9 @@ import asyncio
 import json
 import re
 import sys
+import urllib.request
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 ROOT = Path(__file__).parent.parent
 
@@ -115,6 +116,101 @@ async def _block_ancestor(page, el) -> object:
     return el
 
 
+def _caption_to_filename(text: str, index: int, ext: str) -> str:
+    """Turn caption/alt text into a safe filename."""
+    slug = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:60]
+    if not slug:
+        slug = f"image-{index:02d}"
+    return f"{slug}{ext}"
+
+
+async def _extract_article_images(page, page_url: str, dest_dir: Path) -> list[str]:
+    """Download all meaningful images from the article body."""
+    ARTICLE_SELECTORS = [
+        "article", "main", '[class*="post-content"]', '[class*="article-body"]',
+        '[class*="entry-content"]', '[class*="story-body"]', '[itemprop="articleBody"]',
+    ]
+
+    # Build JS to collect image info from the first matching article container
+    js = """(selectors) => {
+        let container = null;
+        for (const sel of selectors) {
+            container = document.querySelector(sel);
+            if (container) break;
+        }
+        if (!container) container = document.body;
+
+        return Array.from(container.querySelectorAll('img')).map(img => {
+            const src = img.currentSrc || img.src || '';
+            const alt = (img.alt || '').trim();
+            // Look for figcaption sibling or parent figure's caption
+            let caption = '';
+            const fig = img.closest('figure');
+            if (fig) {
+                const cap = fig.querySelector('figcaption');
+                if (cap) caption = cap.innerText.trim();
+            }
+            const naturalW = img.naturalWidth || 0;
+            const naturalH = img.naturalHeight || 0;
+            return { src, alt, caption, naturalW, naturalH };
+        });
+    }"""
+
+    try:
+        images = await page.evaluate(js, ARTICLE_SELECTORS)
+    except Exception:
+        return []
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+        "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+        "Referer": page_url,
+    }
+
+    saved = []
+    seen_srcs = set()
+    idx = 0
+    for img in images:
+        src = img.get("src", "").strip()
+        if not src or src.startswith("data:"):
+            continue
+        # Skip tiny images (icons / tracking pixels) — require at least 100px in both dims
+        w, h = img.get("naturalW", 0), img.get("naturalH", 0)
+        if w > 0 and h > 0 and (w < 100 or h < 100):
+            continue
+        abs_src = urljoin(page_url, src)
+        # Deduplicate by resolved URL (strip query strings for comparison)
+        src_key = abs_src.split("?")[0]
+        if src_key in seen_srcs:
+            continue
+        seen_srcs.add(src_key)
+
+        # Determine extension
+        path_part = urlparse(abs_src).path
+        raw_ext = Path(path_part).suffix.lower()
+        ext = raw_ext if raw_ext in {".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif"} else ".jpg"
+
+        label = img.get("caption") or img.get("alt") or ""
+        fname = _caption_to_filename(label, idx, ext)
+        # Avoid collisions
+        dest = dest_dir / fname
+        collision = 0
+        while dest.exists():
+            collision += 1
+            dest = dest_dir / f"{dest.stem}-{collision}{ext}"
+
+        try:
+            req = urllib.request.Request(abs_src, headers=headers)
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                dest.write_bytes(resp.read())
+            saved.append(dest.name)
+            idx += 1
+        except Exception:
+            continue
+
+    return saved
+
+
 async def capture(url: str, output_dir: Path, snippets: list[str | dict] | None = None) -> dict:
     try:
         from playwright.async_api import async_playwright
@@ -152,6 +248,12 @@ async def capture(url: str, output_dir: Path, snippets: list[str | dict] | None 
         except Exception:
             pass
 
+        # --- Download embedded article images ---
+        try:
+            await _extract_article_images(page, url, source_dir)
+        except Exception:
+            pass
+
         # --- Snippet-targeted paragraph screenshots ---
         # bytes([95,115,115,95,42,46,106,115]) == b'_ss_*.js'
         _js_dir = Path(__file__).parent
@@ -181,11 +283,16 @@ async def capture(url: str, output_dir: Path, snippets: list[str | dict] | None 
                     _js_isnull = bytes([101,32,61,62,32,33,101,32,124,124,32,33,101,46,116,97,103,78,97,109,101]).decode()
                     # returns [x, y, width, height] as array to avoid string key dict accesses
                     _js_rect = bytes([101,32,61,62,32,123,32,99,111,110,115,116,32,114,32,61,32,101,46,103,101,116,66,111,117,110,100,105,110,103,67,108,105,101,110,116,82,101,99,116,40,41,59,32,114,101,116,117,114,110,32,91,114,46,120,44,32,114,46,121,44,32,114,46,119,105,100,116,104,44,32,114,46,104,101,105,103,104,116,93,59,32,125]).decode()
-                    # scroll via absolute page Y so SPAs with deferred layout don't confuse scrollIntoView
+                    # scrollIntoView handles custom scroll containers; fall back to window.scrollTo for SPAs
                     _js_scroll_abs = (
-                        "e => { const r = e.getBoundingClientRect();"
-                        " const absY = r.top + window.pageYOffset;"
-                        " window.scrollTo({top: Math.max(0, absY - window.innerHeight/2 + r.height/2), behavior: 'instant'}); }"
+                        "e => {"
+                        " e.scrollIntoView({block: 'center', behavior: 'instant'});"
+                        " const r = e.getBoundingClientRect();"
+                        " if (r.top < 0 || r.top > window.innerHeight) {"
+                        "   const absY = r.top + window.pageYOffset;"
+                        "   window.scrollTo({top: Math.max(0, absY - window.innerHeight/2 + r.height/2), behavior: 'instant'});"
+                        " }"
+                        " }"
                     )
 
                     if not el or await page.evaluate(_js_isnull, el):

@@ -329,6 +329,9 @@ def _phase1(cfg, clips: list[str], output_dir: Path, verbose: bool):
         tmp = Path(tmpdir)
         all_words: list = []
         all_raw_words: list = []
+        all_post_align_words: list = []
+        all_post_retrans_words: list = []
+        all_align_segments: list[dict] = []
         clip_info: list[dict] = []
         retrans_log: list[dict] = []
 
@@ -352,17 +355,23 @@ def _phase1(cfg, clips: list[str], output_dir: Path, verbose: bool):
 
             console.print(f"[bold]Step 3[/bold] Aligning timestamps for {Path(clip_path).name}…")
             t = time.perf_counter()
-            words, align_method = align(words, wav, whisper_cfg)
+            words, align_method, clip_align_segments = align(words, wav, whisper_cfg)
+            all_align_segments.extend(clip_align_segments)
             align_ok = "Whisper timestamps" not in align_method
             align_color = "green" if align_ok else "yellow"
             console.print(f"  Alignment: [{align_color}]{align_method}[/{align_color}]")
             words.sort(key=lambda w: w.start)
             _warn_wide_words(words, console, cfg.whisper.wide_word_threshold_s)
+            all_post_align_words.extend([
+                w.__class__(word=w.word, start=w.start, end=w.end,
+                             confidence=w.confidence, clip_path=str(clip_path))
+                for w in words
+            ])
             from .transcriber import retranscribe_suspicious_regions
             clips_dir = output_dir / "retranscribe-clips"
             words, n_retrans, clip_retrans_log = retranscribe_suspicious_regions(
                 words, wav, whisper_cfg,
-                conf_threshold=cfg.cuts.min_word_confidence,
+                conf_threshold=cfg.cuts.min_retrans_word_confidence,
                 clips_dir=clips_dir,
             )
             retrans_log.extend(clip_retrans_log)
@@ -370,6 +379,11 @@ def _phase1(cfg, clips: list[str], output_dir: Path, verbose: bool):
                 words.sort(key=lambda w: w.start)
                 console.print(f"  Retranscribed {n_retrans} suspicious window(s)")
                 _warn_wide_words(words, console, cfg.whisper.wide_word_threshold_s)
+            all_post_retrans_words.extend([
+                w.__class__(word=w.word, start=w.start, end=w.end,
+                             confidence=w.confidence, clip_path=str(clip_path))
+                for w in words
+            ])
 
             before = len(words)
             try:
@@ -474,6 +488,9 @@ def _phase1(cfg, clips: list[str], output_dir: Path, verbose: bool):
             clip_paths=clips,
             config=cfg,
             raw_words=all_raw_words,
+            post_align_words=all_post_align_words,
+            align_segments=all_align_segments,
+            post_retrans_words=all_post_retrans_words,
             aligned_words=all_words,
             gaps_by_clip=gaps_by_clip,
             edl=edl,
@@ -484,7 +501,7 @@ def _phase1(cfg, clips: list[str], output_dir: Path, verbose: bool):
             retake_candidates=retake_candidates,
             image_cues=None,
         )
-        console.print(f"[green]Debug report  →[/green] {debug_base}.debug.summary.txt (+raw/aligned/timeline)")
+        console.print(f"[green]Debug report  →[/green] {debug_base}.debug.summary.txt (+raw/post-align/post-retrans/post-vad/timeline)")
 
         # Build captions doc
         doc_edl = [

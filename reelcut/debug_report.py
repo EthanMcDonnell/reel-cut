@@ -19,6 +19,9 @@ def write_debug_report(
     clip_paths: list[str],
     config: "ReelCutConfig",
     raw_words: list["WordTimestamp"],
+    post_align_words: list["WordTimestamp"] | None = None,
+    align_segments: list[dict] | None = None,
+    post_retrans_words: list["WordTimestamp"] | None = None,
     aligned_words: list["WordTimestamp"],
     gaps_by_clip: dict[str, list["Gap"]],
     edl: list["EDLEntry"],
@@ -29,7 +32,7 @@ def write_debug_report(
     retake_candidates: dict[str, list["RetakeCandidate"]] | None = None,
     image_cues: list | None = None,
 ) -> None:
-    """Write split debug files: .debug.summary.txt, .debug.raw.txt, .debug.aligned.txt, .debug.timeline.txt."""
+    """Write split debug files: .debug.summary.txt, .debug.raw.txt, .debug.post-align.txt, .debug.post-retrans.txt, .debug.post-vad.txt, .debug.timeline.txt."""
     from .edl import edl_summary
 
     header = (
@@ -88,12 +91,21 @@ def write_debug_report(
     if not retrans_log:
         _s("  (none — no suspicious windows detected)")
     else:
+        n_expanded   = sum(1 for e in retrans_log if e.get("pre_exp_start", e["win_start"]) != e["win_start"] or e.get("pre_exp_end", e["win_end"]) != e["win_end"])
+        n_hard_capped = sum(1 for e in retrans_log if e.get("hard_capped"))
+        _s(f"  {len(retrans_log)} window(s)  |  {n_expanded} expanded to sentence boundary  |  {n_hard_capped} hit 20s hard cap")
+        _s("")
         for entry in sorted(retrans_log, key=lambda e: e["win_start"]):
             win_s = _ts(entry["win_start"])
             win_e = _ts(entry["win_end"])
             dur = entry["win_end"] - entry["win_start"]
+            cap_flag = "  [⚠ HARD CAP — sentence exceeded 20s]" if entry.get("hard_capped") else ""
             _s(f"  [{win_s} → {win_e}]  trigger={entry['label']}  dur={dur:.3f}s"
-               f"  action={entry['action']}")
+               f"  action={entry['action']}{cap_flag}")
+            pre_s = entry.get("pre_exp_start", entry["win_start"])
+            pre_e = entry.get("pre_exp_end",   entry["win_end"])
+            if pre_s != entry["win_start"] or pre_e != entry["win_end"]:
+                _s(f"    expanded from  : [{_ts(pre_s)} → {_ts(pre_e)}]  dur={pre_e - pre_s:.3f}s  → sentence boundary")
             replaced = entry["replaced"]
             if replaced:
                 replaced_str = "  ".join(f"{w.word!r}({w.confidence:.2f})" for w in replaced)
@@ -195,19 +207,68 @@ def write_debug_report(
     Path(f"{base_path}.debug.raw.txt").write_text("\n".join(r) + "\n")
 
     # -------------------------------------------------------------------------
+    # post-align — after WhisperX alignment, before retranscription
+    # -------------------------------------------------------------------------
+    if post_align_words is not None:
+        pa: list[str] = [header]
+        _pa = pa.append
+        _pa("--- POST-ALIGN OUTPUT (after WhisperX alignment, before retranscription) ---")
+        _pa(f"  ({len(post_align_words)} words)")
+
+        if align_segments:
+            _pa("")
+            _pa(f"  WHISPERX SEGMENTS ({len(align_segments)} fed to wav2vec2):")
+            _pa(f"  {'#':>4}  {'TIME RANGE':<22}  {'WORDS':>5}  TEXT")
+            _pa(f"  {'─'*4}  {'─'*22}  {'─'*5}  {'─'*50}")
+            for i, seg in enumerate(align_segments, 1):
+                word_count = len(seg["text"].split())
+                time_range = f"{_ts(seg['start'])} → {_ts(seg['end'])}"
+                _pa(f"  {i:>4}  {time_range:<22}  {word_count:>5}  {seg['text']}")
+
+        _pa("")
+        _pa(f"  ALIGNED WORDS:")
+        for w in post_align_words:
+            _pa(f"  {_ts(w.start):>9} → {_ts(w.end):<9}  {w.word!r:<30}  conf={w.confidence:.2f}"
+                f"  clip={Path(w.clip_path).name}")
+        Path(f"{base_path}.debug.post-align.txt").write_text("\n".join(pa) + "\n")
+
+    # -------------------------------------------------------------------------
+    # post-retrans — after retranscription, before VAD filter
+    # -------------------------------------------------------------------------
+    if post_retrans_words is not None:
+        pr: list[str] = [header]
+        _pr = pr.append
+        _pr("--- POST-RETRANS OUTPUT (after retranscription, before VAD filter) ---")
+        _pr(f"  ({len(post_retrans_words)} words)")
+        hard_capped_entries = [e for e in (retrans_log or []) if e.get("hard_capped")]
+        if hard_capped_entries:
+            _pr(f"")
+            _pr(f"  ⚠ WARNING — {len(hard_capped_entries)} retranscription window(s) hit the 20s hard cap.")
+            _pr(f"  The enclosing sentence exceeded 20s so the window was truncated mid-sentence.")
+            _pr(f"  Consider reviewing the audio around these timestamps for unusually long sentences:")
+            for e in hard_capped_entries:
+                _pr(f"    [{_ts(e['win_start'])} → {_ts(e['win_end'])}]  trigger={e['label']}"
+                    f"  (trigger was [{_ts(e.get('pre_exp_start', e['win_start']))} → {_ts(e.get('pre_exp_end', e['win_end']))}])")
+            _pr(f"")
+        for w in post_retrans_words:
+            _pr(f"  {_ts(w.start):>9} → {_ts(w.end):<9}  {w.word!r:<30}  conf={w.confidence:.2f}"
+                f"  clip={Path(w.clip_path).name}")
+        Path(f"{base_path}.debug.post-retrans.txt").write_text("\n".join(pr) + "\n")
+
+    # -------------------------------------------------------------------------
     # aligned — after alignment + retranscription + VAD filter
     # -------------------------------------------------------------------------
     a: list[str] = [header]
     _a = a.append
 
     total_dropped = sum(i["hallucinations_dropped"] for i in clip_info)
-    _a("--- ALIGNED OUTPUT (after alignment + retranscription + VAD) ---")
+    _a("--- ALIGNED OUTPUT (after VAD hallucination filter — final word list) ---")
     _a(f"  ({len(aligned_words)} words kept, {total_dropped} dropped as hallucinations)")
     for w in aligned_words:
         keep_flag = "  [OUTTAKE]" if not w.keep else ""
         _a(f"  {_ts(w.start):>9} → {_ts(w.end):<9}  {w.word!r:<30}  conf={w.confidence:.2f}{keep_flag}")
 
-    Path(f"{base_path}.debug.aligned.txt").write_text("\n".join(a) + "\n")
+    Path(f"{base_path}.debug.post-vad.txt").write_text("\n".join(a) + "\n")
 
     # -------------------------------------------------------------------------
     # timeline — words and gaps interleaved with cut reasoning

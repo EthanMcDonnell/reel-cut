@@ -1,6 +1,6 @@
 ---
 name: produce-video
-description: Phase 2 — Assign screenshot and person image timings to captions.json, then render the final video via reelcut.
+description: Assign screenshot and person image timings to captions.json, then render the final video via reelcut.
 tools: Read, Edit, Bash
 model: sonnet
 permissionMode: default
@@ -63,7 +63,7 @@ All `start`/`end` values are **source-clip seconds** taken from the `words` arra
 ## Step 5 — Render
 
 ```bash
-.venv/bin/reelcut render config.yaml "assets/<video-slug>/<video-slug>.captions.json"
+.venv/bin/reelcut render config.yaml "assets/<video-slug>/<actual-captions-filename>.captions.json"
 ```
 
 The final video is written to `output/<video-slug>.mp4`.

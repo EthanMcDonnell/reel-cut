@@ -20,9 +20,11 @@ Read `assets/<slug>/<clip-name>.debug.summary.txt` in full. This covers config, 
 
 ## Step 2 — Pull additional files only if needed
 
-- **`*.debug.aligned.txt`** — read when hallucinations were dropped or retake boundaries look wrong. Shows every word after alignment + retranscription + VAD with confidence scores and `[OUTTAKE]` flags.
+- **`*.debug.post-vad.txt`** — read when hallucinations were dropped or retake boundaries look wrong. Shows every word after VAD filtering (final word list) with confidence scores and `[OUTTAKE]` flags.
+- **`*.debug.post-retrans.txt`** — read when a word is missing and you want to know if VAD or retranscription dropped it. Shows words after retranscription, before VAD.
+- **`*.debug.post-align.txt`** — read when a word is missing and you want to know if retranscription dropped it. Shows words after WhisperX alignment, before retranscription.
 - **`*.debug.timeline.txt`** — read when there's a specific bad moment ("why didn't this gap get cut?"). Shows words and gaps interleaved with KEEP/CUT decisions and skip reasons.
-- **`*.debug.raw.txt`** — read only when aligned is missing a word you can hear in the audio. Shows raw Whisper output before any processing.
+- **`*.debug.raw.txt`** — read only when a word is missing from all aligned files. Shows raw Whisper output before any processing.
 
 ## Step 3 — Diagnose by section
 
@@ -34,7 +36,7 @@ Read `assets/<slug>/<clip-name>.debug.summary.txt` in full. This covers config, 
 - `max_retake_gap_s` too low → real retakes far apart missed; too high → false positives
 
 ### PIPELINE SUMMARY
-- Hallucinated words dropped > 0 → check if real words were lost (read aligned)
+- Hallucinated words dropped > 0 → check if real words were lost (read post-vad)
 - WhisperX fallback → timestamps are Whisper-only (±100ms); expect less precise cuts
 
 ### RETRANSCRIPTION WINDOWS

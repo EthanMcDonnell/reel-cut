@@ -28,7 +28,14 @@ class CutsConfig(BaseModel):
     max_retake_gap_s: float = 20.0
     min_match_ratio: float = 0.5
     mid_sentence_cut_floor_ms: int = 3000
-    min_word_confidence: float = 0.5
+    min_word_confidence: float = 0.5        # gap cut hard floor: if either adjacent word's alignment
+                                            # confidence is below this, the gap is never cut regardless
+                                            # of duration.
+    min_retrans_word_confidence: float = 0.35  # retranscription acceptance floor: words returned by a
+                                               # retranscription window are dropped if their confidence
+                                               # is below this. Lower than min_word_confidence because
+                                               # retranscribed clips are short and Whisper confidence
+                                               # scores are systematically lower on short audio.
     low_confidence_threshold: float = 0.8
     low_confidence_min_gap_ms: int = 500
     preserve_start_s: float = 0.0
@@ -67,6 +74,7 @@ class CaptionsConfig(BaseModel):
     stroke_color: str = "#000000"
     stroke_width: int = 3
     margin_pct: float = 8.0  # % of video width kept free on each side (left + right)
+    words_per_line: int = 7  # max words shown on screen at once
 
 
 class ImagesConfig(BaseModel):
@@ -97,6 +105,8 @@ class WhisperConfig(BaseModel):
     wide_word_threshold_s: float = 1.5
     retranscribe_low_conf_gap_ms: int = 1000
     retranscribe_large_gap_ms: int = 1500
+    compression_ratio_threshold: float | None = 2.4
+    retranscribe_compression_ratio_threshold: float | None = 2.4
 
     @field_validator("compute_type")
     @classmethod

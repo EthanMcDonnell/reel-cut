@@ -48,7 +48,7 @@ def render_caption_frames(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     font, font_highlight = _load_fonts(config)
-    lines = _group_into_lines(words, _WORDS_PER_LINE)
+    lines = _group_into_lines(words, config.words_per_line)
     total_duration = words[-1].end
 
     frames: list[CaptionFrame] = []

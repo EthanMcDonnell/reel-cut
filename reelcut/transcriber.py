@@ -62,6 +62,7 @@ def _transcribe_with_model(model, wav_path: Path, config: WhisperConfig) -> list
         initial_prompt=config.initial_prompt,
         condition_on_previous_text=config.condition_on_previous_text,
         no_speech_threshold=config.no_speech_threshold,
+        compression_ratio_threshold=config.compression_ratio_threshold,
         vad_filter=False,         # disabled: Silero VAD (PyTorch) conflicts with CTranslate2 OpenMP on macOS
     )
 
@@ -85,7 +86,7 @@ def align(
     words: list[WordTimestamp],
     wav_path: str | Path,
     config: WhisperConfig,
-) -> tuple[list[WordTimestamp], str]:
+) -> tuple[list[WordTimestamp], str, list[dict]]:
     """Refine word timestamps via WhisperX wav2vec2 forced alignment.
 
     Numeric tokens (e.g. '732', '4') are expanded to their spoken form before
@@ -93,7 +94,9 @@ def align(
     afterward.  Any word that still can't be aligned falls back to its original
     Whisper timestamp.
 
-    Returns (words, status_message) — caller is responsible for logging.
+    Returns (words, status_message, segments) where segments is the list of
+    dicts fed to WhisperX (each has start, end, text). Empty on fallback paths.
+    Caller is responsible for logging.
     Falls back to faster-whisper word timestamps if whisperx is unavailable
     or the alignment model can't be loaded (e.g. Intel Mac / no GPU).
     """
@@ -151,20 +154,16 @@ def align(
             # timestamps rather than being dropped — short function words ("at", "for")
             # routinely score just below the threshold despite being real.
             aligned = _collapse_expanded_words(expansion, aligned_flat, min_conf=min_conf)
-            # Final safety net: drop any word still below min_conf after collapse.
-            # These are words wav2vec2 couldn't locate AND Whisper's own score was low.
-            if min_conf > 0:
-                aligned = [w for w in aligned if w.confidence >= min_conf]
-            return aligned, f"WhisperX wav2vec2 ({device})"
+            return aligned, f"WhisperX wav2vec2 ({device})", segments
 
     except ImportError:
-        return words, "whisperx not installed — using Whisper timestamps"
+        return words, "whisperx not installed — using Whisper timestamps", []
     except TimeoutError:
-        return words, "WhisperX model load timed out — using Whisper timestamps"
+        return words, "WhisperX model load timed out — using Whisper timestamps", []
     except Exception as exc:
-        return words, f"WhisperX failed ({type(exc).__name__}: {exc}) — using Whisper timestamps"
+        return words, f"WhisperX failed ({type(exc).__name__}: {exc}) — using Whisper timestamps", []
 
-    return words, "WhisperX returned no words — using Whisper timestamps"
+    return words, "WhisperX returned no words — using Whisper timestamps", []
 
 
 def filter_words_by_vad(
@@ -268,6 +267,14 @@ def retranscribe_suspicious_regions(
         a false-start fragment "or Met..." that Whisper never transcribed separately,
         leaving WhisperX alignment confused and "chatbot" dropped entirely.
 
+    Case 4 — Low-confidence word
+        Any single word below conf_threshold, regardless of span or adjacent gaps.
+        Window covers the full word span [w.start, w.end]. Replaces the silent drop
+        that min_alignment_confidence applied after WhisperX alignment: dropping a word
+        mid-list causes neighbors to stretch into the vacated span, creating spurious
+        wide-word triggers with misleading debug output. Routing through retranscription
+        instead produces a proper window, a log entry, and a correct replacement or boost.
+
     Windows from all three triggers are collected, sorted, and merged before any audio
     is touched. Adjacent or overlapping windows from different trigger types chain into
     one larger window — preventing double-retranscription and naturally covering the
@@ -327,8 +334,29 @@ def retranscribe_suspicious_regions(
         if gap >= large_gap_s and not words[i].word.rstrip().endswith((".", "!", "?")):
             raw_windows.append((words[i].end, words[i + 1].start, "large_gap"))
 
+    # Case 4: individual low-confidence word — catches hallucinations that are too short
+    # or too isolated to trigger Cases 1–3. Prevents silent dropping during alignment
+    # from stretching neighbors into spurious wide-word windows.
+    for w in words:
+        if w.confidence < conf_threshold:
+            raw_windows.append((w.start, w.end, "low_conf_word"))
+
     if not raw_windows:
         return list(words), 0, []
+
+    # --- Expand each window to the enclosing sentence ---
+    expansion_records: list[dict] = []
+    for orig_start, orig_end, label in raw_windows:
+        exp_start, exp_end, hard_capped = _expand_to_sentence(words, orig_start, orig_end)
+        expansion_records.append({
+            "orig_start": orig_start,
+            "orig_end": orig_end,
+            "exp_start": exp_start,
+            "exp_end": exp_end,
+            "hard_capped": hard_capped,
+            "label": label,
+        })
+    raw_windows = [(r["exp_start"], r["exp_end"], r["label"]) for r in expansion_records]
 
     # --- Merge overlapping / adjacent windows ---
     raw_windows.sort(key=lambda x: x[0])
@@ -350,7 +378,10 @@ def retranscribe_suspicious_regions(
         cpu_threads=os.cpu_count() or 4,
     )
     retranscribe_config = config.model_copy(
-        update={"no_speech_threshold": config.retranscribe_no_speech_threshold}
+        update={
+            "no_speech_threshold": config.retranscribe_no_speech_threshold,
+            "compression_ratio_threshold": config.retranscribe_compression_ratio_threshold,
+        }
     )
 
     if clips_dir is not None:
@@ -448,9 +479,21 @@ def retranscribe_suspicious_regions(
         else:
             action = "no_change"
 
+        # Expansion records whose expanded range overlaps this merged window
+        window_exp = [
+            r for r in expansion_records
+            if r["exp_start"] < win_end and r["exp_end"] > win_start
+        ]
+        pre_exp_start = min((r["orig_start"] for r in window_exp), default=win_start)
+        pre_exp_end   = max((r["orig_end"]   for r in window_exp), default=win_end)
+        hard_capped   = any(r["hard_capped"] for r in window_exp)
+
         retrans_log.append({
             "win_start": win_start,
             "win_end": win_end,
+            "pre_exp_start": pre_exp_start,
+            "pre_exp_end": pre_exp_end,
+            "hard_capped": hard_capped,
             "label": label,
             "replaced": words_replaced,
             "found_raw": found_raw,
@@ -638,18 +681,104 @@ def _norm_word(w: str) -> str:
 
 
 def _words_to_whisperx_segments(words: list[WordTimestamp]) -> list[dict]:
-    """Group words into segments for whisperx alignment input."""
+    """Group words into segments for whisperx alignment input.
+
+    Splits at sentence-ending punctuation (primary) with a max duration cap
+    (fallback) so CTC search windows match natural speech phrases.
+    """
     if not words:
         return []
 
-    # Simple grouping: one segment per ~10 words
-    group_size = 10
+    MIN_WORDS = 3
+
     segments = []
-    for i in range(0, len(words), group_size):
-        chunk = words[i : i + group_size]
+    chunk: list[WordTimestamp] = []
+
+    for w in words:
+        # Caps trigger (secondary): fires only when chunk already exceeds 10s.
+        # Capitalised word starts the new segment, so check before appending.
+        if chunk and len(chunk) >= MIN_WORDS:
+            duration = chunk[-1].end - chunk[0].start
+            is_caps = w.word and w.word[0].isupper()
+            if (duration >= 10.0 and is_caps) or duration >= 20.0:
+                segments.append({
+                    "start": chunk[0].start,
+                    "end": chunk[-1].end,
+                    "text": " ".join(ww.word for ww in chunk),
+                })
+                chunk = []
+
+        chunk.append(w)
+
+        # Punctuation trigger (primary): fullstop or question mark ends the segment.
+        if w.word.rstrip().endswith((".", "?")) and len(chunk) >= MIN_WORDS:
+            segments.append({
+                "start": chunk[0].start,
+                "end": chunk[-1].end,
+                "text": " ".join(ww.word for ww in chunk),
+            })
+            chunk = []
+
+    if chunk:
         segments.append({
             "start": chunk[0].start,
             "end": chunk[-1].end,
-            "text": " ".join(w.word for w in chunk),
+            "text": " ".join(ww.word for ww in chunk),
         })
+
     return segments
+
+
+def _expand_to_sentence(
+    words: list[WordTimestamp],
+    win_start: float,
+    win_end: float,
+    max_duration_s: float = 20.0,
+) -> tuple[float, float, bool]:
+    """Expand a retranscription window outward to the enclosing sentence boundaries.
+
+    Scans backward from win_start for the nearest capitalised word (sentence
+    start) and forward from win_end for the nearest fullstop/questionmark, or
+    stops before the next capitalised word. Total duration capped at max_duration_s.
+
+    Returns (exp_start, exp_end, hard_capped) where hard_capped is True if the
+    20s cap was the binding constraint (sentence was longer than max_duration_s).
+    """
+    if not words:
+        return win_start, win_end, False
+
+    # Index of first word at or after win_start
+    anchor_start_idx = next(
+        (i for i, w in enumerate(words) if w.start >= win_start),
+        len(words) - 1,
+    )
+    # Index of last word whose start falls before win_end
+    anchor_end_idx = next(
+        (i for i in range(len(words) - 1, -1, -1) if words[i].start < win_end),
+        anchor_start_idx,
+    )
+
+    # Scan backward: find the nearest capitalised word (sentence start)
+    sent_start_idx = anchor_start_idx
+    for i in range(anchor_start_idx, -1, -1):
+        if words[i].word and words[i].word[0].isupper():
+            sent_start_idx = i
+            break
+
+    # Scan forward: fullstop/questionmark ends the sentence (inclusive);
+    # the next capitalised word starts a new sentence (exclusive)
+    sent_end_idx = anchor_end_idx
+    for i in range(anchor_end_idx, len(words)):
+        if words[i].word.rstrip().endswith((".", "?")):
+            sent_end_idx = i
+            break
+        if i > anchor_end_idx and words[i].word and words[i].word[0].isupper():
+            sent_end_idx = i - 1
+            break
+
+    exp_start = words[sent_start_idx].start
+    natural_end = words[sent_end_idx].end
+    hard_capped = natural_end > exp_start + max_duration_s
+    exp_end = min(natural_end, exp_start + max_duration_s)
+
+    return exp_start, exp_end, hard_capped

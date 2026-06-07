@@ -41,8 +41,10 @@ cuts:
   min_match_ratio: 0.5             # default: 0.5 | greedy extended match length / cut length must meet this
                                    # threshold. Prevents short coincidental phrase overlaps from triggering
                                    # large cuts. Raise (e.g. 0.7) to be stricter; lower (e.g. 0.3) to cut more.
-  min_word_confidence: 0.5         # hard floor: if either adjacent word's alignment confidence is below
-                                   # this, the gap is never cut regardless of duration.
+  min_word_confidence: 0.5         # gap cut hard floor: if either adjacent word's alignment confidence
+                                   # is below this, the gap is never cut regardless of duration.
+  min_retrans_word_confidence: 0.35 # retranscription acceptance floor: words returned by a retranscription
+                                   # window are dropped if their confidence is below this. 
   low_confidence_threshold: 0.8    # soft threshold: if either adjacent word is below this (but above
                                    # min_word_confidence), the gap must meet low_confidence_min_gap_ms
                                    # to qualify for a cut.
@@ -64,6 +66,7 @@ output:
   audio_bitrate: 128k
   # max_duration_s: 60
   location: ./output/
+  render_workers: 8                 # number of parallel workers for frame rendering.
 
 captions:
   enabled: true
@@ -77,6 +80,7 @@ captions:
   stroke_color: "#000000"
   stroke_width: 3
   margin_pct: 15                    # % of video width kept free on each side — increase to pull captions inward
+  words_per_line: 7                 # max words shown on screen at once (default: 7)
 
 images:
   enabled: true
@@ -92,6 +96,7 @@ images:
   overlay_size_pct: 50           # person/screenshot width as % of video width
   display_duration_s: 1.0        # seconds to show logo after its keyword is first spoken
   fade_duration_s: 0             # fade in and out duration in seconds (0 to disable)
+  margin_pct: 5                  # % of video height from the edge to the logo/image overlay.
 
 
 
@@ -104,12 +109,14 @@ whisper:
   language: en                     # default: en
   beam_size: 4                     # default: 1  |  1 = greedy/fastest but error-prone; higher = beam search,
                                    # considers multiple candidates — reduces errors on numbers and proper nouns.
-  initial_prompt: "Software engineering, AI, 12 months"
+  initial_prompt: "Hello. Software engineering. AI for 12 months"
                                    # default: null  |  primes Whisper toward expected vocabulary. Update to match content.
   condition_on_previous_text: false # default: false  |  true = segments share context (more fluent but
                                    # hallucinations can cascade); false = each segment decoded independently.
-  min_alignment_confidence: 0.1   # default: 0.1  |  WhisperX wav2vec2 score below which a word is dropped.
-                                   # Raise (e.g. 0.2) to drop more; set 0.0 to disable.
+  min_alignment_confidence: 0.2   # default: 0.1  |  WhisperX wav2vec2 score below which a word falls back
+                                   # to its original Whisper timestamp instead of the aligned one.
+                                   # Low-conf words are no longer dropped here; they pass through and
+                                   # are caught by Case 4 retranscription (trigger=low_conf_word).
   no_speech_threshold: 0.6        # default: 0.6  |  faster-whisper threshold for skipping silent segments.
                                    # Lower to force transcription of uncertain segments.
   retranscribe_no_speech_threshold: 0.3  # default: 0.3  |  used when re-running Whisper on wide-word windows
@@ -122,3 +129,9 @@ whisper:
   retranscribe_large_gap_ms: 1500  # default: 1500 | gap (ms) between any two consecutive words that
                                    # triggers retranscription regardless of confidence. Catches false
                                    # starts Whisper absorbed without surfacing twice. Set 0 to disable.
+  compression_ratio_threshold: null # default: 2.4 | gzip compression ratio above which a segment is
+                                   # discarded as a hallucination loop. Raise (e.g. 3.0) to tolerate
+                                   # repeated phrases; set null to disable entirely.
+  retranscribe_compression_ratio_threshold: 2.4 # default: 2.4 | stricter threshold used during retranscription
+                                   # windows — short clips are more susceptible to hallucination loops
+                                   # so a tighter limit than the initial pass is appropriate.
