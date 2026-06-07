@@ -17,7 +17,7 @@ CaptionStyle = Literal["word_highlight", "full_line", "none"]
 _WORDS_PER_LINE = 10
 
 _MARGIN = 40        # fallback; overridden at render time by config.margin_pct
-_SHADOW_OFFSET = 3  # solid black drop shadow shift (px)
+_SHADOW_OFFSET = 6  # solid black drop shadow shift (px)
 _LINE_SPACING = 10  # px between wrapped rows
 _CAPTION_GRACE_S = 0.3  # seconds caption stays visible after the last word in a line ends
 
@@ -100,6 +100,17 @@ def render_caption_frames(
 # Rendering
 # ---------------------------------------------------------------------------
 
+def _join_words(words) -> str:
+    """Join tokens without a space when the next token starts with a hyphen or apostrophe
+    (e.g. Whisper splits 're-asking' into ['re', '-asking'])."""
+    result = ""
+    for w in words:
+        if result and not w.startswith(("-", "'", "’")):
+            result += " "
+        result += w
+    return result
+
+
 def _render_frame(
     line_words: list[WordTimestamp],
     active_idx: int | None,
@@ -114,7 +125,7 @@ def _render_frame(
     img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
 
-    text = " ".join(word.word for word in line_words)
+    text = _join_words(word.word for word in line_words)
     margin = int(w * config.margin_pct / 100)
     _draw_text_wrapped(draw, text, font, config, w, y_pos, margin)
 
@@ -249,12 +260,18 @@ def _best_face_index(path: str) -> int:
 # Frame cache builder
 # ---------------------------------------------------------------------------
 
+def _ends_sentence(word: WordTimestamp) -> bool:
+    """True if this word ends with sentence-terminal punctuation."""
+    return word.word.rstrip().endswith((".", "!", "?"))
+
+
 def _group_into_lines(
     words: list[WordTimestamp],
     words_per_line: int,
     gap_break_s: float = _CAPTION_GRACE_S,
 ) -> list[list[WordTimestamp]]:
-    """Group words into display lines. Breaks on word-count limit OR a timing gap >= gap_break_s.
+    """Group words into display lines. Breaks on word-count limit, a timing gap >= gap_break_s,
+    or a sentence boundary so each caption block starts at the beginning of a sentence.
 
     gap_break_s matches _CAPTION_GRACE_S in _active_word_at: any gap that would cause the
     caption to expire and reappear gets a line break so the reappearing text is new content.
@@ -265,7 +282,8 @@ def _group_into_lines(
     current: list[WordTimestamp] = [words[0]]
     for w in words[1:]:
         gap = w.start - current[-1].end
-        if len(current) >= words_per_line or gap >= gap_break_s:
+        sentence_end = _ends_sentence(current[-1])
+        if len(current) >= words_per_line or gap >= gap_break_s or sentence_end:
             lines.append(current)
             current = [w]
         else:

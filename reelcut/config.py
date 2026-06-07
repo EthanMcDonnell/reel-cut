@@ -25,6 +25,8 @@ class CutsConfig(BaseModel):
     min_keep_ms: int = 50
     repetition_detection: bool = False
     min_retake_words: int = 4
+    max_retake_gap_s: float = 20.0
+    min_match_ratio: float = 0.5
     mid_sentence_cut_floor_ms: int = 3000
     min_word_confidence: float = 0.5
     low_confidence_threshold: float = 0.8
@@ -93,6 +95,8 @@ class WhisperConfig(BaseModel):
     no_speech_threshold: float = 0.6
     retranscribe_no_speech_threshold: float = 0.3
     wide_word_threshold_s: float = 1.5
+    retranscribe_low_conf_gap_ms: int = 1000
+    retranscribe_large_gap_ms: int = 1500
 
     @field_validator("compute_type")
     @classmethod

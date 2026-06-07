@@ -1,4 +1,4 @@
-"""Debug report — single consolidated .debug.txt written after each pipeline run."""
+"""Debug report — split .debug.* files written after each pipeline run."""
 from __future__ import annotations
 
 from datetime import datetime
@@ -9,11 +9,12 @@ if TYPE_CHECKING:
     from .config import ReelCutConfig
     from .edl import EDLEntry
     from .gap_detector import Gap
+    from .retake_detector import RetakeCandidate
     from .transcriber import WordTimestamp
 
 
 def write_debug_report(
-    path: Path,
+    base_path: Path,
     *,
     clip_paths: list[str],
     config: "ReelCutConfig",
@@ -23,92 +24,204 @@ def write_debug_report(
     edl: list["EDLEntry"],
     caption_words: list["WordTimestamp"] | None,
     clip_info: list[dict],
+    retrans_log: list[dict] | None = None,
+    retake_ranges: dict[str, list[tuple[float, float]]] | None = None,
+    retake_candidates: dict[str, list["RetakeCandidate"]] | None = None,
     image_cues: list | None = None,
 ) -> None:
-    """Write a single debug file covering every pipeline stage.
-
-    clip_info entries: {clip, align_method, vad_method, hallucinations_dropped}
-    caption_words: None when --dry-run (EDL built but no render).
-    """
+    """Write split debug files: .debug.summary.txt, .debug.raw.txt, .debug.aligned.txt, .debug.timeline.txt."""
     from .edl import edl_summary
 
-    out: list[str] = []
-    _w = out.append
-
-    _w("=== REELCUT DEBUG REPORT ===")
-    _w(f"Generated : {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    _w(f"Clips     : {', '.join(Path(c).name for c in clip_paths)}")
-    _w("")
+    header = (
+        f"=== REELCUT DEBUG REPORT ===\n"
+        f"Generated : {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+        f"Clips     : {', '.join(Path(c).name for c in clip_paths)}\n"
+    )
 
     # -------------------------------------------------------------------------
-    # Config snapshot
+    # summary — config, pipeline summary, retrans windows, retake detection,
+    #           image overlays, EDL summary + entries
     # -------------------------------------------------------------------------
+    s: list[str] = [header]
+    _s = s.append
+
     c = config
-    _w("--- CONFIG ---")
-    _w(f"  whisper : model={c.whisper.model}  beam_size={c.whisper.beam_size}"
+    _s("--- CONFIG ---")
+    _s(f"  whisper : model={c.whisper.model}  beam_size={c.whisper.beam_size}"
        f"  language={c.whisper.language}  compute_type={c.whisper.compute_type}")
-    _w(f"  cuts    : min_silence_ms={c.cuts.min_silence_ms}"
+    _s(f"            no_speech_threshold={c.whisper.no_speech_threshold}"
+       f"  retranscribe_no_speech_threshold={c.whisper.retranscribe_no_speech_threshold}"
+       f"  min_alignment_confidence={c.whisper.min_alignment_confidence}")
+    _s(f"            wide_word_threshold_s={c.whisper.wide_word_threshold_s}"
+       f"  retranscribe_low_conf_gap_ms={c.whisper.retranscribe_low_conf_gap_ms}"
+       f"  retranscribe_large_gap_ms={c.whisper.retranscribe_large_gap_ms}")
+    _s(f"  cuts    : min_silence_ms={c.cuts.min_silence_ms}"
        f"  min_breath_ms={c.cuts.min_breath_ms}"
        f"  silence_threshold_db={c.cuts.silence_threshold_db}")
-    _w(f"            vad_threshold={c.cuts.vad_threshold}"
-       f"  breath_amplitude_ratio={c.cuts.breath_amplitude_ratio}"
-       f"  failure_tolerance_ratio={c.cuts.failure_tolerance_ratio}")
-    _w(f"            speech_pad_ms={c.cuts.speech_pad_ms}"
-       f"  word_end_scan_ms={c.cuts.word_end_scan_ms}"
+    _s(f"            vad_threshold={c.cuts.vad_threshold}"
+       f"  min_word_confidence={c.cuts.min_word_confidence}"
+       f"  low_confidence_threshold={c.cuts.low_confidence_threshold}")
+    _s(f"            low_confidence_min_gap_ms={c.cuts.low_confidence_min_gap_ms}"
+       f"  mid_sentence_cut_floor_ms={c.cuts.mid_sentence_cut_floor_ms}"
        f"  min_keep_ms={c.cuts.min_keep_ms}")
-    _w("")
+    _s(f"            speech_pad_ms={c.cuts.speech_pad_ms}"
+       f"  word_end_scan_ms={c.cuts.word_end_scan_ms}")
+    _s(f"            preserve_start_s={c.cuts.preserve_start_s}"
+       f"  preserve_end_s={c.cuts.preserve_end_s}")
+    rep = (f"ON  min_retake_words={c.cuts.min_retake_words}"
+           f"  max_retake_gap_s={c.cuts.max_retake_gap_s}"
+           f"  min_match_ratio={c.cuts.min_match_ratio}"
+           if c.cuts.repetition_detection else "OFF")
+    _s(f"  retakes : {rep}")
+    _s("")
 
-    # -------------------------------------------------------------------------
-    # Pipeline summary (per clip)
-    # -------------------------------------------------------------------------
-    _w("--- PIPELINE SUMMARY ---")
+    _s("--- PIPELINE SUMMARY ---")
     for info in clip_info:
         dropped = info["hallucinations_dropped"]
         drop_note = f"  [{dropped} hallucinated words dropped]" if dropped else ""
-        _w(f"  {Path(info['clip']).name}")
-        _w(f"    Alignment  : {info['align_method']}")
-        _w(f"    VAD filter : {info['vad_method']}{drop_note}")
-    _w("")
+        _s(f"  {Path(info['clip']).name}")
+        _s(f"    Alignment  : {info['align_method']}")
+        _s(f"    VAD filter : {info['vad_method']}{drop_note}")
+    _s("")
 
-    # -------------------------------------------------------------------------
-    # Stage 1 — raw Whisper output
-    # -------------------------------------------------------------------------
-    _w("--- STAGE 1: RAW WHISPER OUTPUT ---")
-    _w(f"  ({len(raw_words)} words total)")
-    for w in raw_words:
-        _w(f"  {_ts(w.start):>9} → {_ts(w.end):<9}  {w.word!r:<30}  conf={w.confidence:.2f}"
-           f"  clip={Path(w.clip_path).name}")
-    _w("")
-
-    # -------------------------------------------------------------------------
-    # Stage 2 — after WhisperX alignment + VAD/energy filter
-    # -------------------------------------------------------------------------
-    total_dropped = sum(i["hallucinations_dropped"] for i in clip_info)
-    _w("--- STAGE 2: AFTER ALIGNMENT + VAD FILTER ---")
-    _w(f"  ({len(aligned_words)} words kept, {total_dropped} dropped as hallucinations)")
-    for w in aligned_words:
-        keep_flag = ""
-        if not w.keep:
-            keep_flag = "  [OUTTAKE]"
-        _w(f"  {_ts(w.start):>9} → {_ts(w.end):<9}  {w.word!r:<30}  conf={w.confidence:.2f}{keep_flag}")
-    _w("")
-
-    # -------------------------------------------------------------------------
-    # Stage 3 — final output captions (remapped timeline)
-    # -------------------------------------------------------------------------
-    _w("--- STAGE 3: OUTPUT CAPTIONS (final video timeline) ---")
-    if caption_words:
-        _w(f"  ({len(caption_words)} words in output video)")
-        for w in caption_words:
-            _w(f"  {_ts(w.start):>9} → {_ts(w.end):<9}  {w.word!r}")
+    _s("--- RETRANSCRIPTION WINDOWS ---")
+    if not retrans_log:
+        _s("  (none — no suspicious windows detected)")
     else:
-        _w("  (not available — dry-run mode)")
-    _w("")
+        for entry in sorted(retrans_log, key=lambda e: e["win_start"]):
+            win_s = _ts(entry["win_start"])
+            win_e = _ts(entry["win_end"])
+            dur = entry["win_end"] - entry["win_start"]
+            _s(f"  [{win_s} → {win_e}]  trigger={entry['label']}  dur={dur:.3f}s"
+               f"  action={entry['action']}")
+            replaced = entry["replaced"]
+            if replaced:
+                replaced_str = "  ".join(f"{w.word!r}({w.confidence:.2f})" for w in replaced)
+                _s(f"    replaced : {replaced_str}")
+            else:
+                _s(f"    replaced : (window was empty — gap insertion)")
+            raw = entry["found_raw"]
+            if raw:
+                raw_str = "  ".join(f"{w.word!r}({w.confidence:.2f})" for w in raw)
+                _s(f"    raw      : {raw_str}")
+            else:
+                _s(f"    raw      : (nothing transcribed)")
+            kept = entry["found_kept"]
+            dropped = entry["found_dropped"]
+            if kept:
+                kept_str = "  ".join(f"{w.word!r}({w.confidence:.2f})" for w in kept)
+                _s(f"    kept     : {kept_str}")
+            if dropped:
+                drop_str = "  ".join(f"{w.word!r}({w.confidence:.2f})" for w in dropped)
+                _s(f"    dropped  : {drop_str}  [below conf threshold]")
+    _s("")
+
+    _s("--- RETAKE DETECTION ---")
+    if not config.cuts.repetition_detection:
+        _s("  (disabled — set repetition_detection: true to enable)")
+    elif not retake_candidates:
+        _s("  (enabled — no repeated phrases found)")
+    else:
+        all_candidates = [c for v in retake_candidates.values() for c in v]
+        n_kept = sum(1 for c in all_candidates if c.kept)
+        n_skipped = len(all_candidates) - n_kept
+        total_s = sum(e - s for v in (retake_ranges or {}).values() for s, e in v)
+        _s(f"  {len(all_candidates)} candidate(s) evaluated  |  {n_kept} cut ({total_s:.1f}s)  |  {n_skipped} skipped")
+        _s(f"  min_match_ratio={config.cuts.min_match_ratio}")
+        for clip, cands in retake_candidates.items():
+            _s(f"  {Path(clip).name}")
+            for c in cands:
+                phrase = " ".join(c.ngram)
+                mark = "CUT " if c.kept else "SKIP"
+                _s(f"    {'✓' if c.kept else '✗'} {mark}  {_ts(c.cut_start_s)} → {_ts(c.cut_end_s)}"
+                   f"  ({c.cut_end_s - c.cut_start_s:.3f}s)")
+                detail = f"match \"{phrase}\" … {c.match_len} words matched / {c.cut_len}-word cut  ratio={c.ratio:.2f}"
+                if c.skip_reason:
+                    detail += f"  ({c.skip_reason})"
+                _s(f"        {detail}")
+    _s("")
+
+    _s("--- IMAGE OVERLAYS ---")
+    if not config.images.enabled:
+        _s("  (disabled)")
+    elif image_cues is None:
+        _s("  (not available — dry-run mode)")
+    elif not image_cues:
+        _s("  0 logos matched")
+    else:
+        _s(f"  {len(image_cues)} logo(s) detected")
+        _s(f"  {'KEYWORD':<20}  {'OUTPUT TIME':<22}  FILE")
+        _s(f"  {'─'*20}  {'─'*22}  {'─'*40}")
+        for cue in image_cues:
+            time_range = f"{_ts(cue.start)} → {_ts(cue.end)}"
+            _s(f"  {cue.keyword:<20}  {time_range:<22}  {cue.image_path}")
+    _s("")
+
+    summary = edl_summary(edl)
+    _s("--- EDL SUMMARY ---")
+    _s(f"  Keep : {summary['total_keep_s']}s  ({summary['keep_segments']} segments)")
+    cut_breakdown = "  ".join(
+        f"{r}×{n}" for r, n in summary["reasons"].items() if n > 0
+    )
+    _s(f"  Cut  : {summary['total_cut_s']}s  — {cut_breakdown or 'none'}")
+    _s("")
+
+    _s("--- EDL ENTRIES ---")
+    _s(f"  {'#':>4}  {'TIME RANGE':<22}  {'CLIP':<22}  {'KEEP':<5}  {'DUR':>7}  REASON")
+    _s(f"  {'─'*4}  {'─'*22}  {'─'*22}  {'─'*5}  {'─'*7}  {'─'*10}")
+    for i, entry in enumerate(edl):
+        keep_str = "KEEP " if entry.keep else "CUT  "
+        dur = entry.end - entry.start
+        clip_name = Path(entry.source_clip).name
+        _s(
+            f"  {i:>4}  {_ts(entry.start):>9}→{_ts(entry.end):<11}  {clip_name:<22}"
+            f"  {keep_str}  {dur:>6.3f}s  {entry.reason}"
+        )
+
+    Path(f"{base_path}.debug.summary.txt").write_text("\n".join(s) + "\n")
 
     # -------------------------------------------------------------------------
-    # Timeline — words and gaps interleaved in source-clip time
+    # raw — raw Whisper output before alignment
     # -------------------------------------------------------------------------
-    _w("--- TIMELINE: WORDS + GAPS (source clip time) ---")
+    r: list[str] = [header]
+    _r = r.append
+
+    _r("--- RAW WHISPER OUTPUT ---")
+    _r(f"  ({len(raw_words)} words total)")
+    for w in raw_words:
+        _r(f"  {_ts(w.start):>9} → {_ts(w.end):<9}  {w.word!r:<30}  conf={w.confidence:.2f}"
+           f"  clip={Path(w.clip_path).name}")
+
+    Path(f"{base_path}.debug.raw.txt").write_text("\n".join(r) + "\n")
+
+    # -------------------------------------------------------------------------
+    # aligned — after alignment + retranscription + VAD filter
+    # -------------------------------------------------------------------------
+    a: list[str] = [header]
+    _a = a.append
+
+    total_dropped = sum(i["hallucinations_dropped"] for i in clip_info)
+    _a("--- ALIGNED OUTPUT (after alignment + retranscription + VAD) ---")
+    _a(f"  ({len(aligned_words)} words kept, {total_dropped} dropped as hallucinations)")
+    for w in aligned_words:
+        keep_flag = "  [OUTTAKE]" if not w.keep else ""
+        _a(f"  {_ts(w.start):>9} → {_ts(w.end):<9}  {w.word!r:<30}  conf={w.confidence:.2f}{keep_flag}")
+
+    Path(f"{base_path}.debug.aligned.txt").write_text("\n".join(a) + "\n")
+
+    # -------------------------------------------------------------------------
+    # timeline — words and gaps interleaved with cut reasoning
+    # -------------------------------------------------------------------------
+    t: list[str] = [header]
+    _t = t.append
+
+    _t("--- TIMELINE: WORDS + GAPS (source clip time) ---")
+
+    edl_cut_boundaries: set[float] = set()
+    for entry in edl:
+        if not entry.keep:
+            edl_cut_boundaries.add(round(entry.start, 3))
+
     for clip_path in clip_paths:
         clip_words = sorted(
             [w for w in aligned_words if w.clip_path == str(clip_path)],
@@ -117,85 +230,46 @@ def write_debug_report(
         clip_gaps = gaps_by_clip.get(str(clip_path), [])
         gap_map = {(round(g.start, 4), round(g.end, 4)): g for g in clip_gaps}
 
-        _w(f"\n  Clip: {Path(clip_path).name}  ({len(clip_words)} words, {len(clip_gaps)} gaps)")
-        _w(f"  {'TIME RANGE':<21}  {'TYPE':<10}  {'CONTENT':<38}  DECISION")
-        _w(f"  {'─'*21}  {'─'*10}  {'─'*38}  {'─'*8}")
+        _t(f"\n  Clip: {Path(clip_path).name}  ({len(clip_words)} words, {len(clip_gaps)} gaps)")
+        _t(f"  {'TIME RANGE':<22}  {'TYPE':<10}  {'CONTENT':<38}  DECISION")
+        _t(f"  {'─'*22}  {'─'*10}  {'─'*38}  {'─'*30}")
 
         for i, w in enumerate(clip_words):
             keep_str = "KEEP" if w.keep else "CUT "
-            content = f"{w.word!r:<28}  conf={w.confidence:.2f}"
-            # Flag very short words that precede a cut — WhisperX sometimes assigns
-            # < 50 ms windows to sub-tokens, making them acoustically inaudible.
+            dur_ms = (w.end - w.start) * 1000
+            content = f"{w.word!r:<28}  conf={w.confidence:.2f}  {dur_ms:.0f}ms"
             short_note = ""
-            word_dur_ms = (w.end - w.start) * 1000
-            if w.keep and word_dur_ms < 50 and i + 1 < len(clip_words):
+            if w.keep and dur_ms < 50 and i + 1 < len(clip_words):
                 nxt_w = clip_words[i + 1]
                 chk_gap = gap_map.get((round(w.end, 4), round(nxt_w.start, 4)))
                 if chk_gap and chk_gap.cut:
-                    short_note = f"  [!SHORT {word_dur_ms:.0f}ms — may be inaudible]"
-            _w(f"  {_ts(w.start):>9}→{_ts(w.end):<10}  {'WORD':<10}  {content:<38}  {keep_str}{short_note}")
+                    short_note = f"  [!SHORT {dur_ms:.0f}ms]"
+            _t(f"  {_ts(w.start):>9}→{_ts(w.end):<11}  {'WORD':<10}  {content:<38}  {keep_str}{short_note}")
 
             if i < len(clip_words) - 1:
                 nxt = clip_words[i + 1]
                 gap = gap_map.get((round(w.end, 4), round(nxt.start, 4)))
                 if gap:
-                    cut_str = "CUT " if gap.cut else "KEEP"
                     eff_note = (
                         f"  eff={_ts(gap.effective_start)}"
                         if abs(gap.effective_start - gap.start) > 0.005
                         else ""
                     )
                     g_content = f"{gap.gap_type.upper()}: {gap.duration_ms:.0f}ms{eff_note}"
-                    _w(f"  {_ts(gap.effective_start):>9}→{_ts(gap.end):<10}  {gap.gap_type.upper():<10}  {g_content:<38}  {cut_str}")
+                    if gap.cut:
+                        eff_key = round(gap.effective_start, 3)
+                        if eff_key not in edl_cut_boundaries:
+                            decision = "KEEP [mid_sentence_floor]"
+                        else:
+                            decision = "CUT "
+                    else:
+                        decision = f"KEEP [{gap.skip_reason}]" if gap.skip_reason else "KEEP"
+                    _t(f"  {_ts(gap.effective_start):>9}→{_ts(gap.end):<11}  {gap.gap_type.upper():<10}  {g_content:<38}  {decision}")
                 elif nxt.start - w.end > 0.010:
                     dur_ms = (nxt.start - w.end) * 1000
-                    _w(f"  {_ts(w.end):>9}→{_ts(nxt.start):<10}  {'(no gap)':<10}  {dur_ms:.0f}ms (below threshold)")
-    _w("")
+                    _t(f"  {_ts(w.end):>9}→{_ts(nxt.start):<11}  {'(no gap)':<10}  {dur_ms:.0f}ms (below threshold)")
 
-    # -------------------------------------------------------------------------
-    # Image overlays
-    # -------------------------------------------------------------------------
-    _w("--- IMAGE OVERLAYS ---")
-    if not config.images.enabled:
-        _w("  (disabled)")
-    elif image_cues is None:
-        _w("  (not available — dry-run mode)")
-    elif not image_cues:
-        _w("  0 logos matched (no transcript words matched any gilbarbara/logos shortname)")
-    else:
-        _w(f"  {len(image_cues)} logo(s) detected")
-        _w(f"  {'KEYWORD':<20}  {'OUTPUT TIME':<22}  FILE")
-        _w(f"  {'─'*20}  {'─'*22}  {'─'*40}")
-        for cue in image_cues:
-            time_range = f"{_ts(cue.start)} → {_ts(cue.end)}"
-            _w(f"  {cue.keyword:<20}  {time_range:<22}  {cue.image_path}")
-    _w("")
-
-    # -------------------------------------------------------------------------
-    # EDL summary + full entry list
-    # -------------------------------------------------------------------------
-    summary = edl_summary(edl)
-    _w("--- EDL SUMMARY ---")
-    _w(f"  Keep : {summary['total_keep_s']}s  ({summary['keep_segments']} segments)")
-    cut_breakdown = "  ".join(
-        f"{r}×{n}" for r, n in summary["reasons"].items() if n > 0
-    )
-    _w(f"  Cut  : {summary['total_cut_s']}s  — {cut_breakdown or 'none'}")
-    _w("")
-
-    _w("--- EDL ENTRIES ---")
-    _w(f"  {'#':>4}  {'TIME RANGE':<21}  {'CLIP':<22}  {'KEEP':<5}  {'DUR':>7}  REASON")
-    _w(f"  {'─'*4}  {'─'*21}  {'─'*22}  {'─'*5}  {'─'*7}  {'─'*10}")
-    for i, entry in enumerate(edl):
-        keep_str = "KEEP " if entry.keep else "CUT  "
-        dur = entry.end - entry.start
-        clip_name = Path(entry.source_clip).name
-        _w(
-            f"  {i:>4}  {_ts(entry.start):>9}→{_ts(entry.end):<10}  {clip_name:<22}"
-            f"  {keep_str}  {dur:>6.3f}s  {entry.reason}"
-        )
-
-    Path(path).write_text("\n".join(out) + "\n")
+    Path(f"{base_path}.debug.timeline.txt").write_text("\n".join(t) + "\n")
 
 
 # ---------------------------------------------------------------------------

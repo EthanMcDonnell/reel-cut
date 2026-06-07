@@ -16,7 +16,7 @@ cuts:
                                    # WhisperX start timestamps run 80-150ms late — this pad stops the
                                    # beginning of words getting clipped. Raise if sentence starts sound
                                    # cut off; lower if you hear too much silence before words.
-  word_end_scan_ms: 50             # how far (ms) to scan backward from a word's end timestamp to find
+  word_end_scan_ms: 35             # how far (ms) to scan backward from a word's end timestamp to find
                                    # the true silence onset. Stops sentence endings getting clipped by
                                    # stop consonants ("t","p","k") that look like silence at wider windows.
                                    # Raise if trailing silence is being left in; lower if word ends are clipped.
@@ -33,7 +33,14 @@ cuts:
   mid_sentence_cut_floor_ms: 1500  # gaps below this duration (ms) are never cut unless the preceding word
                                    # ends with sentence-ending punctuation (. ! ? , ; :). Prevents jump
                                    # cuts landing mid-phrase from restarts or pauses mid-delivery.
-  repetition_detection: false      # detect and cut repeated takes (earlier occurrence cut, last take kept)
+  repetition_detection: true       # detect and cut repeated takes (earlier occurrence cut, last take kept)
+  min_retake_words: 3              # default: 4 | minimum consecutive words to qualify as a repeated take
+  max_retake_gap_s: 12             # default: 20 | max seconds between first and second occurrence to count
+                                   # as a false start. Prevents common short phrases far apart in the video
+                                   # from being misidentified as retakes.
+  min_match_ratio: 0.5             # default: 0.5 | greedy extended match length / cut length must meet this
+                                   # threshold. Prevents short coincidental phrase overlaps from triggering
+                                   # large cuts. Raise (e.g. 0.7) to be stricter; lower (e.g. 0.3) to cut more.
   min_word_confidence: 0.5         # hard floor: if either adjacent word's alignment confidence is below
                                    # this, the gap is never cut regardless of duration.
   low_confidence_threshold: 0.8    # soft threshold: if either adjacent word is below this (but above
@@ -55,7 +62,7 @@ output:
   fps: 30
   codec: h264
   audio_bitrate: 128k
-  max_duration_s: 90
+  # max_duration_s: 60
   location: ./output/
 
 captions:
@@ -97,7 +104,7 @@ whisper:
   language: en                     # default: en
   beam_size: 4                     # default: 1  |  1 = greedy/fastest but error-prone; higher = beam search,
                                    # considers multiple candidates — reduces errors on numbers and proper nouns.
-  initial_prompt: "Software engineering, AI, 6 months, 12 months, years of experience, developer"
+  initial_prompt: "Software engineering, AI, 12 months"
                                    # default: null  |  primes Whisper toward expected vocabulary. Update to match content.
   condition_on_previous_text: false # default: false  |  true = segments share context (more fluent but
                                    # hallucinations can cascade); false = each segment decoded independently.
@@ -109,3 +116,9 @@ whisper:
                                    # to surface false starts hidden in large aligned spans.
   wide_word_threshold_s: 1.0      # default: 1.5  |  aligned word span (seconds) above which a word triggers
                                    # retranscription. Lower (e.g. 1.0) to catch more false starts.
+  retranscribe_low_conf_gap_ms: 500   # default: 1000 | gap (ms) after a run of low-confidence words
+                                   # that triggers retranscription of that region. Uses min_word_confidence
+                                   # as the confidence floor. Set 0 to disable.
+  retranscribe_large_gap_ms: 1500  # default: 1500 | gap (ms) between any two consecutive words that
+                                   # triggers retranscription regardless of confidence. Catches false
+                                   # starts Whisper absorbed without surfacing twice. Set 0 to disable.

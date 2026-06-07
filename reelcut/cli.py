@@ -311,11 +311,26 @@ def _phase1(cfg, clips: list[str], output_dir: Path, verbose: bool):
     from .gap_detector import detect_gaps
     from .transcriber import transcribe as do_transcribe, align, filter_words_by_vad, filter_silent_words, WordTimestamp
 
+    # Build a video-specific initial_prompt by appending the slug (converted to
+    # natural text) to the base prompt from config. This biases Whisper toward
+    # proper nouns and technical terms in the video title — e.g. "claude" over
+    # "cloud", "caching" spelled correctly, etc. — without losing the general
+    # vocabulary hint set in config.yaml.
+    slug_text = " ".join(
+        w.capitalize()
+        for w in output_dir.name.replace("-", " ").replace("_", " ").split()
+    )
+    base_prompt = cfg.whisper.initial_prompt or ""
+    combined_prompt = f"{base_prompt}, {slug_text}" if base_prompt else slug_text
+    whisper_cfg = cfg.whisper.model_copy(update={"initial_prompt": combined_prompt})
+    console.print(f"  Whisper prompt: {combined_prompt!r}")
+
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
         all_words: list = []
         all_raw_words: list = []
         clip_info: list[dict] = []
+        retrans_log: list[dict] = []
 
         for clip_path in clips:
             wav = tmp / (Path(clip_path).stem + ".wav")
@@ -328,7 +343,7 @@ def _phase1(cfg, clips: list[str], output_dir: Path, verbose: bool):
 
             console.print(f"[bold]Step 2[/bold] Transcribing {Path(clip_path).name}…")
             t = time.perf_counter()
-            words = do_transcribe(wav, cfg.whisper)
+            words = do_transcribe(wav, whisper_cfg)
             _tlog(time.perf_counter() - t, f"{len(words)} words")
 
             for w in words:
@@ -337,17 +352,23 @@ def _phase1(cfg, clips: list[str], output_dir: Path, verbose: bool):
 
             console.print(f"[bold]Step 3[/bold] Aligning timestamps for {Path(clip_path).name}…")
             t = time.perf_counter()
-            words, align_method = align(words, wav, cfg.whisper)
+            words, align_method = align(words, wav, whisper_cfg)
             align_ok = "Whisper timestamps" not in align_method
             align_color = "green" if align_ok else "yellow"
             console.print(f"  Alignment: [{align_color}]{align_method}[/{align_color}]")
-            wide_count = sum(1 for w in words if (w.end - w.start) >= cfg.whisper.wide_word_threshold_s)
+            words.sort(key=lambda w: w.start)
             _warn_wide_words(words, console, cfg.whisper.wide_word_threshold_s)
-            if wide_count:
-                from .transcriber import retranscribe_wide_words
-                console.print(f"  Retranscribing {wide_count} wide-word window(s)…")
-                clips_dir = output_dir / "retranscribe-clips"
-                words = retranscribe_wide_words(words, wav, cfg.whisper, cfg.whisper.wide_word_threshold_s, clips_dir)
+            from .transcriber import retranscribe_suspicious_regions
+            clips_dir = output_dir / "retranscribe-clips"
+            words, n_retrans, clip_retrans_log = retranscribe_suspicious_regions(
+                words, wav, whisper_cfg,
+                conf_threshold=cfg.cuts.min_word_confidence,
+                clips_dir=clips_dir,
+            )
+            retrans_log.extend(clip_retrans_log)
+            if n_retrans:
+                words.sort(key=lambda w: w.start)
+                console.print(f"  Retranscribed {n_retrans} suspicious window(s)")
                 _warn_wide_words(words, console, cfg.whisper.wide_word_threshold_s)
 
             before = len(words)
@@ -377,15 +398,23 @@ def _phase1(cfg, clips: list[str], output_dir: Path, verbose: bool):
 
         # Retake detection
         retake_ranges: dict[str, list[tuple[float, float]]] = {}
+        retake_candidates: dict[str, list] = {}
         if cfg.cuts.repetition_detection:
             from .retake_detector import detect_retakes
             console.print("[bold]Step 3b[/bold] Detecting duplicate takes…")
             t = time.perf_counter()
             for clip_path in clips:
                 clip_words = [w for w in all_words if w.clip_path == str(clip_path)]
-                ranges = detect_retakes(clip_words, cfg.cuts.min_retake_words)
+                ranges, candidates = detect_retakes(
+                    clip_words,
+                    cfg.cuts.min_retake_words,
+                    cfg.cuts.max_retake_gap_s,
+                    cfg.cuts.min_match_ratio,
+                )
                 if ranges:
                     retake_ranges[str(clip_path)] = ranges
+                if candidates:
+                    retake_candidates[str(clip_path)] = candidates
             total_retakes = sum(len(v) for v in retake_ranges.values())
             if total_retakes:
                 total_s = sum(e - s for v in retake_ranges.values() for s, e in v)
@@ -439,9 +468,9 @@ def _phase1(cfg, clips: list[str], output_dir: Path, verbose: bool):
 
         # Debug report
         from .debug_report import write_debug_report
-        debug_path = output_dir / f"{Path(clips[0]).stem}.debug.txt"
+        debug_base = output_dir / Path(clips[0]).stem
         write_debug_report(
-            debug_path,
+            debug_base,
             clip_paths=clips,
             config=cfg,
             raw_words=all_raw_words,
@@ -450,9 +479,12 @@ def _phase1(cfg, clips: list[str], output_dir: Path, verbose: bool):
             edl=edl,
             caption_words=caption_words,
             clip_info=clip_info,
+            retrans_log=retrans_log,
+            retake_ranges=retake_ranges,
+            retake_candidates=retake_candidates,
             image_cues=None,
         )
-        console.print(f"[green]Debug report  →[/green] {debug_path}")
+        console.print(f"[green]Debug report  →[/green] {debug_base}.debug.summary.txt (+raw/aligned/timeline)")
 
         # Build captions doc
         doc_edl = [

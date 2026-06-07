@@ -137,7 +137,11 @@ async def capture(url: str, output_dir: Path, snippets: list[str | dict] | None 
         await page.set_viewport_size({_KW: 390, _KH: 844})
 
         try:
-            await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            try:
+                await page.goto(url, wait_until="networkidle", timeout=30000)
+            except Exception:
+                # networkidle can time out on pages with persistent background requests — fall back
+                await page.goto(url, wait_until="load", timeout=30000)
             await page.wait_for_timeout(2500)
         except Exception as exc:
             await browser.close()
@@ -167,23 +171,30 @@ async def capture(url: str, output_dir: Path, snippets: list[str | dict] | None 
 
         if snippet_texts:
             for i, (snippet, context) in enumerate(zip(snippet_texts, snippet_contexts), start=1):
-                anchor = snippet[:80].strip().lower()
+                raw = snippet.strip().lower()
+                anchor = raw[:80]
+                if len(raw) > 80 and ' ' in anchor:
+                    anchor = anchor[:anchor.rfind(' ')]
                 try:
                     el = await page.evaluate_handle(_js_find, anchor)
 
                     _js_isnull = bytes([101,32,61,62,32,33,101,32,124,124,32,33,101,46,116,97,103,78,97,109,101]).decode()
-                    _js_scroll = bytes([101,32,61,62,32,101,46,115,99,114,111,108,108,73,110,116,111,86,105,101,119,40,123,98,108,111,99,107,58,34,99,101,110,116,101,114,34,44,32,105,110,108,105,110,101,58,34,99,101,110,116,101,114,34,125,41]).decode()
                     # returns [x, y, width, height] as array to avoid string key dict accesses
                     _js_rect = bytes([101,32,61,62,32,123,32,99,111,110,115,116,32,114,32,61,32,101,46,103,101,116,66,111,117,110,100,105,110,103,67,108,105,101,110,116,82,101,99,116,40,41,59,32,114,101,116,117,114,110,32,91,114,46,120,44,32,114,46,121,44,32,114,46,119,105,100,116,104,44,32,114,46,104,101,105,103,104,116,93,59,32,125]).decode()
+                    # scroll via absolute page Y so SPAs with deferred layout don't confuse scrollIntoView
+                    _js_scroll_abs = (
+                        "e => { const r = e.getBoundingClientRect();"
+                        " const absY = r.top + window.pageYOffset;"
+                        " window.scrollTo({top: Math.max(0, absY - window.innerHeight/2 + r.height/2), behavior: 'instant'}); }"
+                    )
 
                     if not el or await page.evaluate(_js_isnull, el):
                         continue
 
-                    block = await _block_ancestor(page, el)
-                    await page.evaluate(_js_scroll, block)
+                    await page.evaluate(_js_scroll_abs, el)
                     await page.wait_for_timeout(600)
 
-                    r = await page.evaluate(_js_rect, block)
+                    r = await page.evaluate(_js_rect, el)
                     if not r or r[2] == 0:
                         continue
                     vw = 390

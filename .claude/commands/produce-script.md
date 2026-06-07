@@ -110,9 +110,11 @@ Invoke the `hooks` skill. Use the rules and patterns it returns to write 3 hooks
 Ask the user which hook they prefer
 Use confirmed hook in Stage 3.
 
-## Stage 2.5 — Source Attribution Verification
+## Stage 3 — Script Writing
 
-Before writing, for every claim, stat, or quote that will appear in the script:
+Invoke the `scripts` skill and `stop-slop` skill, use the full `topic_package` and confirmed hook (PATTERN + TEXT) to create a captivating short form content script for platforms like Instagram Reels. 
+
+For every claim, stat, or quote that will appear in the script:
 
 1. **Locate it verbatim** in `FULL_CONTENT`. Drop any quote that doesn't appear there.
 2. **Confirm the correct subject.** Ask: who said this — the document, a person quoted in it, or a secondary source? A quote from someone's speech is not the document's claim. A fact from source B is not from source A. Never collapse two sources into one sentence.
@@ -121,12 +123,8 @@ Before writing, for every claim, stat, or quote that will appear in the script:
 
 Any claim that cannot be traced to a specific sentence in `FULL_CONTENT` is cut, not paraphrased from memory.
 
-## Stage 3 — Script Writing
-
-Use a subagent to invoke the `scripts` skill with the following instruction prepended:
-> "Topic, research, and hook are already confirmed. Do not clarify, research, or generate a new hook. Use the following hook and research package to write the video script, then save the file."
-
-Pass the full `topic_package` and confirmed hook (PATTERN + TEXT). The skill handles all writing rules, voice rules, and word count enforcement. After the script is written, save it:
+## Stage 3.5 — Script Writing
+After the script is written, save it:
 
 1. Save to `/Users/ethanmcdonnell/Library/Mobile Documents/iCloud~md~obsidian/Documents/Vault/Videos/Videos To Do/`
 2. Use kebab-case filename describing the topic (e.g. `netflix-cdn-architecture.md`)
@@ -137,24 +135,25 @@ Wait for the saved file path before continuing.
 
 **Mark the videos ideas `status:` frontmatter field:** update it from `new` to `done` using the Edit tool.
 
-## Stage 3.5 — Stop-Slop Review
-
-Invoke the `stop-slop` skill on the saved script file as a dedicated pass. Its sole job is catching slop patterns missed during writing. Apply all fixes directly to the saved file.
-
-## Stage 4 — Source Screenshots
-
-After the script is saved, capture visual evidence of every claim used that will also be used for the video.
-
+## Stage 4 — Source Screenshots for Video
 ### Step 4.1: Extract verbatim snippets with context
 
-For each source URL used in the script, identify up to 6 verbatim phrases that were quoted, paraphrased, or used as factual support in the script. For each snippet, also write a `context` — a short description of the specific script sentence or section it supports, written so it can be understood without re-reading the script. Each snippet must:
-- Appear **verbatim** in `FULL_CONTENT` and be explicitly referenced or used as supporting content for a specific section of the video
-- Be 10–80 characters — long enough to be unique on the page, short enough to match reliably
-- Be the **exact** phrase from the article (copy directly from `FULL_CONTENT`)
+For each source URL used in the script, identify up to 6 verbatim phrases that are able to support sections of the script users may be   
+questioning whther the claim is true or where the information was sourced from. So core claims of the script, key statistic claims etc that were quoted, paraphrased, or used as factual support in the script. For each snippet, also write a `context` (the **exact verbatim script line**) that the image will be shown in video with snippet highlighted. Think about what would support the output video to confirm to audience the validity of what I am saying.
+Each snippet must:
+- Appear **verbatim** in `FULL_CONTENT` and be explicitly referenced or used as supporting content for a specific script line
+- Be **40–200 characters** — include enough surrounding words that the snippet is readable in isolation as evidence
+- Be the **specific phrase that directly maps to the script sentence**. 
 
-**Good snippet candidates:** direct quotes from named people, key statistics or numbers, specific named claims (dollar figures, dates, product names). **Skip:** narrative or process descriptions — even if used in the script, a step-by-step explanation doesn't make useful visual evidence.
+**Good snippet candidates:**
+- The source's version of the script's big claims — sentences in the article that directly back up the bold assertions in the script. These are the screenshots that give the video credibility.
+- Direct quotes from named people
+- Specific named claims with dollar figures, dates, or numbers
+- Ask yourself what does the viewer need to believe for the rest of the video to land?
 
-The `context` field should answer "which script line does this screenshot visualise?" — e.g. `"Script line: 'GitHub is replacing PRUs with AI Credits' — supports the billing change claim"`. Keep it to one sentence.
+**Skip:** generic setup sentences, supporting detail that isn't itself a strong claim, navigation text, or phrases so short they carry no standalone meaning.
+
+The `context` field must be the **exact verbatim script line** this screenshot supports — copy it word-for-word from the script.
 
 ### Step 4.2: Run the screenshot tool
 

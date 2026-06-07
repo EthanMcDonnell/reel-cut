@@ -22,6 +22,7 @@ class Gap:
     duration_ms: float
     gap_type: GapType
     cut: bool              # True = this gap will be removed
+    skip_reason: str = ""  # non-empty when cut=False; human-readable explanation
 
 
 def detect_gaps(
@@ -276,20 +277,28 @@ def _build_gaps(
         min_conf = min(prev_conf, next_conf)
 
         clip_duration_s = len(audio) / sr
+        skip_reason = ""
         if config.preserve_start_s > 0 and effective_start < config.preserve_start_s:
             should_cut = False
+            skip_reason = f"preserve_start ({effective_start:.3f}s < {config.preserve_start_s}s)"
         elif config.preserve_end_s > 0 and gap_end > clip_duration_s - config.preserve_end_s:
             should_cut = False
+            skip_reason = f"preserve_end ({gap_end:.3f}s > clip-{config.preserve_end_s}s)"
         elif min_conf < config.min_word_confidence:
-            # Hard floor: adjacent word too uncertain to trust the gap boundary
             should_cut = False
+            skip_reason = f"hard_floor (min_conf={min_conf:.2f} < {config.min_word_confidence})"
         elif min_conf < config.low_confidence_threshold:
-            # Low confidence zone: require a substantially longer gap
             should_cut = duration_ms >= config.low_confidence_min_gap_ms
+            if not should_cut:
+                skip_reason = f"low_conf ({duration_ms:.0f}ms < {config.low_confidence_min_gap_ms}ms, conf={min_conf:.2f})"
         elif gap_type == "breath":
             should_cut = duration_ms >= config.min_breath_ms
+            if not should_cut:
+                skip_reason = f"breath too short ({duration_ms:.0f}ms < {config.min_breath_ms}ms)"
         else:
             should_cut = duration_ms >= config.min_silence_ms
+            if not should_cut:
+                skip_reason = f"too short ({duration_ms:.0f}ms < {config.min_silence_ms}ms)"
 
         gaps.append(Gap(
             start=raw_start,
@@ -298,6 +307,7 @@ def _build_gaps(
             duration_ms=duration_ms,
             gap_type=gap_type,
             cut=should_cut,
+            skip_reason=skip_reason,
         ))
 
     return gaps

@@ -230,22 +230,57 @@ def filter_silent_words(
     return kept
 
 
-def retranscribe_wide_words(
+def retranscribe_suspicious_regions(
     words: list[WordTimestamp],
     wav_path: str | Path,
     config: WhisperConfig,
-    wide_threshold_s: float = 1.5,
+    conf_threshold: float = 0.5,
     clips_dir: Path | None = None,
-) -> list[WordTimestamp]:
-    """Re-run Whisper on wide-word windows to surface hidden false-start words.
+) -> tuple[list[WordTimestamp], int, list[dict]]:
+    """Detect and retranscribe suspicious audio regions to surface hidden false-start words.
 
-    For each word whose aligned span >= wide_threshold_s, extracts that audio
-    slice, transcribes it independently with a lower no_speech_threshold, and
-    replaces the original word with whatever is found. If nothing is found, the
-    original word is kept unchanged.
+    Three trigger types feed into a single merged-window pipeline:
 
-    Must be called after align() and before VAD filtering so word spans are still
-    at their full WhisperX-assigned width.
+    Case 1 — Wide aligned word  (config: wide_word_threshold_s, default 1.0s)
+        WhisperX gives a word a suspiciously large span (e.g. "obviously," at 2.2s).
+        The aligner could not locate the word precisely and spread it across dead air
+        or hidden speech. Window covers the full word span.
+        Origin: false starts that Whisper collapsed into one transcript — the gap
+        between a false-start attempt and the clean retry looks like one abnormally
+        wide aligned word.
+
+    Case 2 — Low-confidence run + gap  (config: retranscribe_low_conf_gap_ms, default 500ms)
+        A consecutive run of words all below conf_threshold followed by a gap ≥ the
+        threshold. Low-confidence words near gaps are problematic: the gap detector's
+        hard-floor rule suppresses cuts on any gap adjacent to a word below
+        min_word_confidence regardless of duration. Retranscribing confirms whether
+        the gap is dead air (boost confidence to unblock the cut) or contains speech.
+        Window starts at the first word of the low-conf run.
+        Origin: "for/the/account" (conf 0.49/0.45/0.22) blocking a 2.17s gap from
+        being cut because "account"'s confidence fell below min_word_confidence.
+
+    Case 3 — Large inter-word gap  (config: retranscribe_large_gap_ms, 0 = disabled)
+        Any consecutive word pair with a gap ≥ the threshold regardless of confidence.
+        A pause this long mid-speech often contains a false-start fragment that Whisper
+        absorbed into a single transcript without surfacing it as a repeated phrase.
+        Window covers only the gap itself (word.end → next_word.start).
+        Origin: "or" ending at 89.9s → "Meta's" starting at 91.5s (1.6s gap), hiding
+        a false-start fragment "or Met..." that Whisper never transcribed separately,
+        leaving WhisperX alignment confused and "chatbot" dropped entirely.
+
+    Windows from all three triggers are collected, sorted, and merged before any audio
+    is touched. Adjacent or overlapping windows from different trigger types chain into
+    one larger window — preventing double-retranscription and naturally covering the
+    full troubled region in a single Whisper call.
+
+    If retranscription finds words: replaces words in the window (or inserts into the
+    gap when the window contains no existing words).
+    If nothing found + window contained low-conf words: boosts the last low-conf word's
+    confidence to 0.95 to unblock gap detection (confirmed dead air).
+    If nothing found + pure gap or wide-word window: no change.
+
+    Returns (updated_words, n_windows_processed). Must be called after align() and
+    before VAD filtering.
     """
     import tempfile
 
@@ -253,13 +288,60 @@ def retranscribe_wide_words(
     from faster_whisper import WhisperModel
 
     wav_path = Path(wav_path)
-    audio, sample_rate = sf.read(str(wav_path))
+    audio, sample_rate = sf.read(str(wav_path), dtype="float32")
 
-    wide_words = [w for w in words if (w.end - w.start) >= wide_threshold_s]
-    if not wide_words:
-        return list(words)
+    wide_threshold_s = config.wide_word_threshold_s
+    low_conf_gap_s = (config.retranscribe_low_conf_gap_ms / 1000
+                      if config.retranscribe_low_conf_gap_ms > 0 else float("inf"))
+    large_gap_s = (config.retranscribe_large_gap_ms / 1000
+                   if config.retranscribe_large_gap_ms > 0 else float("inf"))
 
-    # Load model once for all wide-word re-runs
+    # --- Collect windows from all three trigger types ---
+    raw_windows: list[tuple[float, float, str]] = []  # (start_s, end_s, label)
+
+    # Case 1: wide aligned words
+    for w in words:
+        if (w.end - w.start) >= wide_threshold_s:
+            raw_windows.append((w.start, w.end, "wide"))
+
+    # Case 2: low-confidence run followed by a large gap
+    i = 0
+    while i < len(words):
+        if words[i].confidence < conf_threshold:
+            run_start_i = i
+            while i < len(words) and words[i].confidence < conf_threshold:
+                i += 1
+            run_end_i = i - 1
+            if i < len(words):
+                gap = words[i].start - words[run_end_i].end
+                if gap >= low_conf_gap_s:
+                    raw_windows.append((words[run_start_i].start, words[i].start, "low_conf"))
+        else:
+            i += 1
+
+    # Case 3: large inter-word gap — mid-sentence only
+    # Sentence-boundary gaps are expected at this stage (no silence cutting yet),
+    # so skip any gap where the preceding word ends with sentence-ending punctuation.
+    for i in range(len(words) - 1):
+        gap = words[i + 1].start - words[i].end
+        if gap >= large_gap_s and not words[i].word.rstrip().endswith((".", "!", "?")):
+            raw_windows.append((words[i].end, words[i + 1].start, "large_gap"))
+
+    if not raw_windows:
+        return list(words), 0, []
+
+    # --- Merge overlapping / adjacent windows ---
+    raw_windows.sort(key=lambda x: x[0])
+    merged: list[tuple[float, float, str]] = []
+    for start, end, label in raw_windows:
+        if merged and start <= merged[-1][1]:
+            prev_start, prev_end, prev_label = merged[-1]
+            combined = prev_label if label in prev_label else f"{prev_label}+{label}"
+            merged[-1] = (prev_start, max(prev_end, end), combined)
+        else:
+            merged.append((start, end, label))
+
+    # --- Load model once for all windows ---
     device = "cuda" if config.compute_type == "float16" else "cpu"
     model = WhisperModel(
         config.model,
@@ -274,51 +356,110 @@ def retranscribe_wide_words(
     if clips_dir is not None:
         clips_dir.mkdir(parents=True, exist_ok=True)
 
-    result: list[WordTimestamp] = []
-    for word in words:
-        span = word.end - word.start
-        if span < wide_threshold_s:
-            result.append(word)
-            continue
+    # --- Process windows right-to-left to preserve list indices ---
+    result = list(words)
+    retrans_log: list[dict] = []
+    for win_start, win_end, label in reversed(merged):
+        # Words whose start falls within [win_start, win_end)
+        idx_start = next((i for i, w in enumerate(result) if w.start >= win_start), len(result))
+        idx_end   = next((i for i, w in enumerate(result) if w.start >= win_end),   len(result))
 
-        start_sample = int(word.start * sample_rate)
-        end_sample = int(word.end * sample_rate)
+        # Source clip: first word in window, falling back to word just before it
+        if idx_start < len(result):
+            source_clip = result[idx_start].clip_path
+        elif idx_start > 0:
+            source_clip = result[idx_start - 1].clip_path
+        else:
+            source_clip = words[0].clip_path if words else ""
+
+        # Track low-conf indices for the confidence-boost fallback
+        low_conf_in_window = [
+            i for i in range(idx_start, idx_end)
+            if result[i].confidence < conf_threshold
+        ]
+        words_replaced = [result[i] for i in range(idx_start, idx_end)]
+
+        start_sample = int(win_start * sample_rate)
+        end_sample   = int(win_end   * sample_rate)
         chunk = audio[start_sample:end_sample]
-
-        if len(chunk) == 0:
-            result.append(word)
+        # Whisper needs at least ~100ms of audio to produce meaningful output.
+        if len(chunk) < int(sample_rate * 0.1):
             continue
 
         if clips_dir is not None:
-            safe_word = word.word.strip().lstrip("-").rstrip(".,!?;:\"'") or "word"
-            clip_name = f"{word.start:.3f}_{safe_word}.wav"
-            tmp_path = clips_dir / clip_name
-            sf.write(str(tmp_path), chunk, sample_rate)
+            tmp_path = clips_dir / f"{label}_{win_start:.3f}.wav"
             cleanup = False
         else:
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
                 tmp_path = Path(tmp.name)
-            sf.write(str(tmp_path), chunk, sample_rate)
             cleanup = True
 
         try:
-            found = _transcribe_with_model(model, tmp_path, retranscribe_config)
+            sf.write(str(tmp_path), chunk, sample_rate)
+            found_raw = _transcribe_with_model(model, tmp_path, retranscribe_config)
         except Exception:
-            found = []
+            found_raw = []
         finally:
             if cleanup:
                 tmp_path.unlink(missing_ok=True)
 
+        # Copy words before mutating so found_raw preserves clip-relative timestamps
+        # for the debug log (the log shows these as-found before offset is applied).
+        found = [
+            WordTimestamp(
+                word=w.word, start=w.start, end=w.end,
+                confidence=w.confidence, clip_path=w.clip_path,
+            )
+            for w in found_raw
+        ]
         if found:
             for w in found:
-                w.start += word.start
-                w.end += word.start
-                w.clip_path = word.clip_path
-            result.extend(found)
-        else:
-            result.append(word)
+                w.start += win_start
+                w.end    = min(w.end + win_start, win_end)  # clamp to window boundary
+                w.clip_path = source_clip
+            # Filter to window bounds and drop low-confidence words. Whisper often
+            # bleeds the tail of the preceding word into the first ~100ms of a short
+            # clip, producing a ghost low-conf duplicate. Those words also hard-floor
+            # gap detection exactly as low-conf aligned words do, blocking cuts near
+            # the window boundary. Dropping them here mirrors the confidence floor
+            # applied everywhere else in the pipeline.
+            found = [
+                w for w in found
+                if w.start < win_end and w.confidence >= conf_threshold
+            ]
 
-    return result
+        # Derive dropped words from the same filter conditions applied to found_raw
+        # (clip-relative timestamps, before offset) so the log is readable.
+        found_dropped = [
+            w for w in found_raw
+            if (w.start + win_start) >= win_end or w.confidence < conf_threshold
+        ]
+
+        # Re-check after filtering: retranscription may have returned only low-conf
+        # bleed words that were all dropped above.
+        if found:
+            result[idx_start:idx_end] = found
+            action = "replaced"
+        elif low_conf_in_window:
+            # Nothing usable found + low-conf words present → confirmed dead air.
+            # Boost last low-conf word's confidence to unblock gap detection.
+            result[low_conf_in_window[-1]].confidence = 0.95
+            action = "boosted"
+        else:
+            action = "no_change"
+
+        retrans_log.append({
+            "win_start": win_start,
+            "win_end": win_end,
+            "label": label,
+            "replaced": words_replaced,
+            "found_raw": found_raw,
+            "found_kept": found,
+            "found_dropped": found_dropped,
+            "action": action,
+        })
+
+    return result, len(merged), retrans_log
 
 
 # ---------------------------------------------------------------------------
