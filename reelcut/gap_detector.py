@@ -274,7 +274,6 @@ def _build_gaps(
 
         prev_conf = words[i].confidence
         next_conf = words[i + 1].confidence
-        min_conf = min(prev_conf, next_conf)
 
         clip_duration_s = len(audio) / sr
         skip_reason = ""
@@ -284,13 +283,19 @@ def _build_gaps(
         elif config.preserve_end_s > 0 and gap_end > clip_duration_s - config.preserve_end_s:
             should_cut = False
             skip_reason = f"preserve_end ({gap_end:.3f}s > clip-{config.preserve_end_s}s)"
-        elif min_conf < config.min_word_confidence:
+        elif next_conf < config.min_word_confidence:
+            # The word we're cutting INTO is uncertain — don't cut regardless of prev side.
             should_cut = False
-            skip_reason = f"hard_floor (min_conf={min_conf:.2f} < {config.min_word_confidence})"
-        elif min_conf < config.low_confidence_threshold:
+            skip_reason = f"hard_floor (next_conf={next_conf:.2f} < {config.min_word_confidence})"
+        elif prev_conf < config.min_word_confidence:
+            # Only the preceding word is uncertain — apply relaxed threshold rather than blocking.
             should_cut = duration_ms >= config.low_confidence_min_gap_ms
             if not should_cut:
-                skip_reason = f"low_conf ({duration_ms:.0f}ms < {config.low_confidence_min_gap_ms}ms, conf={min_conf:.2f})"
+                skip_reason = f"low_conf ({duration_ms:.0f}ms < {config.low_confidence_min_gap_ms}ms, conf={prev_conf:.2f})"
+        elif min(prev_conf, next_conf) < config.low_confidence_threshold:
+            should_cut = duration_ms >= config.low_confidence_min_gap_ms
+            if not should_cut:
+                skip_reason = f"low_conf ({duration_ms:.0f}ms < {config.low_confidence_min_gap_ms}ms, conf={min(prev_conf, next_conf):.2f})"
         elif gap_type == "breath":
             should_cut = duration_ms >= config.min_breath_ms
             if not should_cut:
