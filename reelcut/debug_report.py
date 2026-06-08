@@ -113,11 +113,21 @@ def write_debug_report(
             else:
                 _s(f"    replaced : (window was empty — gap insertion)")
             raw = entry["found_raw"]
+            sub_clips = entry.get("sub_clips", [])
             if raw:
                 raw_str = "  ".join(f"{w.word!r}({w.confidence:.2f})" for w in raw)
                 _s(f"    raw      : {raw_str}")
             else:
                 _s(f"    raw      : (nothing transcribed)")
+            if len(sub_clips) > 1:
+                for sc_i, sc in enumerate(sub_clips):
+                    abs_start = entry["win_start"] + sc["start_s"]
+                    abs_end   = entry["win_start"] + sc["end_s"]
+                    if sc["words"]:
+                        sc_str = "  ".join(f"{w.word!r}({w.confidence:.2f})" for w in sc["words"])
+                    else:
+                        sc_str = "(nothing)"
+                    _s(f"    sub[{sc_i}]  [{_ts(abs_start)} → {_ts(abs_end)}]: {sc_str}")
             kept = entry["found_kept"]
             dropped = entry["found_dropped"]
             if kept:
@@ -318,8 +328,11 @@ def write_debug_report(
                     )
                     g_content = f"{gap.gap_type.upper()}: {gap.duration_ms:.0f}ms{eff_note}"
                     if gap.cut:
-                        eff_key = round(gap.effective_start, 3)
-                        if eff_key not in edl_cut_boundaries:
+                        # EDL uses gap.start (raw word end) as cut boundary, not
+                        # effective_start — must compare the same value or a
+                        # sub-ms offset between the two silently hides real cuts.
+                        cut_key = round(gap.start, 3)
+                        if cut_key not in edl_cut_boundaries:
                             decision = "KEEP [mid_sentence_floor]"
                         else:
                             decision = "CUT "
