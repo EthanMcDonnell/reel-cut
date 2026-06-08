@@ -24,13 +24,14 @@ Content discovery: `scrape/` — scraper, SQLite DB (`scrape/db/influencer.db`),
 ## reelcut transcribe pipeline
 
 1. Extract audio → temp 16kHz mono WAV, normalize to EBU R128
-2. faster-whisper → approximate word-level timestamps
-3. WhisperX wav2vec2 alignment → precise source-clip-time timestamps (±30ms)
-4. Silero VAD (ONNX) → drop hallucinated words
-5. Retake detection → find repeated phrases, cut earlier takes (`cuts.repetition_detection`, default false)
-6. Gap detection → classify inter-word gaps as silence/breath/noise; mark cut=True/False
-7. EDL generation → keep/cut segments in source-clip time
-8. Word remapping → output-timeline positions (debug report only)
+2. faster-whisper → raw word-level timestamps
+3. Retranscription → detect false starts / hidden speech on raw Whisper output; surface missing words
+4. WhisperX wav2vec2 alignment → precise source-clip-time timestamps (±30ms) on cleaned transcript
+5. Silero VAD (ONNX) → drop hallucinated words
+6. Retake detection → find repeated phrases, cut earlier takes (`cuts.repetition_detection`, default false)
+7. Gap detection → classify inter-word gaps as silence/breath/noise; mark cut=True/False
+8. EDL generation → keep/cut segments in source-clip time
+9. Word remapping → output-timeline positions (debug report only)
 
 ## reelcut render pipeline
 

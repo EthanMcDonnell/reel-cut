@@ -212,7 +212,7 @@ def write_debug_report(
     if post_align_words is not None:
         pa: list[str] = [header]
         _pa = pa.append
-        _pa("--- POST-ALIGN OUTPUT (after WhisperX alignment, before retranscription) ---")
+        _pa("--- POST-ALIGN OUTPUT (after WhisperX alignment, before VAD filter) ---")
         _pa(f"  ({len(post_align_words)} words)")
 
         if align_segments:
@@ -238,7 +238,7 @@ def write_debug_report(
     if post_retrans_words is not None:
         pr: list[str] = [header]
         _pr = pr.append
-        _pr("--- POST-RETRANS OUTPUT (after retranscription, before VAD filter) ---")
+        _pr("--- POST-RETRANS OUTPUT (after retranscription, before alignment) ---")
         _pr(f"  ({len(post_retrans_words)} words)")
         hard_capped_entries = [e for e in (retrans_log or []) if e.get("hard_capped")]
         if hard_capped_entries:
@@ -256,7 +256,7 @@ def write_debug_report(
         Path(f"{base_path}.debug.post-retrans.txt").write_text("\n".join(pr) + "\n")
 
     # -------------------------------------------------------------------------
-    # aligned — after alignment + retranscription + VAD filter
+    # post-vad — after retranscription + alignment + VAD filter (final word list)
     # -------------------------------------------------------------------------
     a: list[str] = [header]
     _a = a.append

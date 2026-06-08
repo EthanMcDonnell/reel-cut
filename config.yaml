@@ -3,12 +3,14 @@ assets:
 
 cuts:
   # --- What gets cut ---
-  min_silence_ms: 200              # gaps longer than this are cut. Raise to preserve more natural pauses;
-                                   # lower to cut more aggressively.
+  min_silence_ms: 200              # gaps longer than this are cut (main pipeline). Also the minimum
+                                   # silence duration used to split retranscription windows into sub-clips.
+                                   # Raise to preserve more natural pauses; lower to cut more aggressively.
   min_breath_ms: 100               # breath sounds longer than this are cut. Raise to keep more breaths
                                    # (more natural); lower to remove even short breaths.
   breath_detection: true           # set false to treat all non-silent gaps as noise (faster, less precise)
-  silence_threshold_db: -45        # noise floor for silence detection. Raise (e.g. -40) if background noise
+  silence_threshold_db: -45        # noise floor for silence detection. Used by main gap detector and by
+                                   # retranscription window splitting. Raise (e.g. -40) if background noise
                                    # is causing over-cutting; lower (e.g. -50) if silences aren't being detected.
 
   # --- Word boundary precision ---
@@ -27,7 +29,8 @@ cuts:
   breath_amplitude_ratio: 0.15     # breath RMS must be below this fraction of track peak amplitude.
                                    # Prevents loud noise bursts being misclassified as breaths.
   failure_tolerance_ratio: 0.02    # fraction of samples allowed to spike above noise floor before a gap
-                                   # is considered non-silent. Prevents single transients fragmenting cuts.
+                                   # is considered non-silent. Used by both main gap detector and retranscription
+                                   # window splitting. Prevents single transients fragmenting cuts.
   min_keep_ms: 200                 # drop kept segments shorter than this after cutting. Prevents isolated
                                    # sub-word fragments ("a", "I") becoming their own clip.
   mid_sentence_cut_floor_ms: 1500  # gaps below this duration (ms) are never cut unless the preceding word
@@ -121,7 +124,7 @@ whisper:
                                    # Lower to force transcription of uncertain segments.
   retranscribe_no_speech_threshold: 0.3  # default: 0.3  |  used when re-running Whisper on wide-word windows
                                    # to surface false starts hidden in large aligned spans.
-  wide_word_threshold_s: 1.0      # default: 1.5  |  aligned word span (seconds) above which a word triggers
+  wide_word_threshold_s: 1.0      # default: 1.5  |  word span (seconds) above which a word triggers
                                    # retranscription. Lower (e.g. 1.0) to catch more false starts.
   retranscribe_low_conf_gap_ms: 500   # default: 1000 | gap (ms) after a run of low-confidence words
                                    # that triggers retranscription of that region. Uses min_word_confidence
@@ -132,6 +135,6 @@ whisper:
   compression_ratio_threshold: null # default: 2.4 | gzip compression ratio above which a segment is
                                    # discarded as a hallucination loop. Raise (e.g. 3.0) to tolerate
                                    # repeated phrases; set null to disable entirely.
-  retranscribe_compression_ratio_threshold: 2.4 # default: 2.4 | stricter threshold used during retranscription
+  retranscribe_compression_ratio_threshold: 4 # default: 2.4 | stricter threshold used during retranscription
                                    # windows — short clips are more susceptible to hallucination loops
                                    # so a tighter limit than the initial pass is appropriate.

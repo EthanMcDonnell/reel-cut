@@ -41,7 +41,7 @@ Then read both output files:
 Work through the EDL and word list looking for the following, in order of priority:
 
 ### Multiple takes (genuine repeated content)
-Look for the same sentence or near-identical phrase (allow one differing word) appearing more than once across the `words` array and the aligned debug file (`*.debug.post-vad.txt`). The last occurrence is the intended take. Set `keep: false` on EDL entries covering all earlier occurrences, and remove their words from the `words` array (see editing rules).
+Look for the same sentence or near-identical phrase (allow one differing word) appearing more than once across the `words` array and `*.debug.post-vad.txt`. The last occurrence is the intended take. Set `keep: false` on EDL entries covering all earlier occurrences, and remove their words from the `words` array (see editing rules).
 
 ### Multiple takes packed inside a single KEEP segment
 If all occurrences of a repeated phrase fall within the time range of a single KEEP EDL entry (no existing entry boundary to flip), the pipeline could not split them automatically. Fix it manually:
@@ -58,7 +58,7 @@ If all occurrences of a repeated phrase fall within the time range of a single K
 Cut segments that are very short (< 80ms) between two kept segments — may indicate a cut landing mid-word. Cross-reference the word timestamps: if a cut's `start`/`end` overlaps with a word's `start`/`end` in the `words` array, restore it (`keep: true`, `reason: "restored — mid-word cut"`).
 
 ### Hallucinated words
-Words in the `words` array with very low alignment confidence (< 0.15) and no correspondence in the spoken content, especially at clip boundaries. Remove from the `words` array. Do not touch the EDL for this.
+Words in the `words` array with very low confidence (< 0.15) and no correspondence in the spoken content, especially at clip boundaries. Remove from the `words` array. Do not touch the EDL for this.
 
 ### Mid-sentence cuts
 The pipeline protects against mid-sentence cuts below ~1500ms, so any cut appearing mid-sentence (word before the cut has no sentence-ending punctuation) is unexpected. Check the words on both sides:
@@ -69,7 +69,7 @@ The pipeline protects against mid-sentence cuts below ~1500ms, so any cut appear
 Cut segments > 3s in the middle of apparent speech (not at a natural paragraph break). Check `*.debug.post-vad.txt` — if the region contains speech words, restore with `keep: true` and add any missing words back.
 
 ### Dropped alignment words
-Words present in `*.debug.raw.txt` (raw Whisper) with good confidence (≥ 0.5) that are absent from `*.debug.post-vad.txt` and the `words` array — dropped by WhisperX alignment, not hallucinations. Common victims: short function words ('at', 'for', 'a', 'the') between two longer words. If the word clearly belongs in the sentence and was spoken, add it back to the `words` array with estimated timestamps by splitting the gap evenly between the surrounding words. Use the raw timestamps as a cross-check.
+Words present in `*.debug.post-retrans.txt` with good confidence (≥ 0.5) that are absent from `*.debug.post-align.txt` — dropped by WhisperX alignment. Common victims: short function words ('at', 'for', 'a', 'the') between two longer words. If the word clearly belongs in the sentence and was spoken, add it back to the `words` array with estimated timestamps by splitting the gap evenly between the surrounding words. Use `*.debug.raw.txt` as a further cross-check for the original Whisper timestamps.
 
 **Editing rules:**
 - Change `"keep"` and `"reason"` fields in `edl` entries only — never modify `start`/`end` timestamps on existing entries

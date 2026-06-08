@@ -27,6 +27,9 @@ class CutsConfig(BaseModel):
     min_retake_words: int = 4
     max_retake_gap_s: float = 20.0
     min_match_ratio: float = 0.5
+    max_retake_bridge_s: float = 1.0   # bridge sub-second gaps between consecutive retake
+                                       # ranges of the same cluster (failed-take fragments
+                                       # stranded by n-gram anchor misalignment)
     mid_sentence_cut_floor_ms: int = 3000
     min_word_confidence: float = 0.5        # gap cut hard floor: if either adjacent word's alignment
                                             # confidence is below this, the gap is never cut regardless

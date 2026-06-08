@@ -22,9 +22,13 @@ List `assets/<video-slug>/` to find the `.captions.json` file — it may be name
 
 Use this to understand what is spoken when in the final video. **Do not use these times in image entries** — they are for orientation only.
 
-## Step 2 — Read inputs
+## Step 2 — Check for manifest
 
-Read both:
+Check whether `assets/<video-slug>/manifest.json` exists (it is only present when screenshots were produced by `/produce-script`).
+
+**If no manifest exists → skip Steps 3 and 4. Go straight to Step 5 (render).**
+
+If it does exist, read both:
 
 1. **Screenshot manifest**: `assets/<video-slug>/manifest.json`
 2. **captions.json**: `assets/<video-slug>/<actual-captions-filename>.captions.json` (the file found in Step 1)

@@ -23,6 +23,7 @@ def detect_retakes(
     min_retake_words: int = 4,
     max_retake_gap_s: float = 20.0,
     min_match_ratio: float = 0.5,
+    max_retake_bridge_s: float = 1.0,
 ) -> tuple[list[tuple[float, float]], list[RetakeCandidate]]:
     """Detect repeated phrases (retakes) in a word list.
 
@@ -126,7 +127,25 @@ def detect_retakes(
         if t_end - t_start <= max_retake_gap_s
     ]
 
-    return time_ranges, candidates
+    # Bridge tiny gaps between consecutive ranges of the same retake cluster.
+    # Each range ends at the start of a later take (min-rule above), but different
+    # n-grams within one cluster anchor at different word offsets — and an
+    # intervening short flubbed take can break the consecutive-pairing chain for
+    # the shallowest-anchored n-gram. The result is a sub-second gap between two
+    # cut ranges (e.g. "See, the" stranded at the start of an otherwise-cut take).
+    # Within a retake cluster there is no kept content before the final take, so
+    # any small gap between two cut ranges is a failed-take fragment and must be
+    # absorbed. The bridge threshold stays well under the duration of a real
+    # spoken take of a >= min_retake_words phrase, so genuinely distinct retake
+    # events (separated by the kept successful take) are never merged.
+    bridged: list[tuple[float, float]] = []
+    for t_start, t_end in time_ranges:
+        if bridged and t_start - bridged[-1][1] <= max_retake_bridge_s:
+            bridged[-1] = (bridged[-1][0], t_end)
+        else:
+            bridged.append((t_start, t_end))
+
+    return bridged, candidates
 
 
 def _normalize(word: str) -> str:

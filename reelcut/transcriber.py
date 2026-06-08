@@ -235,18 +235,20 @@ def retranscribe_suspicious_regions(
     config: WhisperConfig,
     conf_threshold: float = 0.5,
     clips_dir: Path | None = None,
+    silence_threshold_db: float = -40.0,
+    min_silence_ms: int = 200,
+    failure_tolerance_ratio: float = 0.02,
 ) -> tuple[list[WordTimestamp], int, list[dict]]:
     """Detect and retranscribe suspicious audio regions to surface hidden false-start words.
 
     Three trigger types feed into a single merged-window pipeline:
 
-    Case 1 — Wide aligned word  (config: wide_word_threshold_s, default 1.0s)
-        WhisperX gives a word a suspiciously large span (e.g. "obviously," at 2.2s).
-        The aligner could not locate the word precisely and spread it across dead air
-        or hidden speech. Window covers the full word span.
+    Case 1 — Wide word  (config: wide_word_threshold_s, default 1.0s)
+        Whisper gives a word a suspiciously large span (e.g. "obviously," at 2.2s),
+        spreading it across dead air or hidden speech. Window covers the full word span.
         Origin: false starts that Whisper collapsed into one transcript — the gap
         between a false-start attempt and the clean retry looks like one abnormally
-        wide aligned word.
+        wide word.
 
     Case 2 — Low-confidence run + gap  (config: retranscribe_low_conf_gap_ms, default 500ms)
         A consecutive run of words all below conf_threshold followed by a gap ≥ the
@@ -269,16 +271,15 @@ def retranscribe_suspicious_regions(
 
     Case 4 — Low-confidence word
         Any single word below conf_threshold, regardless of span or adjacent gaps.
-        Window covers the full word span [w.start, w.end]. Replaces the silent drop
-        that min_alignment_confidence applied after WhisperX alignment: dropping a word
-        mid-list causes neighbors to stretch into the vacated span, creating spurious
-        wide-word triggers with misleading debug output. Routing through retranscription
-        instead produces a proper window, a log entry, and a correct replacement or boost.
+        Window covers the full word span [w.start, w.end]. Whisper probability below
+        conf_threshold indicates genuine transcription uncertainty — retranscribing the
+        region confirms or replaces the word with a proper window and log entry.
 
     Windows from all three triggers are collected, sorted, and merged before any audio
     is touched. Adjacent or overlapping windows from different trigger types chain into
-    one larger window — preventing double-retranscription and naturally covering the
-    full troubled region in a single Whisper call.
+    one larger window. Each window is then split at internal silences (silence_threshold_db,
+    min_silence_ms, failure_tolerance_ratio) before transcription — forcing Whisper to treat
+    each speech attempt independently rather than merging them into one fluent transcript.
 
     If retranscription finds words: replaces words in the window (or inserts into the
     gap when the window contains no existing words).
@@ -286,8 +287,9 @@ def retranscribe_suspicious_regions(
     confidence to 0.95 to unblock gap detection (confirmed dead air).
     If nothing found + pure gap or wide-word window: no change.
 
-    Returns (updated_words, n_windows_processed). Must be called after align() and
-    before VAD filtering.
+    Returns (updated_words, n_windows_processed). Call on raw Whisper words before
+    align() — alignment then runs on the cleaned output, giving word-level precision
+    to a transcript that no longer contains false starts or hidden speech regions.
     """
     import tempfile
 
@@ -417,22 +419,51 @@ def retranscribe_suspicious_regions(
         if len(chunk) < int(sample_rate * 0.1):
             continue
 
-        if clips_dir is not None:
-            tmp_path = clips_dir / f"{label}_{win_start:.3f}.wav"
-            cleanup = False
-        else:
-            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-                tmp_path = Path(tmp.name)
-            cleanup = True
+        # Split window at internal silences so each speech attempt is transcribed
+        # independently. Whisper collapses false starts in long continuous clips;
+        # short clips that end at a silence boundary force it to be honest.
+        sub_segs = _split_audio_at_silences(
+            chunk, sample_rate,
+            silence_threshold_db=silence_threshold_db,
+            min_silence_ms=min_silence_ms,
+            failure_tolerance_ratio=failure_tolerance_ratio,
+        )
 
-        try:
-            sf.write(str(tmp_path), chunk, sample_rate)
-            found_raw = _transcribe_with_model(model, tmp_path, retranscribe_config)
-        except Exception:
-            found_raw = []
-        finally:
-            if cleanup:
-                tmp_path.unlink(missing_ok=True)
+        if clips_dir is not None:
+            sf.write(str(clips_dir / f"{label}_{win_start:.3f}.wav"), chunk, sample_rate)
+
+        found_raw: list[WordTimestamp] = []
+        for seg_i, (sub_start_s, sub_end_s) in enumerate(sub_segs):
+            sub_start_sample = int(sub_start_s * sample_rate)
+            sub_end_sample   = int(sub_end_s   * sample_rate)
+            sub_chunk = chunk[sub_start_sample:sub_end_sample]
+            if len(sub_chunk) < int(sample_rate * 0.1):
+                continue
+
+            if clips_dir is not None:
+                sub_path = clips_dir / f"{label}_{win_start:.3f}_sub{seg_i}.wav"
+                cleanup_sub = False
+            else:
+                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+                    sub_path = Path(f.name)
+                cleanup_sub = True
+
+            try:
+                sf.write(str(sub_path), sub_chunk, sample_rate)
+                sub_words = _transcribe_with_model(model, sub_path, retranscribe_config)
+                for w in sub_words:
+                    found_raw.append(WordTimestamp(
+                        word=w.word,
+                        start=w.start + sub_start_s,
+                        end=w.end + sub_start_s,
+                        confidence=w.confidence,
+                        clip_path=w.clip_path,
+                    ))
+            except Exception:
+                pass
+            finally:
+                if cleanup_sub:
+                    sub_path.unlink(missing_ok=True)
 
         # Copy words before mutating so found_raw preserves clip-relative timestamps
         # for the debug log (the log shows these as-found before offset is applied).
@@ -450,10 +481,9 @@ def retranscribe_suspicious_regions(
                 w.clip_path = source_clip
             # Filter to window bounds and drop low-confidence words. Whisper often
             # bleeds the tail of the preceding word into the first ~100ms of a short
-            # clip, producing a ghost low-conf duplicate. Those words also hard-floor
-            # gap detection exactly as low-conf aligned words do, blocking cuts near
-            # the window boundary. Dropping them here mirrors the confidence floor
-            # applied everywhere else in the pipeline.
+            # clip, producing a ghost low-conf duplicate. Those words hard-floor gap
+            # detection, blocking cuts near the window boundary. Dropping them here
+            # mirrors the confidence floor applied everywhere else in the pipeline.
             found = [
                 w for w in found
                 if w.start < win_end and w.confidence >= conf_threshold
@@ -782,3 +812,60 @@ def _expand_to_sentence(
     exp_end = min(natural_end, exp_start + max_duration_s)
 
     return exp_start, exp_end, hard_capped
+
+
+def _split_audio_at_silences(
+    audio: "np.ndarray",
+    sample_rate: int,
+    silence_threshold_db: float,
+    min_silence_ms: int,
+    failure_tolerance_ratio: float,
+) -> list[tuple[float, float]]:
+    """Split audio into speech segments at qualifying silence gaps.
+
+    Uses the same amplitude + failure_tolerance_ratio logic as the main gap
+    detector. Returns a list of (start_s, end_s) pairs — one per speech segment.
+    Returns a single full-duration segment when no qualifying silence is found,
+    so callers can always iterate unconditionally.
+    """
+    import numpy as np
+
+    threshold_linear = float(10 ** (silence_threshold_db / 20))
+    frame_size = max(1, int(sample_rate * 0.01))          # 10ms frames
+    min_silence_frames = max(1, min_silence_ms // 10)      # in 10ms units
+    total_dur = len(audio) / sample_rate
+
+    n_frames = len(audio) // frame_size
+    if n_frames < 2:
+        return [(0.0, total_dur)]
+
+    # Classify each 10ms frame as silent or not
+    is_silent: list[bool] = []
+    for i in range(n_frames):
+        chunk = audio[i * frame_size:(i + 1) * frame_size]
+        fraction_above = float(np.mean(np.abs(chunk) > threshold_linear))
+        is_silent.append(fraction_above < failure_tolerance_ratio)
+
+    # Find silence runs long enough to act as split points
+    split_samples: list[int] = []
+    i = 0
+    while i < len(is_silent):
+        if is_silent[i]:
+            run_start = i
+            while i < len(is_silent) and is_silent[i]:
+                i += 1
+            run_len = i - run_start
+            if run_len >= min_silence_frames:
+                mid = ((run_start + i) // 2) * frame_size
+                split_samples.append(mid)
+        else:
+            i += 1
+
+    if not split_samples:
+        return [(0.0, total_dur)]
+
+    boundaries = [0] + split_samples + [len(audio)]
+    return [
+        (boundaries[j] / sample_rate, boundaries[j + 1] / sample_rate)
+        for j in range(len(boundaries) - 1)
+    ]

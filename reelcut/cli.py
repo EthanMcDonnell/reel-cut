@@ -353,8 +353,30 @@ def _phase1(cfg, clips: list[str], output_dir: Path, verbose: bool):
                 w.clip_path = str(clip_path)
             all_raw_words.extend(words)
 
-            console.print(f"[bold]Step 3[/bold] Aligning timestamps for {Path(clip_path).name}…")
+            console.print(f"[bold]Step 3[/bold] Retranscribing suspicious regions in {Path(clip_path).name}…")
             t = time.perf_counter()
+            from .transcriber import retranscribe_suspicious_regions
+            clips_dir = output_dir / "retranscribe-clips"
+            words, n_retrans, clip_retrans_log = retranscribe_suspicious_regions(
+                words, wav, whisper_cfg,
+                conf_threshold=cfg.cuts.min_retrans_word_confidence,
+                clips_dir=clips_dir,
+                silence_threshold_db=cfg.cuts.silence_threshold_db,
+                min_silence_ms=cfg.cuts.min_silence_ms,
+                failure_tolerance_ratio=cfg.cuts.failure_tolerance_ratio,
+            )
+            retrans_log.extend(clip_retrans_log)
+            if n_retrans:
+                words.sort(key=lambda w: w.start)
+                console.print(f"  Retranscribed {n_retrans} suspicious window(s)")
+                _warn_wide_words(words, console, cfg.whisper.wide_word_threshold_s)
+            all_post_retrans_words.extend([
+                w.__class__(word=w.word, start=w.start, end=w.end,
+                             confidence=w.confidence, clip_path=str(clip_path))
+                for w in words
+            ])
+
+            console.print(f"[bold]Step 4[/bold] Aligning timestamps for {Path(clip_path).name}…")
             words, align_method, clip_align_segments = align(words, wav, whisper_cfg)
             all_align_segments.extend(clip_align_segments)
             align_ok = "Whisper timestamps" not in align_method
@@ -363,23 +385,6 @@ def _phase1(cfg, clips: list[str], output_dir: Path, verbose: bool):
             words.sort(key=lambda w: w.start)
             _warn_wide_words(words, console, cfg.whisper.wide_word_threshold_s)
             all_post_align_words.extend([
-                w.__class__(word=w.word, start=w.start, end=w.end,
-                             confidence=w.confidence, clip_path=str(clip_path))
-                for w in words
-            ])
-            from .transcriber import retranscribe_suspicious_regions
-            clips_dir = output_dir / "retranscribe-clips"
-            words, n_retrans, clip_retrans_log = retranscribe_suspicious_regions(
-                words, wav, whisper_cfg,
-                conf_threshold=cfg.cuts.min_retrans_word_confidence,
-                clips_dir=clips_dir,
-            )
-            retrans_log.extend(clip_retrans_log)
-            if n_retrans:
-                words.sort(key=lambda w: w.start)
-                console.print(f"  Retranscribed {n_retrans} suspicious window(s)")
-                _warn_wide_words(words, console, cfg.whisper.wide_word_threshold_s)
-            all_post_retrans_words.extend([
                 w.__class__(word=w.word, start=w.start, end=w.end,
                              confidence=w.confidence, clip_path=str(clip_path))
                 for w in words
@@ -415,7 +420,7 @@ def _phase1(cfg, clips: list[str], output_dir: Path, verbose: bool):
         retake_candidates: dict[str, list] = {}
         if cfg.cuts.repetition_detection:
             from .retake_detector import detect_retakes
-            console.print("[bold]Step 3b[/bold] Detecting duplicate takes…")
+            console.print("[bold]Step 4b[/bold] Detecting duplicate takes…")
             t = time.perf_counter()
             for clip_path in clips:
                 clip_words = [w for w in all_words if w.clip_path == str(clip_path)]
@@ -424,6 +429,7 @@ def _phase1(cfg, clips: list[str], output_dir: Path, verbose: bool):
                     cfg.cuts.min_retake_words,
                     cfg.cuts.max_retake_gap_s,
                     cfg.cuts.min_match_ratio,
+                    cfg.cuts.max_retake_bridge_s,
                 )
                 if ranges:
                     retake_ranges[str(clip_path)] = ranges
@@ -438,7 +444,7 @@ def _phase1(cfg, clips: list[str], output_dir: Path, verbose: bool):
             _tlog(time.perf_counter() - t)
 
         # Gap detection
-        console.print("[bold]Step 4[/bold] Detecting silences, breaths, and gaps…")
+        console.print("[bold]Step 5[/bold] Detecting silences, breaths, and gaps…")
         t = time.perf_counter()
         gaps = []
         gaps_by_clip: dict[str, list] = {}
@@ -452,7 +458,7 @@ def _phase1(cfg, clips: list[str], output_dir: Path, verbose: bool):
         _tlog(time.perf_counter() - t, f"{n_cut_total}/{len(gaps)} gaps cut")
 
         # EDL generation
-        console.print("[bold]Step 5[/bold] Building EDL…")
+        console.print("[bold]Step 6[/bold] Building EDL…")
         t = time.perf_counter()
         warnings: list[str] = []
         edl = generate_scriptless_edl(all_words, gaps, min_keep_ms=cfg.cuts.min_keep_ms, speech_pad_ms=cfg.cuts.speech_pad_ms, mid_sentence_cut_floor_ms=cfg.cuts.mid_sentence_cut_floor_ms)

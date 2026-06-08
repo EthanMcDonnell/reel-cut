@@ -20,11 +20,13 @@ Read `assets/<slug>/<clip-name>.debug.summary.txt` in full. This covers config, 
 
 ## Step 2 — Pull additional files only if needed
 
+Pipeline order: raw → post-retrans → post-align → post-vad
+
 - **`*.debug.post-vad.txt`** — read when hallucinations were dropped or retake boundaries look wrong. Shows every word after VAD filtering (final word list) with confidence scores and `[OUTTAKE]` flags.
-- **`*.debug.post-retrans.txt`** — read when a word is missing and you want to know if VAD or retranscription dropped it. Shows words after retranscription, before VAD.
-- **`*.debug.post-align.txt`** — read when a word is missing and you want to know if retranscription dropped it. Shows words after WhisperX alignment, before retranscription.
+- **`*.debug.post-align.txt`** — read when a word is missing and you want to know if VAD dropped it. Shows words after WhisperX alignment, before VAD.
+- **`*.debug.post-retrans.txt`** — read when a word is missing and you want to know if alignment dropped it. Shows words after retranscription, before alignment.
 - **`*.debug.timeline.txt`** — read when there's a specific bad moment ("why didn't this gap get cut?"). Shows words and gaps interleaved with KEEP/CUT decisions and skip reasons.
-- **`*.debug.raw.txt`** — read only when a word is missing from all aligned files. Shows raw Whisper output before any processing.
+- **`*.debug.raw.txt`** — read only when a word is missing from all other files. Shows raw Whisper output before any processing.
 
 ## Step 3 — Diagnose by section
 
@@ -44,6 +46,7 @@ Read `assets/<slug>/<clip-name>.debug.summary.txt` in full. This covers config, 
 - `action=boosted` → dead air confirmed, gap detection unblocked but no new words
 - `action=replaced` → new words spliced in; check `kept` vs `dropped`
 - `raw` empty → Whisper found nothing; clip too short/quiet, or `retranscribe_no_speech_threshold` too low
+- False start survived despite window firing → `min_silence_ms` too high to split the pause between attempts; lower it so the window splits into sub-clips
 
 ### RETAKE DETECTION
 - `disabled` → false starts must be caught by gap cuts alone
