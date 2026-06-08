@@ -172,7 +172,7 @@ def generate_scriptless_edl(
             if gap and gap.cut and (
                 _is_sentence_end(curr) or gap.duration_ms >= mid_sentence_cut_floor_ms
             ):
-                cut_start = gap.effective_start          # true silence onset
+                cut_start = gap.start                    # raw word end — never inside the word
                 cut_end   = nxt.start - pad_s            # keep natural lead before next word
 
                 # If the word immediately before this cut is shorter than min_keep_ms,
