@@ -1,6 +1,14 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import pytest
-from reelcut.transcriber import _caps_split, _find_sentence_end, _words_to_whisperx_segments
+from reelcut.transcriber import (
+    _caps_split,
+    _find_sentence_end,
+    _merge_leading_comma_tokens,
+    _merge_retranscribe_windows,
+    _reconcile_retranscribed,
+    _words_to_whisperx_segments,
+    WordTimestamp,
+)
 
 
 @dataclass
@@ -130,3 +138,167 @@ def test_segments_caps_split_long_chunk():
 
 def test_segments_empty():
     assert _words_to_whisperx_segments([]) == []
+
+
+# ---------------------------------------------------------------------------
+# _reconcile_retranscribed
+# ---------------------------------------------------------------------------
+
+def _wt(word, start, end, confidence):
+    return WordTimestamp(word=word, start=start, end=end, confidence=confidence)
+
+
+def test_reconcile_rescues_casing_mismatch():
+    """Retrans 'Leaked'@0.28 should be rescued because original 'leaked'@0.58 is confident."""
+    original = [_wt("leaked", 7.84, 8.06, 0.58)]
+    retrans  = [_wt("Leaked", 0.0,  0.22, 0.28)]  # clip-relative, offset already applied → abs 7.84
+    # Apply offset manually as the main loop does before calling _reconcile_retranscribed
+    for w in retrans:
+        w.start += 7.84
+        w.end = min(w.end + 7.84, 10.24)
+
+    kept, rescued = _reconcile_retranscribed(retrans, original, win_end=10.24, conf_threshold=0.5)
+
+    assert len(kept) == 1
+    assert kept[0].word == "leaked"       # original's lowercase casing
+    assert kept[0].confidence == 0.58     # original's confidence
+    assert kept[0].start == pytest.approx(7.84)  # retrans timestamp preserved
+    assert len(rescued) == 1
+
+
+def test_reconcile_no_rescue_when_original_below_rescue_floor():
+    """Word is dropped when the original is also below rescue_floor."""
+    original = [_wt("leaked", 7.84, 8.06, 0.03)]
+    retrans  = [_wt("Leaked", 7.84, 8.06, 0.04)]
+
+    kept, rescued = _reconcile_retranscribed(
+        retrans, original, win_end=10.24, conf_threshold=0.5, rescue_floor=0.05
+    )
+
+    assert kept == []
+    assert rescued == []
+
+
+def test_reconcile_rescue_when_original_meets_rescue_floor():
+    """Word is rescued when retrans is below conf_threshold but original meets rescue_floor."""
+    original = [_wt("leaked", 7.84, 8.06, 0.30)]
+    retrans  = [_wt("Leaked", 7.84, 8.06, 0.08)]
+
+    kept, rescued = _reconcile_retranscribed(
+        retrans, original, win_end=10.24, conf_threshold=0.5, rescue_floor=0.05
+    )
+
+    assert len(kept) == 1
+    assert kept[0].word == "leaked"
+    assert kept[0].confidence == 0.30
+    assert len(rescued) == 1
+
+
+def test_reconcile_no_rescue_for_new_word_not_in_original():
+    """A genuine false-start word not in the original is dropped normally."""
+    original = [_wt("system", 8.06, 8.38, 0.72)]
+    retrans  = [_wt("actually", 8.06, 8.38, 0.28)]
+
+    kept, rescued = _reconcile_retranscribed(retrans, original, win_end=10.24, conf_threshold=0.5)
+
+    assert kept == []
+    assert rescued == []
+
+
+def test_reconcile_drops_out_of_bounds():
+    """A word at or past win_end is dropped regardless of confidence or match."""
+    original = [_wt("leaked", 7.84, 8.06, 0.80)]
+    retrans  = [_wt("leaked", 10.24, 10.50, 0.90)]  # starts at win_end — out of bounds
+
+    kept, rescued = _reconcile_retranscribed(retrans, original, win_end=10.24, conf_threshold=0.5)
+
+    assert kept == []
+    assert rescued == []
+
+
+def test_reconcile_passes_confident_words_unchanged():
+    """Words already at/above conf_threshold pass through untouched."""
+    original = []
+    retrans  = [_wt("system", 8.06, 8.38, 0.72)]
+
+    kept, rescued = _reconcile_retranscribed(retrans, original, win_end=10.24, conf_threshold=0.5)
+
+    assert len(kept) == 1
+    assert kept[0].word == "system"
+    assert kept[0].confidence == 0.72
+    assert rescued == []
+
+
+# ---------------------------------------------------------------------------
+# _merge_retranscribe_windows
+# ---------------------------------------------------------------------------
+
+def test_merge_gap_within_tolerance_collapses_to_one_window():
+    """Gap of 0.5s between windows merges when merge_gap_s=1.0 (the real-world retake case)."""
+    windows = [(70.760, 77.720, "wide+low_conf_word"), (78.220, 88.580, "low_conf_word")]
+    result = _merge_retranscribe_windows(windows, merge_gap_s=1.0)
+    assert len(result) == 1
+    assert result[0] == (70.760, 88.580, "wide+low_conf_word")
+
+
+def test_merge_gap_exceeds_tolerance_stays_separate():
+    """Gap of 0.5s between windows does NOT merge when merge_gap_s=0.0 (old behaviour)."""
+    windows = [(70.760, 77.720, "wide+low_conf_word"), (78.220, 88.580, "low_conf_word")]
+    result = _merge_retranscribe_windows(windows, merge_gap_s=0.0)
+    assert len(result) == 2
+
+
+def test_merge_overlapping_windows_still_merge():
+    """Overlapping windows always merge regardless of merge_gap_s."""
+    windows = [(10.0, 20.0, "low_conf_word"), (15.0, 25.0, "wide")]
+    result = _merge_retranscribe_windows(windows, merge_gap_s=0.0)
+    assert len(result) == 1
+    assert result[0][0] == 10.0
+    assert result[0][1] == 25.0
+
+
+def test_merge_gap_exactly_at_tolerance_merges():
+    """A gap exactly equal to merge_gap_s is included (≤, not <)."""
+    windows = [(0.0, 10.0, "a"), (11.0, 20.0, "b")]
+    result = _merge_retranscribe_windows(windows, merge_gap_s=1.0)
+    assert len(result) == 1
+
+
+def test_merge_gap_just_beyond_tolerance_stays_separate():
+    """A gap of 1.001s does not merge when merge_gap_s=1.0."""
+    windows = [(0.0, 10.0, "a"), (11.001, 20.0, "b")]
+    result = _merge_retranscribe_windows(windows, merge_gap_s=1.0)
+    assert len(result) == 2
+
+
+def test_merge_duplicate_label_not_doubled():
+    """Merging two windows with the same label keeps the label once."""
+    windows = [(0.0, 5.0, "low_conf_word"), (5.5, 10.0, "low_conf_word")]
+    result = _merge_retranscribe_windows(windows, merge_gap_s=1.0)
+    assert len(result) == 1
+    assert result[0][2] == "low_conf_word"
+
+
+# ---------------------------------------------------------------------------
+# _merge_leading_comma_tokens
+# ---------------------------------------------------------------------------
+
+def _w(word: str, start: float, end: float, conf: float = 0.9) -> WordTimestamp:
+    return WordTimestamp(word=word, start=start, end=end, confidence=conf, clip_path="x.wav")
+
+
+def test_comma_token_merges_into_previous_word():
+    """["30", ",000"] collapses to a single "30,000" word."""
+    words = [_w("thirty", 0.0, 0.4), _w("30", 0.4, 0.7), _w(",000", 0.7, 1.0)]
+    result = _merge_leading_comma_tokens(words)
+    assert len(result) == 2
+    assert result[1].word == "30,000"
+    assert result[1].start == 0.4
+    assert result[1].end == 1.0
+
+
+def test_normal_words_pass_through_unchanged():
+    """Words without a leading comma are left alone."""
+    words = [_w("over", 0.0, 0.3), _w("thirty", 0.3, 0.6), _w("thousand", 0.6, 1.0)]
+    result = _merge_leading_comma_tokens(words)
+    assert [w.word for w in result] == ["over", "thirty", "thousand"]

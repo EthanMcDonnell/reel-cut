@@ -30,6 +30,7 @@ def write_debug_report(
     retrans_log: list[dict] | None = None,
     retake_ranges: dict[str, list[tuple[float, float]]] | None = None,
     retake_candidates: dict[str, list["RetakeCandidate"]] | None = None,
+    wordless_drops: list["EDLEntry"] | None = None,
     image_cues: list | None = None,
 ) -> None:
     """Write split debug files: .debug.1.raw.txt, .debug.2.post-retrans.txt, .debug.3.post-align.txt, .debug.4.post-vad.txt, .debug.5.timeline.txt, .debug.6.summary.txt."""
@@ -57,7 +58,8 @@ def write_debug_report(
        f"  min_alignment_confidence={c.whisper.min_alignment_confidence}")
     _s(f"            wide_word_threshold_s={c.whisper.wide_word_threshold_s}"
        f"  retranscribe_low_conf_gap_ms={c.whisper.retranscribe_low_conf_gap_ms}"
-       f"  retranscribe_large_gap_ms={c.whisper.retranscribe_large_gap_ms}")
+       f"  retranscribe_large_gap_ms={c.whisper.retranscribe_large_gap_ms}"
+       f"  retranscribe_merge_gap_s={c.whisper.retranscribe_merge_gap_s}")
     _s(f"  cuts    : min_silence_ms={c.cuts.min_silence_ms}"
        f"  min_breath_ms={c.cuts.min_breath_ms}"
        f"  silence_threshold_db={c.cuts.silence_threshold_db}")
@@ -133,6 +135,10 @@ def write_debug_report(
             if kept:
                 kept_str = "  ".join(f"{w.word!r}({w.confidence:.2f})" for w in kept)
                 _s(f"    kept     : {kept_str}")
+            rescued = entry.get("found_rescued", [])
+            if rescued:
+                resc_str = "  ".join(f"{w.word!r}({w.confidence:.2f})" for w in rescued)
+                _s(f"    rescued  : {resc_str}  [below conf but matched confident original — kept]")
             if dropped:
                 drop_str = "  ".join(f"{w.word!r}({w.confidence:.2f})" for w in dropped)
                 _s(f"    dropped  : {drop_str}  [below conf threshold]")
@@ -162,6 +168,14 @@ def write_debug_report(
                     detail += f"  ({c.skip_reason})"
                 _s(f"        {detail}")
     _s("")
+
+    if wordless_drops:
+        _s("--- WORDLESS FRAGMENT DROPS ---")
+        _s(f"  {len(wordless_drops)} wordless keep fragment(s) removed at retake boundaries (VAD false-positives)")
+        for d in wordless_drops:
+            dur_ms = (d.end - d.start) * 1000
+            _s(f"  {_ts(d.start)} → {_ts(d.end)}  ({dur_ms:.0f}ms)  {Path(d.source_clip).name}")
+        _s("")
 
     _s("--- IMAGE OVERLAYS ---")
     if not config.images.enabled:

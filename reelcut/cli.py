@@ -360,6 +360,7 @@ def _phase1(cfg, clips: list[str], output_dir: Path, verbose: bool):
             words, n_retrans, clip_retrans_log = retranscribe_suspicious_regions(
                 words, wav, whisper_cfg,
                 conf_threshold=cfg.cuts.min_retrans_word_confidence,
+                rescue_floor=cfg.cuts.retrans_rescue_floor,
                 clips_dir=clips_dir,
                 silence_threshold_db=cfg.cuts.silence_threshold_db,
                 min_silence_ms=cfg.cuts.min_silence_ms,
@@ -463,9 +464,10 @@ def _phase1(cfg, clips: list[str], output_dir: Path, verbose: bool):
         warnings: list[str] = []
         edl = generate_scriptless_edl(all_words, gaps, min_keep_ms=cfg.cuts.min_keep_ms, speech_pad_ms=cfg.cuts.speech_pad_ms, mid_sentence_cut_floor_ms=cfg.cuts.mid_sentence_cut_floor_ms)
 
+        wordless_drops: list = []
         if retake_ranges:
             from .edl import apply_retake_cuts
-            edl = apply_retake_cuts(edl, retake_ranges, all_words)
+            edl, wordless_drops = apply_retake_cuts(edl, retake_ranges, all_words)
 
         summary = edl_summary(edl)
         console.print(
@@ -505,6 +507,7 @@ def _phase1(cfg, clips: list[str], output_dir: Path, verbose: bool):
             retrans_log=retrans_log,
             retake_ranges=retake_ranges,
             retake_candidates=retake_candidates,
+            wordless_drops=wordless_drops,
             image_cues=None,
         )
         console.print(f"[green]Debug report  →[/green] {debug_base}.debug.{{1.raw,2.post-retrans,3.post-align,4.post-vad,5.timeline,6.summary}}.txt")

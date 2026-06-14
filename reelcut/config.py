@@ -24,7 +24,7 @@ class CutsConfig(BaseModel):
     failure_tolerance_ratio: float = 0.02
     min_keep_ms: int = 50
     repetition_detection: bool = False
-    min_retake_words: int = 4
+    min_retake_words: int = 3
     max_retake_gap_s: float = 20.0
     min_match_ratio: float = 0.5
     max_retake_bridge_s: float = 1.0   # bridge sub-second gaps between consecutive retake
@@ -39,6 +39,11 @@ class CutsConfig(BaseModel):
                                                # is below this. Lower than min_word_confidence because
                                                # retranscribed clips are short and Whisper confidence
                                                # scores are systematically lower on short audio.
+    retrans_rescue_floor: float = 0.05        # rescue floor: a retranscribed word below
+                                               # min_retrans_word_confidence is kept if the original
+                                               # pass found the same word at or above this confidence.
+                                               # Two passes agreeing on a word is corroborating evidence
+                                               # even when both scores are low (e.g. sub-clip boundaries).
     low_confidence_threshold: float = 0.8
     low_confidence_min_gap_ms: int = 500
     preserve_start_s: float = 0.0
@@ -108,6 +113,7 @@ class WhisperConfig(BaseModel):
     wide_word_threshold_s: float = 1.5
     retranscribe_low_conf_gap_ms: int = 1000
     retranscribe_large_gap_ms: int = 1500
+    retranscribe_merge_gap_s: float = 1.0  # bridge gaps between adjacent retranscription windows
     compression_ratio_threshold: float | None = 2.4
     retranscribe_compression_ratio_threshold: float | None = 2.4
 

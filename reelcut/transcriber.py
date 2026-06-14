@@ -79,7 +79,30 @@ def _transcribe_with_model(model, wav_path: Path, config: WhisperConfig) -> list
                 clip_path=str(wav_path),
             ))
 
-    return words
+    return _merge_leading_comma_tokens(words)
+
+
+def _merge_leading_comma_tokens(words: list[WordTimestamp]) -> list[WordTimestamp]:
+    """Merge BPE split tokens like ["30", ",000"] → ["30,000"].
+
+    Whisper's tokenizer can produce a leading-comma token when a number like
+    30,000 is split at the comma boundary.  Joining with a space would yield
+    "30 ,000", so we merge them instead.
+    """
+    merged: list[WordTimestamp] = []
+    for w in words:
+        if merged and w.word.startswith(","):
+            prev = merged[-1]
+            merged[-1] = WordTimestamp(
+                word=prev.word + w.word,
+                start=prev.start,
+                end=w.end,
+                confidence=min(prev.confidence, w.confidence),
+                clip_path=prev.clip_path,
+            )
+        else:
+            merged.append(w)
+    return merged
 
 
 def align(
@@ -229,11 +252,46 @@ def filter_silent_words(
     return kept
 
 
+def _reconcile_retranscribed(
+    found: list["WordTimestamp"],
+    words_replaced: list["WordTimestamp"],
+    win_end: float,
+    conf_threshold: float,
+    rescue_floor: float = 0.05,
+) -> tuple[list["WordTimestamp"], list["WordTimestamp"]]:
+    """Filter retranscribed words, rescuing below-floor words that both passes agreed on.
+
+    Normal keep: in-bounds and confidence >= conf_threshold.
+    Rescue: in-bounds, below conf_threshold, but the original pass found the same word
+    (case-insensitive) at >= rescue_floor. Two independent passes agreeing is corroborating
+    evidence even when both scores are low (e.g. words at sub-clip boundaries). Adopt the
+    original's text + confidence while keeping the retrans timestamp. Returns (kept, rescued).
+    """
+    original_words = {
+        w.word.lower(): w for w in words_replaced if w.confidence >= rescue_floor
+    }
+    kept: list[WordTimestamp] = []
+    rescued: list[WordTimestamp] = []
+    for w in found:
+        if w.start >= win_end:
+            continue
+        if w.confidence >= conf_threshold:
+            kept.append(w)
+        elif w.word.lower() in original_words:
+            orig = original_words[w.word.lower()]
+            w.word = orig.word
+            w.confidence = orig.confidence
+            kept.append(w)
+            rescued.append(w)
+    return kept, rescued
+
+
 def retranscribe_suspicious_regions(
     words: list[WordTimestamp],
     wav_path: str | Path,
     config: WhisperConfig,
     conf_threshold: float = 0.5,
+    rescue_floor: float = 0.05,
     clips_dir: Path | None = None,
     silence_threshold_db: float = -40.0,
     min_silence_ms: int = 200,
@@ -361,15 +419,9 @@ def retranscribe_suspicious_regions(
     raw_windows = [(r["exp_start"], r["exp_end"], r["label"]) for r in expansion_records]
 
     # --- Merge overlapping / adjacent windows ---
-    raw_windows.sort(key=lambda x: x[0])
-    merged: list[tuple[float, float, str]] = []
-    for start, end, label in raw_windows:
-        if merged and start <= merged[-1][1]:
-            prev_start, prev_end, prev_label = merged[-1]
-            combined = prev_label if label in prev_label else f"{prev_label}+{label}"
-            merged[-1] = (prev_start, max(prev_end, end), combined)
-        else:
-            merged.append((start, end, label))
+    # Bridge gaps up to retranscribe_merge_gap_s so windows triggered by different
+    # events across a short noise/retake boundary collapse into one Whisper pass.
+    merged = _merge_retranscribe_windows(raw_windows, config.retranscribe_merge_gap_s)
 
     # --- Load model once for all windows ---
     device = "cuda" if config.compute_type == "float16" else "cpu"
@@ -479,6 +531,7 @@ def retranscribe_suspicious_regions(
             )
             for w in found_raw
         ]
+        found_rescued: list[WordTimestamp] = []
         if found:
             for w in found:
                 w.start += win_start
@@ -489,16 +542,21 @@ def retranscribe_suspicious_regions(
             # clip, producing a ghost low-conf duplicate. Those words hard-floor gap
             # detection, blocking cuts near the window boundary. Dropping them here
             # mirrors the confidence floor applied everywhere else in the pipeline.
-            found = [
-                w for w in found
-                if w.start < win_end and w.confidence >= conf_threshold
-            ]
+            # Rescue exception: a below-floor word is kept when both passes agree on
+            # it case-insensitively and the original was confident — casing ambiguity
+            # from clip isolation can depress the score without reflecting true
+            # acoustic uncertainty.
+            found, found_rescued = _reconcile_retranscribed(
+                found, words_replaced, win_end, conf_threshold, rescue_floor
+            )
 
-        # Derive dropped words from the same filter conditions applied to found_raw
-        # (clip-relative timestamps, before offset) so the log is readable.
+        # Derive dropped words from found_raw (clip-relative timestamps, before offset).
+        # Rescued words are excluded — they survived the filter via cross-pass agreement.
+        rescued_lower = {w.word.lower() for w in found_rescued}
         found_dropped = [
             w for w in found_raw
-            if (w.start + win_start) >= win_end or w.confidence < conf_threshold
+            if (w.start + win_start) >= win_end
+            or (w.confidence < conf_threshold and w.word.lower() not in rescued_lower)
         ]
 
         # Re-check after filtering: retranscription may have returned only low-conf
@@ -534,6 +592,7 @@ def retranscribe_suspicious_regions(
             "found_raw": found_raw,
             "found_kept": found,
             "found_dropped": found_dropped,
+            "found_rescued": found_rescued,
             "action": action,
             "sub_clips": sub_clips_log,
         })
@@ -710,6 +769,23 @@ def _spoken_tokens(word: str) -> list[str]:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _merge_retranscribe_windows(
+    raw_windows: list[tuple[float, float, str]],
+    merge_gap_s: float,
+) -> list[tuple[float, float, str]]:
+    """Merge retranscription windows that overlap or are within merge_gap_s of each other."""
+    sorted_windows = sorted(raw_windows, key=lambda x: x[0])
+    merged: list[tuple[float, float, str]] = []
+    for start, end, label in sorted_windows:
+        if merged and start <= merged[-1][1] + merge_gap_s:
+            prev_start, prev_end, prev_label = merged[-1]
+            combined = prev_label if label in prev_label else f"{prev_label}+{label}"
+            merged[-1] = (prev_start, max(prev_end, end), combined)
+        else:
+            merged.append((start, end, label))
+    return merged
+
 
 def _norm_word(w: str) -> str:
     """Lowercase + strip trailing punctuation for word matching."""

@@ -108,7 +108,7 @@ def apply_retake_cuts(
     entries: list[EDLEntry],
     retake_ranges: dict[str, list[tuple[float, float]]],
     words: list[WordTimestamp] | None = None,
-) -> list[EDLEntry]:
+) -> tuple[list[EDLEntry], list[EDLEntry]]:
     """Split EDL keep-entries at retake boundaries and mark retake regions as cuts.
 
     Args:
@@ -118,12 +118,15 @@ def apply_retake_cuts(
         words: If provided, words inside retake ranges are marked keep=False.
 
     Returns:
-        New EDL entry list with retake regions marked as cut (reason="retake"),
-        sorted by clip and start time.
+        (entries, wordless_drops) — updated EDL and any keep fragments that were
+        dropped because they contained no aligned words (VAD false-positives at
+        retake boundaries).
     """
     if not retake_ranges:
-        return entries
+        return entries, []
 
+    # Build a per-clip set of word start times for the wordless-keep filter below.
+    word_starts_by_clip: dict[str, list[float]] = {}
     if words is not None:
         for w in words:
             if not w.keep:
@@ -132,8 +135,14 @@ def apply_retake_cuts(
                 if r_start <= w.start < r_end:
                     w.keep = False
                     break
+        for w in words:
+            word_starts_by_clip.setdefault(w.clip_path, []).append(w.start)
+
+    def _has_word(clip: str, seg_start: float, seg_end: float) -> bool:
+        return any(seg_start <= t < seg_end for t in word_starts_by_clip.get(clip, []))
 
     result: list[EDLEntry] = []
+    wordless_drops: list[EDLEntry] = []
     for entry in entries:
         clip_cuts = retake_ranges.get(entry.source_clip, [])
         if not entry.keep or not clip_cuts:
@@ -158,6 +167,14 @@ def apply_retake_cuts(
             pending = next_pending
 
         for seg_start, seg_end, keep in pending:
+            # Drop keep fragments with no aligned words — these are VAD false-positives
+            # (e.g. a breath tail) left between a gap cut and the retake boundary.
+            if keep and words is not None and not _has_word(entry.source_clip, seg_start, seg_end):
+                wordless_drops.append(EDLEntry(
+                    start=seg_start, end=seg_end, keep=True,
+                    source_clip=entry.source_clip, reason="speech",
+                ))
+                keep = False
             result.append(EDLEntry(
                 start=seg_start,
                 end=seg_end,
@@ -167,7 +184,7 @@ def apply_retake_cuts(
             ))
 
     result.sort(key=lambda e: (e.source_clip, e.start))
-    return result
+    return result, wordless_drops
 
 
 def save_edl(entries: list[EDLEntry], path: str | Path) -> Path:

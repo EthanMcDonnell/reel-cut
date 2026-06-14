@@ -44,10 +44,12 @@ cuts:
   min_match_ratio: 0.5             # default: 0.5 | greedy extended match length / cut length must meet this
                                    # threshold. Prevents short coincidental phrase overlaps from triggering
                                    # large cuts. Raise (e.g. 0.7) to be stricter; lower (e.g. 0.3) to cut more.
-  min_word_confidence: 0.4         # gap cut hard floor: if either adjacent word's alignment confidence
+  min_word_confidence: 0.35        # gap cut hard floor: if either adjacent word's alignment confidence
                                    # is below this, the gap is never cut regardless of duration.
-  min_retrans_word_confidence: 0.35 # retranscription acceptance floor: words returned by a retranscription
-                                   # window are dropped if their confidence is below this. 
+  min_retrans_word_confidence: 0.10 # retranscription acceptance floor: words returned by a retranscription
+                                   # window are dropped if their confidence is below this.
+  retrans_rescue_floor: 0.05       # rescue floor: a retranscribed word below min_retrans_word_confidence
+                                   # is kept if the original pass found the same word at or above this.
   low_confidence_threshold: 0.8    # soft threshold: if either adjacent word is below this (but above
                                    # min_word_confidence), the gap must meet low_confidence_min_gap_ms
                                    # to qualify for a cut.
@@ -129,6 +131,10 @@ whisper:
   retranscribe_low_conf_gap_ms: 500   # default: 1000 | gap (ms) after a run of low-confidence words
                                    # that triggers retranscription of that region. Uses min_word_confidence
                                    # as the confidence floor. Set 0 to disable.
+  retranscribe_merge_gap_s: 1.0    # default: 1.0  | max gap (s) between adjacent retranscription windows
+                                   # that will be bridged into a single Whisper pass. Prevents windows
+                                   # triggered by different events across a noise/retake boundary from
+                                   # running in isolation and losing cross-boundary context.
   retranscribe_large_gap_ms: 1500  # default: 1500 | gap (ms) between any two consecutive words that
                                    # triggers retranscription regardless of confidence. Catches false
                                    # starts Whisper absorbed without surfacing twice. Set 0 to disable.

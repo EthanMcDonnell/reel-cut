@@ -24,6 +24,7 @@ def detect_retakes(
     max_retake_gap_s: float = 20.0,
     min_match_ratio: float = 0.5,
     max_retake_bridge_s: float = 1.0,
+    max_retake_skip: int = 1,
 ) -> tuple[list[tuple[float, float]], list[RetakeCandidate]]:
     """Detect repeated phrases (retakes) in a word list.
 
@@ -66,7 +67,7 @@ def detect_retakes(
         for idx in range(len(starts) - 1):
             i, j = starts[idx], starts[idx + 1]
             # Require a meaningful gap: j must be beyond the end of i's n-gram.
-            if j <= i + min_retake_words:
+            if j < i + min_retake_words:
                 continue
             # Proximity guard: real false starts happen within seconds of each other.
             gap_s = words[j].start - words[i + min_retake_words - 1].end
@@ -76,10 +77,24 @@ def detect_retakes(
             # Greedily extend the match forward beyond the initial n-gram.
             # A genuine retake sounds like what it replaces — it will extend far.
             # A coincidental phrase overlap in different contexts will not extend.
-            ext = min_retake_words
-            while i + ext < n and j + ext < n and normalized[i + ext] == normalized[j + ext]:
-                ext += 1
-            match_len = ext
+            # Tolerate isolated single-word differences (e.g. a reinflected word
+            # like "needed" vs "needs") so one swapped word doesn't truncate an
+            # otherwise-clear repeat. Skipped words don't count toward match_len,
+            # and a run of > max_retake_skip consecutive mismatches means the
+            # content has genuinely diverged, so the scan stops there.
+            ext = min_retake_words      # words consumed from each occurrence
+            match_len = min_retake_words  # words that actually matched (skips excluded)
+            skips = 0
+            while i + ext < n and j + ext < n:
+                if normalized[i + ext] == normalized[j + ext]:
+                    match_len += 1
+                    ext += 1
+                    skips = 0
+                elif skips < max_retake_skip:
+                    skips += 1
+                    ext += 1
+                else:
+                    break
             cut_len = j - i
             ratio = match_len / cut_len
 
