@@ -507,7 +507,7 @@ def _phase1(cfg, clips: list[str], output_dir: Path, verbose: bool):
             retake_candidates=retake_candidates,
             image_cues=None,
         )
-        console.print(f"[green]Debug report  →[/green] {debug_base}.debug.summary.txt (+raw/post-align/post-retrans/post-vad/timeline)")
+        console.print(f"[green]Debug report  →[/green] {debug_base}.debug.{{1.raw,2.post-retrans,3.post-align,4.post-vad,5.timeline,6.summary}}.txt")
 
         # Build captions doc
         doc_edl = [

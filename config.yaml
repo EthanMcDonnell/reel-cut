@@ -44,7 +44,7 @@ cuts:
   min_match_ratio: 0.5             # default: 0.5 | greedy extended match length / cut length must meet this
                                    # threshold. Prevents short coincidental phrase overlaps from triggering
                                    # large cuts. Raise (e.g. 0.7) to be stricter; lower (e.g. 0.3) to cut more.
-  min_word_confidence: 0.5         # gap cut hard floor: if either adjacent word's alignment confidence
+  min_word_confidence: 0.4         # gap cut hard floor: if either adjacent word's alignment confidence
                                    # is below this, the gap is never cut regardless of duration.
   min_retrans_word_confidence: 0.35 # retranscription acceptance floor: words returned by a retranscription
                                    # window are dropped if their confidence is below this. 

@@ -433,6 +433,7 @@ def retranscribe_suspicious_regions(
             sf.write(str(clips_dir / f"{label}_{win_start:.3f}.wav"), chunk, sample_rate)
 
         found_raw: list[WordTimestamp] = []
+        sub_clips_log: list[dict] = []
         for seg_i, (sub_start_s, sub_end_s) in enumerate(sub_segs):
             sub_start_sample = int(sub_start_s * sample_rate)
             sub_end_sample   = int(sub_end_s   * sample_rate)
@@ -451,16 +452,20 @@ def retranscribe_suspicious_regions(
             try:
                 sf.write(str(sub_path), sub_chunk, sample_rate)
                 sub_words = _transcribe_with_model(model, sub_path, retranscribe_config)
+                sub_clip_found: list[WordTimestamp] = []
                 for w in sub_words:
-                    found_raw.append(WordTimestamp(
+                    wt = WordTimestamp(
                         word=w.word,
                         start=w.start + sub_start_s,
                         end=w.end + sub_start_s,
                         confidence=w.confidence,
                         clip_path=w.clip_path,
-                    ))
+                    )
+                    found_raw.append(wt)
+                    sub_clip_found.append(wt)
+                sub_clips_log.append({"start_s": sub_start_s, "end_s": sub_end_s, "words": sub_clip_found})
             except Exception:
-                pass
+                sub_clips_log.append({"start_s": sub_start_s, "end_s": sub_end_s, "words": []})
             finally:
                 if cleanup_sub:
                     sub_path.unlink(missing_ok=True)
@@ -525,11 +530,12 @@ def retranscribe_suspicious_regions(
             "pre_exp_end": pre_exp_end,
             "hard_capped": hard_capped,
             "label": label,
-            "replaced": words_replaced,
+            "before": words_replaced,
             "found_raw": found_raw,
             "found_kept": found,
             "found_dropped": found_dropped,
             "action": action,
+            "sub_clips": sub_clips_log,
         })
 
     return result, len(merged), retrans_log
@@ -710,6 +716,43 @@ def _norm_word(w: str) -> str:
     return w.strip().lower().rstrip(".,!?;:'\"")
 
 
+def _find_sentence_end(
+    words: list[WordTimestamp],
+    from_idx: int,
+    origin_idx: int,
+    caps_floor_s: float,
+    hard_cap_s: float,
+) -> int:
+    """Return the index of the last word in the sentence, scanning forward from from_idx.
+
+    Stops at the first fullstop/questionmark (primary). A capitalised word triggers
+    an early split — returning i-1 — only when elapsed time from origin_idx meets the
+    caps/hard-cap thresholds (see _caps_split). Falls back to the last word if neither
+    condition fires.
+    """
+    result = len(words) - 1
+    for i in range(from_idx, len(words)):
+        if words[i].word.rstrip().endswith((".", "?")):
+            result = i
+            break
+        if i > from_idx:
+            elapsed = words[i].start - words[origin_idx].start
+            if _caps_split(words[i].word, elapsed, caps_floor_s, hard_cap_s):
+                result = i - 1
+                break
+    return result
+
+
+def _caps_split(word: str, elapsed_s: float, caps_floor_s: float, hard_cap_s: float) -> bool:
+    """True when elapsed_s warrants splitting before this word.
+
+    Caps trigger fires when elapsed_s >= caps_floor_s and the word is capitalised.
+    Hard cap fires at hard_cap_s regardless of capitalisation.
+    """
+    is_caps = bool(word and word[0].isupper())
+    return (elapsed_s >= caps_floor_s and is_caps) or elapsed_s >= hard_cap_s
+
+
 def _words_to_whisperx_segments(words: list[WordTimestamp]) -> list[dict]:
     """Group words into segments for whisperx alignment input.
 
@@ -722,38 +765,27 @@ def _words_to_whisperx_segments(words: list[WordTimestamp]) -> list[dict]:
     MIN_WORDS = 3
 
     segments = []
-    chunk: list[WordTimestamp] = []
+    chunk_start = 0
+    i = 0
 
-    for w in words:
-        # Caps trigger (secondary): fires only when chunk already exceeds 10s.
-        # Capitalised word starts the new segment, so check before appending.
-        if chunk and len(chunk) >= MIN_WORDS:
-            duration = chunk[-1].end - chunk[0].start
-            is_caps = w.word and w.word[0].isupper()
-            if (duration >= 10.0 and is_caps) or duration >= 20.0:
-                segments.append({
-                    "start": chunk[0].start,
-                    "end": chunk[-1].end,
-                    "text": " ".join(ww.word for ww in chunk),
-                })
-                chunk = []
-
-        chunk.append(w)
-
-        # Punctuation trigger (primary): fullstop or question mark ends the segment.
-        if w.word.rstrip().endswith((".", "?")) and len(chunk) >= MIN_WORDS:
+    while i < len(words):
+        end_idx = _find_sentence_end(words, i, chunk_start, caps_floor_s=10.0, hard_cap_s=20.0)
+        i = end_idx + 1
+        chunk = words[chunk_start:i]
+        if len(chunk) >= MIN_WORDS:
             segments.append({
                 "start": chunk[0].start,
                 "end": chunk[-1].end,
-                "text": " ".join(ww.word for ww in chunk),
+                "text": " ".join(w.word for w in chunk),
             })
-            chunk = []
+            chunk_start = i
 
-    if chunk:
+    if chunk_start < len(words):
+        remaining = words[chunk_start:]
         segments.append({
-            "start": chunk[0].start,
-            "end": chunk[-1].end,
-            "text": " ".join(ww.word for ww in chunk),
+            "start": remaining[0].start,
+            "end": remaining[-1].end,
+            "text": " ".join(w.word for w in remaining),
         })
 
     return segments
@@ -768,8 +800,9 @@ def _expand_to_sentence(
     """Expand a retranscription window outward to the enclosing sentence boundaries.
 
     Scans backward from win_start for the nearest capitalised word (sentence
-    start) and forward from win_end for the nearest fullstop/questionmark, or
-    stops before the next capitalised word. Total duration capped at max_duration_s.
+    start) and forward from win_end for the nearest fullstop/questionmark.
+    A capitalised word is only used as a fallback split point when the window
+    would exceed max_duration_s. Total duration capped at max_duration_s.
 
     Returns (exp_start, exp_end, hard_capped) where hard_capped is True if the
     20s cap was the binding constraint (sentence was longer than max_duration_s).
@@ -795,16 +828,11 @@ def _expand_to_sentence(
             sent_start_idx = i
             break
 
-    # Scan forward: fullstop/questionmark ends the sentence (inclusive);
-    # the next capitalised word starts a new sentence (exclusive)
-    sent_end_idx = anchor_end_idx
-    for i in range(anchor_end_idx, len(words)):
-        if words[i].word.rstrip().endswith((".", "?")):
-            sent_end_idx = i
-            break
-        if i > anchor_end_idx and words[i].word and words[i].word[0].isupper():
-            sent_end_idx = i - 1
-            break
+    # Scan forward to the sentence end using the shared helper
+    sent_end_idx = _find_sentence_end(
+        words, anchor_end_idx, sent_start_idx,
+        caps_floor_s=max_duration_s, hard_cap_s=max_duration_s,
+    )
 
     exp_start = words[sent_start_idx].start
     natural_end = words[sent_end_idx].end
@@ -846,8 +874,10 @@ def _split_audio_at_silences(
         fraction_above = float(np.mean(np.abs(chunk) > threshold_linear))
         is_silent.append(fraction_above < failure_tolerance_ratio)
 
-    # Find silence runs long enough to act as split points
-    split_samples: list[int] = []
+    # Find silence runs long enough to act as split points.
+    # Store (silence_start_sample, silence_end_sample) so sub-clips are bounded
+    # to speech regions and don't include silence-only segments at their edges.
+    silence_regions: list[tuple[int, int]] = []
     i = 0
     while i < len(is_silent):
         if is_silent[i]:
@@ -856,16 +886,19 @@ def _split_audio_at_silences(
                 i += 1
             run_len = i - run_start
             if run_len >= min_silence_frames:
-                mid = ((run_start + i) // 2) * frame_size
-                split_samples.append(mid)
+                silence_regions.append((run_start * frame_size, i * frame_size))
         else:
             i += 1
 
-    if not split_samples:
+    if not silence_regions:
         return [(0.0, total_dur)]
 
-    boundaries = [0] + split_samples + [len(audio)]
-    return [
-        (boundaries[j] / sample_rate, boundaries[j + 1] / sample_rate)
-        for j in range(len(boundaries) - 1)
+    # Build speech segments between silence boundaries, excluding silence itself.
+    seg_starts = [0] + [end for _, end in silence_regions]
+    seg_ends   = [start for start, _ in silence_regions] + [len(audio)]
+    segs = [
+        (s / sample_rate, e / sample_rate)
+        for s, e in zip(seg_starts, seg_ends)
+        if e > s
     ]
+    return segs if segs else [(0.0, total_dur)]

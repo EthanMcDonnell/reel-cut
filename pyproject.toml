@@ -43,3 +43,6 @@ reelcut = "reelcut.cli:app"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["reelcut*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

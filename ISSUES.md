@@ -1,111 +1,74 @@
 # ReelCut — Issues & Optimisations
 
-## Critical
-
-### 1. Empty words list crashes sentence snapping (`edl.py:219`)
-`min()` on an empty sequence raises `ValueError`. Happens when a clip has no detected speech.
-```python
-return min(words, key=lambda w: abs(w.end - t)).end  # crashes if words=[]
-```
-
-### 2. Broken symlinks crash caption render (`renderer.py:208`)
-`dest.exists()` returns `False` for broken symlinks, so the check is bypassed and `os.symlink()` crashes.
-```python
-if not dest.exists():
-    os.symlink(src, dest)  # fails if broken symlink already exists
-```
-
-### 3. Silent normalization failure (`audio.py:56–67`)
-If the two-pass loudnorm probe fails, it falls back to single-pass silently — callers never know normalization was degraded.
-
-### 4. `signal.SIGALRM` is Unix-only (`transcriber.py:91`)
-The 30s timeout for WhisperX model load uses `SIGALRM`, which doesn't exist on Windows. Will crash immediately on Windows before any transcription.
-
----
+_Last reconciled against the code on 2026-06-14. Items resolved by the
+scriptless-EDL migration and earlier hardening passes have been removed._
 
 ## Bugs
 
-### 5. Duplicate filename collision in `done/` (`cli.py:126`)
-`video.rename(dest)` crashes if a file with the same name already exists in `done/`. Happens if you reprocess the same input folder twice.
-
-### 6. `caption.py:46` — IndexError on empty words
+### 1. `run --slug` overwrites every output for a folder of clips (`cli.py:190`)
 ```python
-total_duration = words[-1].end  # IndexError if caption_words is empty
+stem = slug or video.stem   # slug is constant across the per-video loop
 ```
-Triggered when the script has no matching footage so nothing is remapped.
+With `--slug` set and multiple videos, every iteration writes to the same
+`{slug}.mp4` / `{slug}.captions.json`. Processing N videos silently leaves only
+the last. (`transcribe`'s folder mode correctly uses `video.stem`.)
 
-### 7. `renderer.py:201–203` — `min()`/`max()` on empty dict
-If `caption_frames` is passed but `frame_map` ends up empty, `min(frame_map)` raises `ValueError`.
+### 2. Cross-clip gap-map key collision (`edl.py:55`, fed from `cli.py:456`)
+```python
+gap_map[(round(g.start, 4), round(g.end, 4))] = g
+```
+`generate_scriptless_edl` receives every clip's gaps concatenated, but keys the
+lookup on `(end, start)` with no clip identity. In `--clips-folder` mode two
+clips with a word pair at the same rounded timestamps (common near `t≈0`)
+collide and the second gap overwrites the first — one clip gets the wrong cut
+decision. Key should include `clip_path`.
 
-### 8. `_collect_clips()` sorts three times then sorts again (`cli.py:352–363`)
-Globs `.mp4`, `.mov`, `.mkv` separately, sorts each, combines, converts to `set`, then sorts again. The intermediate sorts are wasted work, and `set()` destroys ordering before the final sort anyway.
-
-### 9. Unreliable clip ordering via `st_ctime` (`cli.py:88`, `cli.py:316–322`)
-`ctime` is inode-change time on Linux (not creation time), making ordering non-deterministic across platforms. Use filename sort or `st_mtime` instead.
-
-### 10. Dead `render_multi_clip()` function (`renderer.py:83–92`)
-Function exists but is never called and does nothing beyond delegating to `render()` with an unused `clips` parameter.
-
-### 11. Unused `config` parameter in `_extract_segments()` (`renderer.py:104`)
-Parameter was likely planned but never implemented. Should be removed.
-
----
+### 3. `_build_gaps` mutates shared word objects (`gap_detector.py:249`)
+```python
+word.end = true_end
+```
+`detect_gaps` is handed slices of `all_words` (same objects), so clamping
+`word.end` silently rewrites the timestamps later used for captions and remap.
+Consistent today, but an invisible side effect inside a `detect_*` function —
+a trap for anyone who reorders the pipeline.
 
 ## Performance
 
-### 12. Redundant audio resampling (`gap_detector.py:55–64`)
-`detect_gaps()` resamples audio to 16kHz, but the caller already extracted a 16kHz WAV via FFmpeg. Doubles the computation.
+### 4. `_remap_kept_words` is O(words × cuts) (`cli.py:744`)
+`remap()` recomputes `sum(e - s for s, e in cuts if ...)` over all cuts on every
+word, in both phase 1 and phase 2. Quadratic on long, heavily-cut videos. Sort
+cuts once and use a prefix sum + `bisect` for O(log n) per word.
 
-### 13. O(n²) transcript matching (`script_aligner.py:114–146`)
-For every transcript position, the algorithm scans all script positions. For a 30-min transcript (~5k words) against a 1k-word script, worst case is ~10M inner-loop iterations.
+### 5. WhisperX alignment model reloaded per clip (`transcriber.py:123`)
+`align()` calls `whisperx.load_align_model(...)` every invocation, and the
+pipeline calls `align` once per clip. Multi-clip jobs reload wav2vec2 each time.
+Load once and reuse.
 
-### 14. Caption frame cache rebuilds word-to-line mapping redundantly (`caption.py:277–310`)
-Builds both `word_to_line` and `all_words_flat` as separate structures then iterates both per frame. For long videos at 30fps the redundant allocation is significant.
+### 6. Caption frame cache builds redundant word maps (`caption.py:296`)
+`_build_frame_cache` builds both `word_to_line` and `all_words_flat`, then
+iterates per frame. For long videos at 30fps the redundant allocation adds up.
 
-### 15. Progress bar updated on every segment (`renderer.py:157–158`)
-Calls `progress.update()` for every extracted segment. For large EDLs (1000+ segments) this creates excessive terminal I/O.
-
----
-
-## Error Handling
-
-### 16. `_run_pipeline` exceptions lose stack traces (`cli.py:110–115`)
-```python
-except Exception as exc:
-    err_console.print(f"[red]Failed:[/red] {video.name} — {exc}")
-    continue
-```
-The full traceback is swallowed. Add `--verbose` traceback output or at minimum `traceback.format_exc()`.
-
-### 17. `torch.set_num_threads(1)` called on every `align()` invocation (`transcriber.py:76`)
-Repeatedly sets global torch thread count on every call. Should be set once at startup.
-
----
-
-## Configuration
-
-### 18. No validation for negative/zero resolution (`config.py:51–56`)
-`[0, 0]` or `[-1920, 1080]` pass validation. Should check both values are positive integers above a minimum (e.g. 320).
-
-### 19. No GPU check for `float16` compute type (`config.py:74`)
-Config allows `compute_type: float16` with no validation that a GPU is present. Crashes at transcription time on CPU-only machines.
-
----
+### 7. Progress bar updated on every segment (`renderer.py:182`)
+`progress.update()` fires once per completed segment in the `as_completed` loop.
+For large EDLs (1000+ segments) this is excessive terminal I/O.
 
 ## Code Quality
 
-### 20. Hardcoded 0.3s caption grace period (`caption.py:324`)
+### 8. Hardcoded 0.3s caption grace period (`caption.py:22`, used at `:337`)
 ```python
-if t > words[last_idx].end + 0.3:
+_CAPTION_GRACE_S = 0.3
 ```
-Not configurable. Too short for slow speech, potentially too long for fast speech.
+Module constant, not configurable. Too short for slow speech, potentially too
+long for fast speech.
 
-### 21. Hardcoded 64-sample minimum chunk in gap detection (`gap_detector.py:95`)
+### 9. Hardcoded 64-sample minimum chunk in gap detection (`gap_detector.py:98`)
 ```python
 if len(chunk) < 64:
     return "silence"
 ```
 Magic number with no config or comment explaining the choice.
 
-### 22. `os.symlink` instead of `Path.symlink_to()` (`caption.py:214`)
-Inconsistent with the rest of the codebase which uses `pathlib.Path` throughout.
+### 10. Unused `import os` in `caption.py` (`caption.py:4`)
+Orphaned after the symlink logic moved to `renderer.py`. Safe to drop.
+</content>
+</invoke>

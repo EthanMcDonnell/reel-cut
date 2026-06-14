@@ -32,7 +32,7 @@ def write_debug_report(
     retake_candidates: dict[str, list["RetakeCandidate"]] | None = None,
     image_cues: list | None = None,
 ) -> None:
-    """Write split debug files: .debug.summary.txt, .debug.raw.txt, .debug.post-align.txt, .debug.post-retrans.txt, .debug.post-vad.txt, .debug.timeline.txt."""
+    """Write split debug files: .debug.1.raw.txt, .debug.2.post-retrans.txt, .debug.3.post-align.txt, .debug.4.post-vad.txt, .debug.5.timeline.txt, .debug.6.summary.txt."""
     from .edl import edl_summary
 
     header = (
@@ -106,12 +106,12 @@ def write_debug_report(
             pre_e = entry.get("pre_exp_end",   entry["win_end"])
             if pre_s != entry["win_start"] or pre_e != entry["win_end"]:
                 _s(f"    expanded from  : [{_ts(pre_s)} → {_ts(pre_e)}]  dur={pre_e - pre_s:.3f}s  → sentence boundary")
-            replaced = entry["replaced"]
+            replaced = entry["before"]
             if replaced:
                 replaced_str = "  ".join(f"{w.word!r}({w.confidence:.2f})" for w in replaced)
-                _s(f"    replaced : {replaced_str}")
+                _s(f"    before   : {replaced_str}")
             else:
-                _s(f"    replaced : (window was empty — gap insertion)")
+                _s(f"    before   : (window was empty — gap insertion)")
             raw = entry["found_raw"]
             sub_clips = entry.get("sub_clips", [])
             if raw:
@@ -200,7 +200,7 @@ def write_debug_report(
             f"  {keep_str}  {dur:>6.3f}s  {entry.reason}"
         )
 
-    Path(f"{base_path}.debug.summary.txt").write_text("\n".join(s) + "\n")
+    Path(f"{base_path}.debug.6.summary.txt").write_text("\n".join(s) + "\n")
 
     # -------------------------------------------------------------------------
     # raw — raw Whisper output before alignment
@@ -214,7 +214,7 @@ def write_debug_report(
         _r(f"  {_ts(w.start):>9} → {_ts(w.end):<9}  {w.word!r:<30}  conf={w.confidence:.2f}"
            f"  clip={Path(w.clip_path).name}")
 
-    Path(f"{base_path}.debug.raw.txt").write_text("\n".join(r) + "\n")
+    Path(f"{base_path}.debug.1.raw.txt").write_text("\n".join(r) + "\n")
 
     # -------------------------------------------------------------------------
     # post-align — after WhisperX alignment, before retranscription
@@ -240,7 +240,7 @@ def write_debug_report(
         for w in post_align_words:
             _pa(f"  {_ts(w.start):>9} → {_ts(w.end):<9}  {w.word!r:<30}  conf={w.confidence:.2f}"
                 f"  clip={Path(w.clip_path).name}")
-        Path(f"{base_path}.debug.post-align.txt").write_text("\n".join(pa) + "\n")
+        Path(f"{base_path}.debug.3.post-align.txt").write_text("\n".join(pa) + "\n")
 
     # -------------------------------------------------------------------------
     # post-retrans — after retranscription, before VAD filter
@@ -263,7 +263,7 @@ def write_debug_report(
         for w in post_retrans_words:
             _pr(f"  {_ts(w.start):>9} → {_ts(w.end):<9}  {w.word!r:<30}  conf={w.confidence:.2f}"
                 f"  clip={Path(w.clip_path).name}")
-        Path(f"{base_path}.debug.post-retrans.txt").write_text("\n".join(pr) + "\n")
+        Path(f"{base_path}.debug.2.post-retrans.txt").write_text("\n".join(pr) + "\n")
 
     # -------------------------------------------------------------------------
     # post-vad — after retranscription + alignment + VAD filter (final word list)
@@ -278,7 +278,7 @@ def write_debug_report(
         keep_flag = "  [OUTTAKE]" if not w.keep else ""
         _a(f"  {_ts(w.start):>9} → {_ts(w.end):<9}  {w.word!r:<30}  conf={w.confidence:.2f}{keep_flag}")
 
-    Path(f"{base_path}.debug.post-vad.txt").write_text("\n".join(a) + "\n")
+    Path(f"{base_path}.debug.4.post-vad.txt").write_text("\n".join(a) + "\n")
 
     # -------------------------------------------------------------------------
     # timeline — words and gaps interleaved with cut reasoning
@@ -343,7 +343,7 @@ def write_debug_report(
                     dur_ms = (nxt.start - w.end) * 1000
                     _t(f"  {_ts(w.end):>9}→{_ts(nxt.start):<11}  {'(no gap)':<10}  {dur_ms:.0f}ms (below threshold)")
 
-    Path(f"{base_path}.debug.timeline.txt").write_text("\n".join(t) + "\n")
+    Path(f"{base_path}.debug.5.timeline.txt").write_text("\n".join(t) + "\n")
 
 
 # ---------------------------------------------------------------------------
