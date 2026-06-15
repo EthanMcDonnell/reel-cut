@@ -75,17 +75,24 @@ output:
 
 captions:
   enabled: true
-  style: word_highlight            # word_highlight | full_line | none
+  style: full_line                 # word_highlight | full_line | none
+                                   # full_line: every word one color. word_highlight: active (spoken) word
+                                   # drawn in highlight_color. Set word_highlight to enable per-word highlighting.
   font: HelveticaNeue
   size: 48
   color: "#FFFFFF"
-  highlight_color: "#FFD700"
+  highlight_color: "#FFD700"       # color of the active word — only used when style: word_highlight
   position: center                 # top | center | bottom
-  stroke: false
+  stroke: false                    # draw an outline around text (improves legibility on bright footage)
   stroke_color: "#000000"
   stroke_width: 3
+  shadow: true                     # drop shadow behind text
+  shadow_color: "#000000"
+  shadow_offset: 6                 # drop shadow shift in px
   margin_pct: 15                    # % of video width kept free on each side — increase to pull captions inward
   words_per_line: 7                 # max words shown on screen at once (default: 7)
+  line_spacing: 10                 # px between wrapped rows
+  grace_s: 0.3                     # seconds a caption line stays visible after its last word ends
 
 images:
   enabled: true

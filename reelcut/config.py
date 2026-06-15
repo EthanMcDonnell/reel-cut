@@ -83,6 +83,11 @@ class CaptionsConfig(BaseModel):
     stroke_width: int = 3
     margin_pct: float = 8.0  # % of video width kept free on each side (left + right)
     words_per_line: int = 7  # max words shown on screen at once
+    line_spacing: int = 10           # px between wrapped rows
+    shadow: bool = True              # draw a drop shadow behind text
+    shadow_color: str = "#000000"
+    shadow_offset: int = 6           # drop shadow shift (px)
+    grace_s: float = 0.3             # seconds a caption line stays visible after its last word ends
 
 
 class ImagesConfig(BaseModel):

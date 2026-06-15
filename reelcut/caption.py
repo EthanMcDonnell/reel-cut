@@ -13,13 +13,7 @@ from .transcriber import WordTimestamp
 
 CaptionStyle = Literal["word_highlight", "full_line", "none"]
 
-# Words grouped into display lines (max N words per line)
-_WORDS_PER_LINE = 10
-
 _MARGIN = 40        # fallback; overridden at render time by config.margin_pct
-_SHADOW_OFFSET = 6  # solid black drop shadow shift (px)
-_LINE_SPACING = 10  # px between wrapped rows
-_CAPTION_GRACE_S = 0.3  # seconds caption stays visible after the last word in a line ends
 
 
 
@@ -48,7 +42,7 @@ def render_caption_frames(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     font, font_highlight = _load_fonts(config)
-    lines = _group_into_lines(words, config.words_per_line)
+    lines = _group_into_lines(words, config.words_per_line, config.grace_s)
     total_duration = words[-1].end
 
     frames: list[CaptionFrame] = []
@@ -56,7 +50,7 @@ def render_caption_frames(
 
     # Cache: map frame_number → (line_words, active_word_idx | None)
     # Build a lookup: for each frame, which line is active and which word is highlighted
-    frame_cache = _build_frame_cache(lines, fps, total_frames)
+    frame_cache = _build_frame_cache(lines, fps, total_frames, config.grace_s)
 
     w, h = resolution
     y_positions = {"top": int(h * 0.12), "center": int(h * 0.72), "bottom": int(h * 0.87)}
@@ -100,15 +94,25 @@ def render_caption_frames(
 # Rendering
 # ---------------------------------------------------------------------------
 
-def _join_words(words) -> str:
-    """Join tokens without a space when the next token starts with a hyphen or apostrophe
-    (e.g. Whisper splits 're-asking' into ['re', '-asking'])."""
-    result = ""
-    for w in words:
-        if result and not w.startswith(("-", "'", "’")):
-            result += " "
-        result += w
-    return result
+def _build_display_tokens(
+    line_words: list[WordTimestamp], active_idx: int | None
+) -> list[tuple[str, bool]]:
+    """Merge continuation tokens into single visual tokens and flag the active one.
+
+    Whisper splits some words across tokens that should render without a space
+    (e.g. 're-asking' → ['re', '-asking']); these are merged here. A token is
+    marked active if it covers active_idx so it can be highlighted.
+    Returns a list of (text, is_active).
+    """
+    tokens: list[tuple[str, bool]] = []
+    for idx, w in enumerate(line_words):
+        is_active = idx == active_idx
+        if tokens and w.word.startswith(("-", "'", "’")):
+            prev_text, prev_active = tokens[-1]
+            tokens[-1] = (prev_text + w.word, prev_active or is_active)
+        else:
+            tokens.append((w.word, is_active))
+    return tokens
 
 
 def _render_frame(
@@ -120,59 +124,74 @@ def _render_frame(
     canvas_size: tuple[int, int],
     y_pos: int,
 ) -> Image.Image:
-    """Render a single transparent caption frame."""
+    """Render a single transparent caption frame with the active word highlighted."""
     w, h = canvas_size
     img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
 
-    text = _join_words(word.word for word in line_words)
+    highlight_idx = active_idx if config.style == "word_highlight" else None
+    tokens = _build_display_tokens(line_words, highlight_idx)
     margin = int(w * config.margin_pct / 100)
-    _draw_text_wrapped(draw, text, font, config, w, y_pos, margin)
+    _draw_tokens_wrapped(draw, tokens, font, config, w, y_pos, margin)
 
     return img
 
 
-def _draw_text_wrapped(
+def _draw_tokens_wrapped(
     draw: ImageDraw.ImageDraw,
-    text: str,
+    tokens: list[tuple[str, bool]],
     font: ImageFont.FreeTypeFont,
     config: CaptionsConfig,
     canvas_w: int,
     y: int,
     margin: int = _MARGIN,
 ) -> None:
-    """Draw text centered with solid black shadow, wrapping so no line exceeds canvas width."""
+    """Draw word tokens centered, wrapping so no line exceeds canvas width.
+
+    Each token gets a solid black drop shadow and an optional stroke (when
+    config.stroke is set). The active token is painted in highlight_color.
+    """
     max_w = canvas_w - 2 * margin
-    words = text.split()
+    space_w = draw.textlength(" ", font=font)
 
-    display_lines: list[str] = []
-    current: list[str] = []
-    for word in words:
-        candidate = " ".join(current + [word])
-        bbox = draw.textbbox((0, 0), candidate, font=font)
-        if bbox[2] - bbox[0] <= max_w or not current:
-            current.append(word)
+    # Wrap tokens into visual lines that each fit within max_w (advance-width based).
+    lines: list[list[tuple[str, bool]]] = []
+    current: list[tuple[str, bool]] = []
+    current_w = 0.0
+    for text, is_active in tokens:
+        tok_w = draw.textlength(text, font=font)
+        added_w = tok_w + (space_w if current else 0)
+        if current and current_w + added_w > max_w:
+            lines.append(current)
+            current, current_w = [(text, is_active)], tok_w
         else:
-            display_lines.append(" ".join(current))
-            current = [word]
+            current.append((text, is_active))
+            current_w += added_w
     if current:
-        display_lines.append(" ".join(current))
+        lines.append(current)
 
-    sample_bbox = draw.textbbox((0, 0), display_lines[0], font=font)
-    line_h = sample_bbox[3] - sample_bbox[1]
-
-    total_h = line_h * len(display_lines) + _LINE_SPACING * (len(display_lines) - 1)
+    ascent, descent = font.getmetrics()
+    line_h = ascent + descent
+    total_h = line_h * len(lines) + config.line_spacing * (len(lines) - 1)
     start_y = y - total_h // 2
 
-    for i, line in enumerate(display_lines):
-        bbox = draw.textbbox((0, 0), line, font=font)
-        line_w = bbox[2] - bbox[0]
-        x = (canvas_w - line_w) // 2
-        x = max(margin, min(x, canvas_w - margin - line_w))
-        cur_y = start_y + i * (line_h + _LINE_SPACING)
+    stroke_kwargs: dict = {}
+    if config.stroke and config.stroke_width > 0:
+        stroke_kwargs = {"stroke_width": config.stroke_width, "stroke_fill": config.stroke_color}
 
-        draw.text((x + _SHADOW_OFFSET, cur_y + _SHADOW_OFFSET), line, font=font, fill=(0, 0, 0, 255))
-        draw.text((x, cur_y), line, font=font, fill=config.color)
+    for row, line_tokens in enumerate(lines):
+        widths = [draw.textlength(text, font=font) for text, _ in line_tokens]
+        line_w = sum(widths) + space_w * (len(line_tokens) - 1)
+        x = (canvas_w - line_w) / 2
+        x = max(margin, min(x, canvas_w - margin - line_w))
+        cur_y = start_y + row * (line_h + config.line_spacing)
+
+        for (text, is_active), tok_w in zip(line_tokens, widths):
+            fill = config.highlight_color if is_active else config.color
+            if config.shadow:
+                draw.text((x + config.shadow_offset, cur_y + config.shadow_offset), text, font=font, fill=config.shadow_color)
+            draw.text((x, cur_y), text, font=font, fill=fill, **stroke_kwargs)
+            x += tok_w + space_w
 
 
 # ---------------------------------------------------------------------------
@@ -268,12 +287,12 @@ def _ends_sentence(word: WordTimestamp) -> bool:
 def _group_into_lines(
     words: list[WordTimestamp],
     words_per_line: int,
-    gap_break_s: float = _CAPTION_GRACE_S,
+    gap_break_s: float,
 ) -> list[list[WordTimestamp]]:
     """Group words into display lines. Breaks on word-count limit, a timing gap >= gap_break_s,
     or a sentence boundary so each caption block starts at the beginning of a sentence.
 
-    gap_break_s matches _CAPTION_GRACE_S in _active_word_at: any gap that would cause the
+    gap_break_s matches the grace period in _active_word_at: any gap that would cause the
     caption to expire and reappear gets a line break so the reappearing text is new content.
     """
     if not words:
@@ -297,6 +316,7 @@ def _build_frame_cache(
     lines: list[list[WordTimestamp]],
     fps: int,
     total_frames: int,
+    grace_s: float,
 ) -> dict[int, tuple[list[WordTimestamp], int | None] | None]:
     """Map frame_number → (active_line_words, active_word_index_in_line | None)."""
     cache: dict[int, tuple[list[WordTimestamp], int | None] | None] = {}
@@ -312,7 +332,7 @@ def _build_frame_cache(
 
     for frame_num in range(total_frames):
         t = frame_num / fps
-        active_word_idx = _active_word_at(all_words_flat, t)
+        active_word_idx = _active_word_at(all_words_flat, t, grace_s)
         if active_word_idx is None:
             cache[frame_num] = None
             continue
@@ -322,7 +342,7 @@ def _build_frame_cache(
     return cache
 
 
-def _active_word_at(words: list[WordTimestamp], t: float) -> int | None:
+def _active_word_at(words: list[WordTimestamp], t: float, grace_s: float) -> int | None:
     """Return index of the word active at time t, or None if between words."""
     # Show the line of the most recently spoken word (keeps line visible until next line)
     last_idx = None
@@ -334,6 +354,6 @@ def _active_word_at(words: list[WordTimestamp], t: float) -> int | None:
     if last_idx is None:
         return None
     # Hide after a short grace period past the last word's end
-    if t > words[last_idx].end + _CAPTION_GRACE_S:
+    if t > words[last_idx].end + grace_s:
         return None
     return last_idx
