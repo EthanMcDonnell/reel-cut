@@ -5,4 +5,5 @@
     el.style.removeProperty('background-color');
     el.style.removeProperty('border-radius');
   });
+  document.querySelectorAll('[data-snippet-target]').forEach(el => el.removeAttribute('data-snippet-target'));
 }

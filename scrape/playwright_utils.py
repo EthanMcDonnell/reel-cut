@@ -17,9 +17,10 @@ _USER_AGENT = (
 )
 
 
-async def stealth_context(browser):
+async def stealth_context(browser, device_scale_factor: float = 1):
     return await browser.new_context(
         viewport={"width": 1920, "height": 1080},
+        device_scale_factor=device_scale_factor,
         user_agent=_USER_AGENT,
         locale="en-US",
         extra_http_headers={"Accept-Language": "en-US,en;q=0.9"},

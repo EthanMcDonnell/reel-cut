@@ -170,7 +170,13 @@ Where `<video-slug>` matches the saved script filename (without `.md`).
 
 If a source URL is a Reddit post, use the linked article URL instead (already fetched in Stage 0).
 
-If `skipped` is non-null in the JSON result, report the reason so the user knows which screenshots are missing.
+### Step 4.3: Check what was actually captured
+
+The JSON result includes a `snippets` array — one entry per requested snippet with `found`, `match_type` (`exact` | `fuzzy` | `none`), `confidence`, and (on a miss) `reason`. The same misses are also recorded under `missed` in `manifest.json`.
+
+- **Report every snippet with `found: false`** and its `reason`. That claim will have **no on-screen evidence** in the video — either revise the snippet `text` to match the article's wording verbatim and re-run for that URL, or call the claim out as unsupported.
+- **Flag any `match_type: "fuzzy"` match with `confidence` below 0.8** — find located an approximate block rather than the exact phrase, so it's worth an eyeball before relying on it.
+- If `skipped` is non-null, the whole page failed to load — report that reason; no screenshots were captured for that URL.
 
 ## Final Output
 
@@ -179,4 +185,5 @@ Report to the user:
 - Prompt resolved as: [URL / file reference / phrase] → [TOPIC] ([SERIES])
 - Script saved to: [file path]
 - Screenshots saved to: `assets/<slug>/`
-- Any warnings (near-tie runner-up available, skipped screenshots, etc.)
+- Screenshot results: how many captured (with the exact/fuzzy breakdown), and explicitly list any snippets that were **not found** so the user knows which claims lack on-screen evidence
+- Any warnings (near-tie runner-up available, low-confidence fuzzy matches, skipped screenshots, etc.)
