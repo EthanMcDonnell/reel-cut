@@ -70,6 +70,7 @@ def transcribe(
         doc = _phase1(cfg, clips, output_dir, verbose)
         from .captions_doc import save_captions_doc
         save_captions_doc(doc, captions_path)
+        _scaffold_headings(captions_path, cfg.headings.default_end_s)
         console.print(f"[green]Captions doc →[/green] {captions_path}")
     else:
         input_folder = Path(footage)
@@ -87,6 +88,7 @@ def transcribe(
                     doc = _phase1(cfg, [str(video)], output_dir, verbose)
                     from .captions_doc import save_captions_doc
                     save_captions_doc(doc, captions_path)
+                    _scaffold_headings(captions_path, cfg.headings.default_end_s)
                     console.print(f"[green]Captions doc →[/green] {captions_path}")
                 except Exception as exc:
                     err_console.print(f"[red]Failed:[/red] {video.name} — {exc}")
@@ -100,6 +102,7 @@ def transcribe(
             doc = _phase1(cfg, clips, output_dir, verbose)
             from .captions_doc import save_captions_doc
             save_captions_doc(doc, captions_path)
+            _scaffold_headings(captions_path, cfg.headings.default_end_s)
             console.print(f"[green]Captions doc →[/green] {captions_path}")
 
     console.print(
@@ -140,7 +143,7 @@ def render(
     output_path = out_dir / f"{slug}.mp4"
 
     console.rule(f"[bold]Rendering → {output_path}[/bold]")
-    _phase2(cfg, doc, output_path, verbose)
+    _phase2(cfg, doc, output_path, verbose, headings_path=cap_path.parent / "headings.json")
 
 
 # ---------------------------------------------------------------------------
@@ -199,7 +202,7 @@ def run(
                 console.print(f"[yellow]--dry-run:[/yellow] skipping render. Captions → {cap_path}")
                 continue
 
-            warnings = _phase2(cfg, doc, out_path, verbose)
+            warnings = _phase2(cfg, doc, out_path, verbose, headings_path=cap_path.parent / "headings.json")
             all_warnings.extend(warnings)
         except Exception as exc:
             err_console.print(f"[red]Failed:[/red] {video.name} — {exc}")
@@ -540,7 +543,7 @@ def _phase1(cfg, clips: list[str], output_dir: Path, verbose: bool):
 # Phase 2 — render core
 # ---------------------------------------------------------------------------
 
-def _phase2(cfg, doc, output_path: Path, verbose: bool) -> list[str]:
+def _phase2(cfg, doc, output_path: Path, verbose: bool, headings_path: Path | None = None) -> list[str]:
     """Render final video from a CaptionsDoc. Returns warnings."""
     from .caption import render_caption_frames
     from .captions_doc import ImageSpec
@@ -628,6 +631,24 @@ def _phase2(cfg, doc, output_path: Path, verbose: bool) -> list[str]:
             )
             _tlog(time.perf_counter() - t)
 
+        # Heading overlays — hand-authored title cards (headings.json), composited on top
+        if cfg.headings.enabled and headings_path and headings_path.exists():
+            from .heading import load_headings, render_heading_frames
+            headings = load_headings(headings_path)
+            if headings:
+                console.print(f"[bold]Step 6b+/6[/bold] Rendering {len(headings)} heading(s)…")
+                t = time.perf_counter()
+                from .image_overlay import merge_with_caption_frames
+                heading_frames = render_heading_frames(
+                    headings, cfg.headings, tmp / "heading_frames",
+                    fps=cfg.output.fps,
+                    resolution=tuple(cfg.output.resolution),
+                )
+                caption_frames = merge_with_caption_frames(
+                    heading_frames, caption_frames, tuple(cfg.output.resolution),
+                )
+                _tlog(time.perf_counter() - t, f"{len(heading_frames)} frames")
+
         # Final render
         from .renderer import _USE_VIDEOTOOLBOX
         encoder = "h264_videotoolbox (hardware)" if _USE_VIDEOTOOLBOX else "libx264 (software)"
@@ -687,6 +708,18 @@ def _resolve_slug(cfg, slug_arg: str | None) -> str | None:
     if slug_arg:
         return slug_arg
     return None
+
+
+def _scaffold_headings(captions_path: Path, end_s: float) -> None:
+    """Drop an editable headings.json stub next to the captions file (never clobbers an
+    existing one). The stub's title is empty, so render skips it until you fill it in."""
+    import json
+    hp = captions_path.parent / "headings.json"
+    if hp.exists():
+        return
+    stub = [{"title": "", "subtitle": "", "start": 0.0, "end": end_s, "scrim": True}]
+    hp.write_text(json.dumps(stub, indent=2) + "\n")
+    console.print(f"[green]Headings stub →[/green] {hp} [dim](edit 'title' to add a title card)[/dim]")
 
 
 def _assets_or_ts_dir(cfg, slug: str | None) -> Path:

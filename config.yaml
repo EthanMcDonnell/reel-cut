@@ -111,6 +111,25 @@ images:
   margin_pct: 5                  # % of video height from the edge to the logo/image overlay.
 
 
+# ---------------------------------------------------------------------------
+# Headings — hand-authored title cards (assets/<slug>/headings.json)
+# ---------------------------------------------------------------------------
+headings:
+  enabled: true                  # render headings if a headings.json is present next to the captions file
+  default_end_s: 3.0             # default end time (output-timeline seconds) for the auto-created headings.json stub
+  font: PlayfairDisplay          # bundled in reelcut/fonts/ (elegant gold serif look)
+  subtitle_font: PlayfairDisplay-Italic
+  title_size: 96                 # title point size at 1080-wide
+  subtitle_size: 46
+  color: "#F3C84E"               # warm gold
+  subtitle_color: "#FFFFFF"
+  position: upper-third          # top | upper-third | center
+  shadow: true                   # soft blurred drop shadow for legibility
+  shadow_blur: 10
+  shadow_opacity: 0.55
+  scrim: true                    # dark gradient behind text (override per-heading with "scrim": false)
+  scrim_strength: 150            # max scrim darkness at the very top (0-255)
+
 
 # ---------------------------------------------------------------------------
 # Whisper / transcription

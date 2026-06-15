@@ -208,3 +208,5 @@ content.db
 /scrape/runs/
 /assets
 SERIES.md
+/models
+whisper.cpp/

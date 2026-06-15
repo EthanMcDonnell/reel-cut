@@ -64,7 +64,7 @@ def render_caption_frames(
             continue
 
         line_words, active_idx = cache_entry
-        cache_key = tuple(w.word for w in line_words)
+        cache_key = (tuple(w.word for w in line_words), active_idx)
 
         # Reuse previous frame image if nothing changed
         if cache_key == prev_key and prev_path:
@@ -132,7 +132,7 @@ def _render_frame(
     highlight_idx = active_idx if config.style == "word_highlight" else None
     tokens = _build_display_tokens(line_words, highlight_idx)
     margin = int(w * config.margin_pct / 100)
-    _draw_tokens_wrapped(draw, tokens, font, config, w, y_pos, margin)
+    _draw_tokens_wrapped(draw, tokens, font, font_highlight, config, w, y_pos, margin)
 
     return img
 
@@ -141,6 +141,7 @@ def _draw_tokens_wrapped(
     draw: ImageDraw.ImageDraw,
     tokens: list[tuple[str, bool]],
     font: ImageFont.FreeTypeFont,
+    font_highlight: ImageFont.FreeTypeFont,
     config: CaptionsConfig,
     canvas_w: int,
     y: int,
@@ -149,17 +150,20 @@ def _draw_tokens_wrapped(
     """Draw word tokens centered, wrapping so no line exceeds canvas width.
 
     Each token gets a solid black drop shadow and an optional stroke (when
-    config.stroke is set). The active token is painted in highlight_color.
+    config.stroke is set). The active token is painted in highlight_color at
+    font_highlight size (baseline-aligned with the surrounding words).
     """
     max_w = canvas_w - 2 * margin
     space_w = draw.textlength(" ", font=font)
 
     # Wrap tokens into visual lines that each fit within max_w (advance-width based).
+    # Use each token's actual font for width so wrap accounts for the larger active word.
     lines: list[list[tuple[str, bool]]] = []
     current: list[tuple[str, bool]] = []
     current_w = 0.0
     for text, is_active in tokens:
-        tok_w = draw.textlength(text, font=font)
+        f = font_highlight if is_active else font
+        tok_w = draw.textlength(text, font=f)
         added_w = tok_w + (space_w if current else 0)
         if current and current_w + added_w > max_w:
             lines.append(current)
@@ -171,6 +175,7 @@ def _draw_tokens_wrapped(
         lines.append(current)
 
     ascent, descent = font.getmetrics()
+    h_ascent, _ = font_highlight.getmetrics()
     line_h = ascent + descent
     total_h = line_h * len(lines) + config.line_spacing * (len(lines) - 1)
     start_y = y - total_h // 2
@@ -180,17 +185,20 @@ def _draw_tokens_wrapped(
         stroke_kwargs = {"stroke_width": config.stroke_width, "stroke_fill": config.stroke_color}
 
     for row, line_tokens in enumerate(lines):
-        widths = [draw.textlength(text, font=font) for text, _ in line_tokens]
+        f_list = [font_highlight if is_active else font for _, is_active in line_tokens]
+        widths = [draw.textlength(text, font=f) for (text, _), f in zip(line_tokens, f_list)]
         line_w = sum(widths) + space_w * (len(line_tokens) - 1)
         x = (canvas_w - line_w) / 2
         x = max(margin, min(x, canvas_w - margin - line_w))
         cur_y = start_y + row * (line_h + config.line_spacing)
 
-        for (text, is_active), tok_w in zip(line_tokens, widths):
+        for (text, is_active), tok_w, f in zip(line_tokens, widths, f_list):
             fill = config.highlight_color if is_active else config.color
+            # Baseline-align the larger highlight font with surrounding words.
+            word_y = cur_y + (ascent - h_ascent) if is_active else cur_y
             if config.shadow:
-                draw.text((x + config.shadow_offset, cur_y + config.shadow_offset), text, font=font, fill=config.shadow_color)
-            draw.text((x, cur_y), text, font=font, fill=fill, **stroke_kwargs)
+                draw.text((x + config.shadow_offset, word_y + config.shadow_offset), text, font=f, fill=config.shadow_color)
+            draw.text((x, word_y), text, font=f, fill=fill, **stroke_kwargs)
             x += tok_w + space_w
 
 

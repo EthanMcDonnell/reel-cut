@@ -105,6 +105,23 @@ class ImagesConfig(BaseModel):
 
 
 
+class HeadingsConfig(BaseModel):
+    enabled: bool = True
+    default_end_s: float = 3.0               # end time (s) written into the auto-created headings.json stub
+    font: str = "PlayfairDisplay"            # bundled in reelcut/fonts/
+    subtitle_font: str = "PlayfairDisplay-Italic"
+    title_size: int = 96
+    subtitle_size: int = 46
+    color: str = "#F3C84E"                   # warm gold (sampled from reference)
+    subtitle_color: str = "#FFFFFF"
+    position: Literal["top", "upper-third", "center"] = "upper-third"
+    shadow: bool = True                      # soft blurred drop shadow for legibility
+    shadow_blur: int = 10
+    shadow_opacity: float = 0.55
+    scrim: bool = True                       # dark gradient behind text (per-heading overridable)
+    scrim_strength: int = 150                # max scrim darkness at the very top (0-255 alpha)
+
+
 class WhisperConfig(BaseModel):
     model: str = "medium"
     compute_type: Literal["int8", "float16", "float32"] = "int8"
@@ -150,6 +167,7 @@ class ReelCutConfig(BaseModel):
     assets: AssetsConfig = Field(default_factory=AssetsConfig)
     captions: CaptionsConfig = Field(default_factory=CaptionsConfig)
     images: ImagesConfig = Field(default_factory=ImagesConfig)
+    headings: HeadingsConfig = Field(default_factory=HeadingsConfig)
     whisper: WhisperConfig = Field(default_factory=WhisperConfig)
 
 
