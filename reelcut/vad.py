@@ -1,13 +1,16 @@
 """VAD — Silero Voice Activity Detection via ONNX (no PyTorch dependency)."""
 from __future__ import annotations
 
+import functools
 import urllib.request
 from pathlib import Path
 
 import numpy as np
 
+# Pinned to a release tag: the `master` branch currently serves a broken
+# re-export of the model that emits near-zero speech probabilities.
 _MODEL_URL = (
-    "https://raw.githubusercontent.com/snakers4/silero-vad/master"
+    "https://raw.githubusercontent.com/snakers4/silero-vad/v5.1.2"
     "/src/silero_vad/data/silero_vad.onnx"
 )
 _CACHE_PATH = Path.home() / ".cache" / "reelcut" / "silero_vad.onnx"
@@ -45,6 +48,7 @@ def get_speech_timestamps(
 # ONNX model
 # ---------------------------------------------------------------------------
 
+@functools.lru_cache(maxsize=1)
 def _load_session():
     import onnxruntime as ort
 
