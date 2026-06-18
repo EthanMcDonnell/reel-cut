@@ -78,19 +78,21 @@ captions:
   style: full_line                 # word_highlight | full_line | none
                                    # full_line: every word one color. word_highlight: active (spoken) word
                                    # drawn in highlight_color. Set word_highlight to enable per-word highlighting.
-  font: HelveticaNeue
-  size: 48
+  font: Inter                      # bundled in reelcut/fonts/ (bold grotesque, CapCut/Reels look)
+  size: 50
   color: "#FFFFFF"
   highlight_color: "#FFD700"       # color of the active word — only used when style: word_highlight
   position: center                 # top | center | bottom
-  stroke: false                    # draw an outline around text (improves legibility on bright footage)
+  stroke: true                     # draw an outline around text (improves legibility on bright footage)
   stroke_color: "#000000"
-  stroke_width: 3
-  shadow: true                     # drop shadow behind text
+  stroke_width: 8                  # thick black outline — the defining feature of the pro caption look
+  shadow: true                     # soft blurred drop shadow behind text (adds depth)
   shadow_color: "#000000"
-  shadow_offset: 6                 # drop shadow shift in px
-  margin_pct: 15                    # % of video width kept free on each side — increase to pull captions inward
-  words_per_line: 7                 # max words shown on screen at once (default: 7)
+  shadow_offset: 5                 # vertical drop of the soft shadow in px
+  shadow_blur: 8                   # gaussian blur radius of the soft shadow in px
+  shadow_opacity: 0.5              # 0-1 opacity of the soft shadow
+  margin_pct: 8                     # % of video width kept free on each side — increase to pull captions inward
+  words_per_line: 5                 # max words shown on screen at once (default: 7)
   line_spacing: 10                 # px between wrapped rows
   grace_s: 0.3                     # seconds a caption line stays visible after its last word ends
 
@@ -116,7 +118,7 @@ images:
 # ---------------------------------------------------------------------------
 headings:
   enabled: true                  # render headings if a headings.json is present next to the captions file
-  default_end_s: 3.0             # default end time (output-timeline seconds) for the auto-created headings.json stub
+  default_end_s: -1             # default end time (output-timeline seconds) for the auto-created headings.json stub
   font: PlayfairDisplay          # bundled in reelcut/fonts/ (elegant gold serif look)
   subtitle_font: PlayfairDisplay-Italic
   title_size: 96                 # title point size at 1080-wide
