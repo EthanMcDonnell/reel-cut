@@ -493,6 +493,14 @@ def retranscribe_suspicious_regions(
             if len(sub_chunk) < int(sample_rate * 0.1):
                 continue
 
+            # Skip sub-clips with no VAD-detected speech to prevent Whisper
+            # hallucinating on breaths or noise between speech attempts.
+            from .vad import get_speech_timestamps as _vad_check
+            _vad_mono = sub_chunk if sub_chunk.ndim == 1 else sub_chunk.mean(axis=1)
+            if not _vad_check(_vad_mono, sr=sample_rate, min_speech_ms=100):
+                sub_clips_log.append({"start_s": sub_start_s, "end_s": sub_end_s, "words": []})
+                continue
+
             if clips_dir is not None:
                 sub_path = clips_dir / f"{label}_{win_start:.3f}_sub{seg_i}.wav"
                 cleanup_sub = False

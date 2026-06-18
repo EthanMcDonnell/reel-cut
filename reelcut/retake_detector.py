@@ -49,68 +49,117 @@ def detect_retakes(
     normalized = [_normalize(w.word) for w in words]
     n = len(normalized)
 
-    # Build n-gram index: phrase tuple → list of word-start indices
+    # Build n-gram index: phrase tuple → list of word-start indices.
+    # Each n-gram is indexed under its identity AND its single-adjacent-swap
+    # variants, so a transposed retake still seeds a candidate without lowering
+    # min_retake_words. Transcription/alignment commonly swaps an adjacent word
+    # pair ("for AI more" vs "for more AI"); the swap breaks every exact n-gram,
+    # leaving too short an exact run to seed. Indexing swap variants lets the two
+    # takes collide on the n-gram that spans the swap. The backward extension
+    # below then recovers any leading words the (interior) seed skipped over.
     ngram_index: dict[tuple[str, ...], list[int]] = {}
     for i in range(n - min_retake_words + 1):
         ngram = tuple(normalized[i : i + min_retake_words])
         if not all(ngram):  # skip n-grams containing empty tokens (punctuation-only words)
             continue
-        ngram_index.setdefault(ngram, []).append(i)
+        for key in _swap_variants(ngram):
+            ngram_index.setdefault(key, []).append(i)
 
     raw_cuts: set[tuple[int, int]] = set()
     candidates: list[RetakeCandidate] = []
+    seen: set[tuple[int, int]] = set()  # dedup seed pairs reached via multiple keys
 
     for ngram, starts in ngram_index.items():
         if len(starts) < 2:
             continue
-        # Only pair consecutive occurrences; non-consecutive are subsumed by merging.
+        # Pair each occurrence against (a) its immediate successor and (b) the
+        # final occurrence. Consecutive pairing catches an early take that matches
+        # its neighbour but diverges from the keeper. Pairing against the final
+        # occurrence (the take that is always kept) catches an early take whose
+        # immediate successor was a truncated/abandoned fragment: that short
+        # fragment makes match_len small relative to cut_len (the long first take),
+        # failing the ratio gate, so the early take's leading words would otherwise
+        # survive as a stutter ("memory having to" → "memory having to hold a…").
+        # Non-consecutive interior pairs are subsumed by the min(end) merge below.
+        last = starts[-1]
         for idx in range(len(starts) - 1):
-            i, j = starts[idx], starts[idx + 1]
-            # Require a meaningful gap: j must be beyond the end of i's n-gram.
-            if j < i + min_retake_words:
-                continue
-            # Proximity guard: real false starts happen within seconds of each other.
-            gap_s = words[j].start - words[i + min_retake_words - 1].end
-            if gap_s > max_retake_gap_s:
-                continue
+            i = starts[idx]
+            partners = [starts[idx + 1]]
+            if last != starts[idx + 1]:
+                partners.append(last)
+            for j in partners:
+                if (i, j) in seen:  # same pair can surface under several swap keys
+                    continue
+                seen.add((i, j))
+                # Require a meaningful gap: j must be beyond the end of i's n-gram.
+                if j < i + min_retake_words:
+                    continue
+                # Proximity guard: real false starts happen within seconds of each other.
+                gap_s = words[j].start - words[i + min_retake_words - 1].end
+                if gap_s > max_retake_gap_s:
+                    continue
 
-            # Greedily extend the match forward beyond the initial n-gram.
-            # A genuine retake sounds like what it replaces — it will extend far.
-            # A coincidental phrase overlap in different contexts will not extend.
-            # Tolerate isolated single-word differences (e.g. a reinflected word
-            # like "needed" vs "needs") so one swapped word doesn't truncate an
-            # otherwise-clear repeat. Skipped words don't count toward match_len,
-            # and a run of > max_retake_skip consecutive mismatches means the
-            # content has genuinely diverged, so the scan stops there.
-            ext = min_retake_words      # words consumed from each occurrence
-            match_len = min_retake_words  # words that actually matched (skips excluded)
-            skips = 0
-            while i + ext < n and j + ext < n:
-                if normalized[i + ext] == normalized[j + ext]:
-                    match_len += 1
-                    ext += 1
-                    skips = 0
-                elif skips < max_retake_skip:
-                    skips += 1
-                    ext += 1
-                else:
-                    break
-            cut_len = j - i
-            ratio = match_len / cut_len
+                # Greedily extend the match forward beyond the initial n-gram.
+                # A genuine retake sounds like what it replaces — it will extend far.
+                # A coincidental phrase overlap in different contexts will not extend.
+                # Tolerate isolated single-word differences (e.g. a reinflected word
+                # like "needed" vs "needs") so one swapped word doesn't truncate an
+                # otherwise-clear repeat. Skipped words don't count toward match_len,
+                # and a run of > max_retake_skip consecutive mismatches means the
+                # content has genuinely diverged, so the scan stops there.
+                ext = min_retake_words      # words consumed from each occurrence
+                match_len = min_retake_words  # words that actually matched (skips excluded)
+                skips = 0
+                while i + ext < n and j + ext < n:
+                    if normalized[i + ext] == normalized[j + ext]:
+                        match_len += 1
+                        ext += 1
+                        skips = 0
+                    elif skips < max_retake_skip:
+                        skips += 1
+                        ext += 1
+                    else:
+                        break
+                cut_len = j - i
 
-            kept = ratio >= min_match_ratio
-            candidates.append(RetakeCandidate(
-                ngram=ngram,
-                cut_len=cut_len,
-                match_len=match_len,
-                ratio=ratio,
-                kept=kept,
-                skip_reason="" if kept else f"ratio {ratio:.2f} < threshold {min_match_ratio:.2f}",
-                cut_start_s=words[i].start,
-                cut_end_s=words[j].start,
-            ))
-            if kept:
-                raw_cuts.add((i, j))
+                # Extend the match backward over preceding words, mirroring the
+                # forward scan (same single-skip tolerance). A seed can land *inside*
+                # the take — a swap variant splits off a shorter exact prefix, and a
+                # substitution before the seed ("alpha bravo …" vs "alpha zulu …")
+                # breaks every earlier n-gram — so without this the take's leading
+                # words are stranded as a stutter. Both occurrences shift back
+                # together, so cut_len is unchanged; recovered matches count toward
+                # match_len. `back` tracks the last *matched* word so trailing skips
+                # never push the boundary onto an unmatched (kept) word.
+                b = back = back_match = bskips = 0
+                while i - b - 1 >= 0 and j - b - 1 > i + ext - 1 and normalized[i - b - 1]:
+                    if normalized[i - b - 1] == normalized[j - b - 1]:
+                        b += 1
+                        back = b
+                        back_match += 1
+                        bskips = 0
+                    elif bskips < max_retake_skip:
+                        b += 1
+                        bskips += 1
+                    else:
+                        break
+                match_len += back_match
+                ci, cj = i - back, j - back
+                ratio = match_len / cut_len
+
+                kept = ratio >= min_match_ratio
+                candidates.append(RetakeCandidate(
+                    ngram=ngram,
+                    cut_len=cut_len,
+                    match_len=match_len,
+                    ratio=ratio,
+                    kept=kept,
+                    skip_reason="" if kept else f"ratio {ratio:.2f} < threshold {min_match_ratio:.2f}",
+                    cut_start_s=words[ci].start,
+                    cut_end_s=words[cj].start,
+                ))
+                if kept:
+                    raw_cuts.add((ci, cj))
 
     if not raw_cuts:
         return [], candidates
@@ -166,3 +215,15 @@ def detect_retakes(
 def _normalize(word: str) -> str:
     """Lowercase and strip all non-alphabetic characters."""
     return re.sub(r"[^a-z]", "", word.lower())
+
+
+def _swap_variants(ngram: tuple[str, ...]):
+    """Yield the n-gram and each of its single-adjacent-swap variants.
+
+    Lets a transposed retake ("for AI more" ↔ "for more AI") seed a candidate:
+    both orderings share a swap-variant key, so they collide in the n-gram index
+    even though no exact n-gram repeats between the two takes.
+    """
+    yield ngram
+    for k in range(len(ngram) - 1):
+        yield ngram[:k] + (ngram[k + 1], ngram[k]) + ngram[k + 2 :]
