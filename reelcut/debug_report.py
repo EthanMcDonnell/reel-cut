@@ -231,6 +231,38 @@ def write_debug_report(
     Path(f"{base_path}.debug.1.raw.txt").write_text("\n".join(r) + "\n")
 
     # -------------------------------------------------------------------------
+    # sentences — raw Whisper words grouped by is_sentence_boundary, so the
+    #             sentence split that drives captions/cuts can be eyeballed
+    #             before any retranscription touches the words.
+    # -------------------------------------------------------------------------
+    from .transcriber import is_sentence_boundary
+
+    pause_s = config.cuts.sentence_pause_s
+    sb: list[str] = [header]
+    _sb = sb.append
+    _sb("--- SENTENCE BOUNDARIES (raw Whisper output grouped by is_sentence_boundary) ---")
+    _sb(f"  Rule: ends with . ! ?   OR   capitalised next word after >= {pause_s:.2f}s pause"
+        f"  (cuts.sentence_pause_s={pause_s})")
+    n_sentences = 0
+    for clip_path in clip_paths:
+        clip_words = sorted(
+            [w for w in raw_words if w.clip_path == str(clip_path)],
+            key=lambda w: w.start,
+        )
+        sentences = _group_sentences(clip_words, is_sentence_boundary, pause_s)
+        n_sentences += len(sentences)
+        _sb(f"\n  Clip: {Path(clip_path).name}  ({len(clip_words)} words → {len(sentences)} sentences)")
+        _sb(f"  {'#':>4}  {'TIME RANGE':<22}  {'WORDS':>5}  {'VIA':<11}  TEXT")
+        _sb(f"  {'─'*4}  {'─'*22}  {'─'*5}  {'─'*11}  {'─'*50}")
+        for i, (group, via) in enumerate(sentences, 1):
+            time_range = f"{_ts(group[0].start)} → {_ts(group[-1].end)}"
+            text = " ".join(w.word for w in group)
+            _sb(f"  {i:>4}  {time_range:<22}  {len(group):>5}  {via:<11}  {text}")
+    _sb(f"\n  ({n_sentences} sentences total)")
+
+    Path(f"{base_path}.debug.1b.sentences.txt").write_text("\n".join(sb) + "\n")
+
+    # -------------------------------------------------------------------------
     # post-align — after WhisperX alignment, before retranscription
     # -------------------------------------------------------------------------
     if post_align_words is not None:
@@ -363,6 +395,28 @@ def write_debug_report(
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _group_sentences(words, boundary_fn, pause_s):
+    """Group consecutive words into sentences using boundary_fn.
+
+    Returns a list of (words, via) where via labels the signal that closed the
+    sentence: 'punct' (terminal . ! ?), 'caps+pause', or 'eos' (clip end).
+    """
+    if not words:
+        return []
+    groups: list[tuple[list, str]] = []
+    current = [words[0]]
+    for prev, w in zip(words, words[1:]):
+        gap = w.start - prev.end
+        if boundary_fn(prev.word, w.word, gap, pause_s):
+            via = "punct" if prev.word.rstrip().endswith((".", "!", "?")) else "caps+pause"
+            groups.append((current, via))
+            current = [w]
+        else:
+            current.append(w)
+    groups.append((current, "eos"))
+    return groups
+
 
 def _ts(t: float) -> str:
     """Format seconds as M:SS.mmm or SS.mmms."""

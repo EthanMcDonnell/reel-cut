@@ -89,6 +89,7 @@ def transcribe(
                     from .captions_doc import save_captions_doc
                     save_captions_doc(doc, captions_path)
                     _scaffold_headings(captions_path, cfg.headings.default_end_s)
+                    _scaffold_images(captions_path)
                     console.print(f"[green]Captions doc →[/green] {captions_path}")
                 except Exception as exc:
                     err_console.print(f"[red]Failed:[/red] {video.name} — {exc}")
@@ -103,10 +104,11 @@ def transcribe(
             from .captions_doc import save_captions_doc
             save_captions_doc(doc, captions_path)
             _scaffold_headings(captions_path, cfg.headings.default_end_s)
+            _scaffold_images(captions_path)
             console.print(f"[green]Captions doc →[/green] {captions_path}")
 
     console.print(
-        "\n[bold]Next:[/bold] edit the .captions.json (fix captions, add images entries), "
+        "\n[bold]Next:[/bold] edit the .captions.json (fix captions) and images.json (add image overlays), "
         "then run [cyan]reelcut render config.yaml <captions.json>[/cyan]"
     )
 
@@ -143,7 +145,8 @@ def render(
     output_path = out_dir / f"{slug}.mp4"
 
     console.rule(f"[bold]Rendering → {output_path}[/bold]")
-    _phase2(cfg, doc, output_path, verbose, headings_path=cap_path.parent / "headings.json")
+    _phase2(cfg, doc, output_path, verbose, headings_path=cap_path.parent / "headings.json",
+            images_path=cap_path.parent / "images.json")
 
 
 # ---------------------------------------------------------------------------
@@ -202,7 +205,8 @@ def run(
                 console.print(f"[yellow]--dry-run:[/yellow] skipping render. Captions → {cap_path}")
                 continue
 
-            warnings = _phase2(cfg, doc, out_path, verbose, headings_path=cap_path.parent / "headings.json")
+            warnings = _phase2(cfg, doc, out_path, verbose, headings_path=cap_path.parent / "headings.json",
+                               images_path=cap_path.parent / "images.json")
             all_warnings.extend(warnings)
         except Exception as exc:
             err_console.print(f"[red]Failed:[/red] {video.name} — {exc}")
@@ -229,6 +233,7 @@ def preview_edl(
 ) -> None:
     """Print a summary of the EDL embedded in a .captions.json file."""
     from .captions_doc import load_captions_doc
+    from .image_spec import load_images
 
     path = Path(captions_path)
     if not path.exists():
@@ -236,6 +241,7 @@ def preview_edl(
         raise typer.Exit(1)
 
     doc = load_captions_doc(path)
+    images = load_images(path.parent / "images.json")
 
     keep_entries = [e for e in doc.edl if e.keep]
     cut_entries = [e for e in doc.edl if not e.keep]
@@ -248,7 +254,7 @@ def preview_edl(
     console.print(f"  Cut segments  : {len(cut_entries)}")
     console.print(f"  Keep duration : [green]{total_keep_s}s[/green]")
     console.print(f"  Cut duration  : [red]{total_cut_s}s[/red]")
-    console.print(f"  Images        : {len(doc.images)}")
+    console.print(f"  Images        : {len(images)}")
 
     table = Table("#", "Clip", "Start", "End", "Duration", "Keep", "Reason")
     for i, entry in enumerate(doc.edl):
@@ -368,6 +374,7 @@ def _phase1(cfg, clips: list[str], output_dir: Path, verbose: bool):
                 silence_threshold_db=cfg.cuts.silence_threshold_db,
                 min_silence_ms=cfg.cuts.min_silence_ms,
                 failure_tolerance_ratio=cfg.cuts.failure_tolerance_ratio,
+                vad_threshold=cfg.cuts.vad_threshold,
             )
             retrans_log.extend(clip_retrans_log)
             if n_retrans:
@@ -465,7 +472,7 @@ def _phase1(cfg, clips: list[str], output_dir: Path, verbose: bool):
         console.print("[bold]Step 6[/bold] Building EDL…")
         t = time.perf_counter()
         warnings: list[str] = []
-        edl = generate_scriptless_edl(all_words, gaps, min_keep_ms=cfg.cuts.min_keep_ms, speech_pad_ms=cfg.cuts.speech_pad_ms, mid_sentence_cut_floor_ms=cfg.cuts.mid_sentence_cut_floor_ms)
+        edl = generate_scriptless_edl(all_words, gaps, min_keep_ms=cfg.cuts.min_keep_ms, speech_pad_ms=cfg.cuts.speech_pad_ms, mid_sentence_cut_floor_ms=cfg.cuts.mid_sentence_cut_floor_ms, sentence_pause_s=cfg.cuts.sentence_pause_s)
 
         wordless_drops: list = []
         if retake_ranges:
@@ -485,7 +492,7 @@ def _phase1(cfg, clips: list[str], output_dir: Path, verbose: bool):
             )
 
         # Remap words to output timeline
-        caption_words = _remap_kept_words(all_words, edl)
+        caption_words = _remap_kept_words(_mark_sentence_ends(all_words, cfg.cuts.sentence_pause_s), edl)
 
         if warnings:
             for w in warnings:
@@ -546,7 +553,7 @@ def _phase1(cfg, clips: list[str], output_dir: Path, verbose: bool):
 def _phase2(cfg, doc, output_path: Path, verbose: bool, headings_path: Path | None = None) -> list[str]:
     """Render final video from a CaptionsDoc. Returns warnings."""
     from .caption import render_caption_frames
-    from .captions_doc import ImageSpec
+    from .image_spec import load_images
     from .edl import EDLEntry
     from .image_finder import ImageCue, detect_image_cues
     from .renderer import render as do_render
@@ -572,7 +579,7 @@ def _phase2(cfg, doc, output_path: Path, verbose: bool, headings_path: Path | No
         WordTimestamp(word=w.word, start=w.start, end=w.end, confidence=1.0, clip_path=w.source_clip)
         for w in doc.words
     ]
-    caption_words = _remap_kept_words(source_words, edl)
+    caption_words = _remap_kept_words(_mark_sentence_ends(source_words, cfg.cuts.sentence_pause_s), edl)
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
@@ -587,6 +594,7 @@ def _phase2(cfg, doc, output_path: Path, verbose: bool, headings_path: Path | No
                 caption_words, cfg.captions, cap_dir,
                 fps=cfg.output.fps,
                 resolution=tuple(cfg.output.resolution),
+                sentence_pause_s=cfg.cuts.sentence_pause_s,
             )
             _tlog(time.perf_counter() - t, f"{len(caption_frames)} frames")
 
@@ -598,9 +606,10 @@ def _phase2(cfg, doc, output_path: Path, verbose: bool, headings_path: Path | No
             if logo_cues:
                 console.print(f"  Logos detected: {[c.keyword for c in logo_cues]}")
 
+            images = load_images(images_path) if images_path else []
             remap, clip_order = _build_edl_remap(edl)
             fallback_clip = clip_order[0] if clip_order else ""
-            for spec in doc.images:
+            for spec in images:
                 clip = spec.source_clip or fallback_clip
                 remapped_start = remap(clip, spec.start)
                 remapped_end = remap(clip, spec.end)
@@ -724,6 +733,17 @@ def _scaffold_headings(captions_path: Path, end_s: float) -> None:
     console.print(f"[green]Headings stub →[/green] {hp} [dim](edit 'title' to add a title card)[/dim]")
 
 
+def _scaffold_images(captions_path: Path) -> None:
+    """Drop an editable images.json stub (empty list) next to the captions file, never
+    clobbering an existing one. Populated by /produce-video; empty means no overlays."""
+    import json
+    ip = captions_path.parent / "images.json"
+    if ip.exists():
+        return
+    ip.write_text("[]\n")
+    console.print(f"[green]Images stub →[/green] {ip} [dim](add screenshot/person entries)[/dim]")
+
+
 def _assets_or_ts_dir(cfg, slug: str | None) -> Path:
     """Return assets/<slug>/ if slug is known, otherwise output/<timestamp>/."""
     if slug:
@@ -784,6 +804,32 @@ def _build_edl_remap(edl: list):
         return round(max(0.0, clip_base.get(source_clip, 0.0) + intra), 4)
 
     return remap, clip_order
+
+
+def _mark_sentence_ends(words: list, pause_s: float) -> list:
+    """Bake a period onto words that end a caps+pause sentence so captions split there.
+
+    Captions detect sentence boundaries with is_sentence_boundary, but they run on
+    output-timeline words where the EDL has already removed the inter-word pauses —
+    so the capitalisation-after-pause boundary (the one 1b shows) never fires for
+    captions. Detecting it here, while source-time gaps are intact, and appending
+    terminal punctuation lets the caption splitter recover it gap-independently.
+
+    Returns a new list; original WordTimestamp objects are left unmodified.
+    """
+    import dataclasses
+
+    from .transcriber import _TERMINAL_PUNCT, is_sentence_boundary
+
+    out = list(words)
+    for i in range(len(out) - 1):
+        prev, curr = out[i], out[i + 1]
+        if prev.clip_path != curr.clip_path or prev.word.rstrip().endswith(_TERMINAL_PUNCT):
+            continue
+        gap = curr.start - prev.end
+        if is_sentence_boundary(prev.word, curr.word, gap, pause_s):
+            out[i] = dataclasses.replace(prev, word=prev.word.rstrip() + ".")
+    return out
 
 
 def _remap_kept_words(words: list, edl: list) -> list:

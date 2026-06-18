@@ -31,6 +31,11 @@ class CutsConfig(BaseModel):
                                        # ranges of the same cluster (failed-take fragments
                                        # stranded by n-gram anchor misalignment)
     mid_sentence_cut_floor_ms: int = 3000
+    sentence_pause_s: float = 0.4           # sentence-boundary recovery: when Whisper omits a full
+                                            # stop, a capitalised next word preceded by a pause >= this
+                                            # is treated as a sentence end. Drives caption line breaks
+                                            # and EDL cut permission. Lower = more boundaries (riskier
+                                            # false splits at mid-sentence proper nouns); higher = fewer.
     min_word_confidence: float = 0.5        # gap cut hard floor: if either adjacent word's alignment
                                             # confidence is below this, the gap is never cut regardless
                                             # of duration.
@@ -137,6 +142,9 @@ class WhisperConfig(BaseModel):
     wide_word_threshold_s: float = 1.5
     retranscribe_low_conf_gap_ms: int = 1000
     retranscribe_large_gap_ms: int = 1500
+    retranscribe_low_conf_gap_floor_ms: int = 350  # a low-conf word preceded by a gap this
+                                                    # large extends its window back across the gap
+                                                    # (catches dropped speech below the large-gap floor)
     retranscribe_merge_gap_s: float = 1.0  # bridge gaps between adjacent retranscription windows
     compression_ratio_threshold: float | None = 2.4
     retranscribe_compression_ratio_threshold: float | None = 2.4
