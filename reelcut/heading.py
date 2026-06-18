@@ -54,18 +54,23 @@ def render_heading_frames(
     output_dir: Path,
     fps: int,
     resolution: tuple[int, int],
+    total_output_s: float = 0.0,
 ) -> list[CaptionFrame]:
     """Render each heading to one static PNG and emit a CaptionFrame per output frame in its
-    [start, end) window — the same PNG path is reused for every frame (no animation)."""
+    [start, end) window — the same PNG path is reused for every frame (no animation).
+    An end of -1 means "until the end of the video" (requires total_output_s)."""
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     frames: list[CaptionFrame] = []
     for idx, h in enumerate(headings):
-        if not h.title or h.end <= h.start:
+        if not h.title:
+            continue
+        end = total_output_s if h.end < 0 else h.end
+        if end <= h.start:
             continue
         png = _render_heading_png(h, config, resolution, output_dir / f"heading_{idx:02d}.png")
-        for fn in range(int(h.start * fps), int(h.end * fps)):
+        for fn in range(int(h.start * fps), int(end * fps)):
             frames.append(CaptionFrame(frame_number=fn, image_path=png))
     return frames
 

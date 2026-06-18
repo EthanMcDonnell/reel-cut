@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 from .config import CaptionsConfig
 from .transcriber import WordTimestamp
@@ -124,7 +124,8 @@ def _render_frame(
     canvas_size: tuple[int, int],
     y_pos: int,
 ) -> Image.Image:
-    """Render a single transparent caption frame with the active word highlighted."""
+    """Render a single transparent caption frame: soft blurred shadow, then crisp
+    stroked text on top (the active word highlighted when style is word_highlight)."""
     w, h = canvas_size
     img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
@@ -132,12 +133,49 @@ def _render_frame(
     highlight_idx = active_idx if config.style == "word_highlight" else None
     tokens = _build_display_tokens(line_words, highlight_idx)
     margin = int(w * config.margin_pct / 100)
-    _draw_tokens_wrapped(draw, tokens, font, font_highlight, config, w, y_pos, margin)
+    placed = _layout_tokens(draw, tokens, font, font_highlight, config, w, y_pos, margin)
+
+    stroke_width = config.stroke_width if config.stroke else 0
+
+    # Soft drop shadow: render the (outlined) text silhouette to a mask, blur it,
+    # tint it, and composite under the crisp text — far less "basic" than a hard offset.
+    if config.shadow:
+        mask = Image.new("L", (w, h), 0)
+        mdraw = ImageDraw.Draw(mask)
+        for text, _is_active, x, ty, f in placed:
+            mdraw.text((x, ty), text, font=f, fill=255, stroke_width=stroke_width)
+        img.alpha_composite(_soft_shadow(mask, config))
+
+    for text, is_active, x, ty, f in placed:
+        fill = config.highlight_color if is_active else config.color
+        if stroke_width:
+            draw.text((x, ty), text, font=f, fill=fill, stroke_width=stroke_width, stroke_fill=config.stroke_color)
+        else:
+            draw.text((x, ty), text, font=f, fill=fill)
 
     return img
 
 
-def _draw_tokens_wrapped(
+def _soft_shadow(mask: Image.Image, config: CaptionsConfig) -> Image.Image:
+    """Blurred, tinted, semi-transparent copy of the text mask, offset downward."""
+    rgb = _hex_to_rgb(config.shadow_color)
+    base = Image.new("RGBA", mask.size, (0, 0, 0, 0))
+    base.paste(rgb + (255,), (0, 0), mask)
+    base = base.filter(ImageFilter.GaussianBlur(config.shadow_blur))
+    r, g, b, a = base.split()
+    a = a.point(lambda v: int(v * config.shadow_opacity))
+    shadow = Image.merge("RGBA", (r, g, b, a))
+    out = Image.new("RGBA", mask.size, (0, 0, 0, 0))
+    out.alpha_composite(shadow, (0, config.shadow_offset))
+    return out
+
+
+def _hex_to_rgb(s: str) -> tuple[int, int, int]:
+    s = s.lstrip("#")
+    return tuple(int(s[i:i + 2], 16) for i in (0, 2, 4))  # type: ignore[return-value]
+
+
+def _layout_tokens(
     draw: ImageDraw.ImageDraw,
     tokens: list[tuple[str, bool]],
     font: ImageFont.FreeTypeFont,
@@ -146,12 +184,12 @@ def _draw_tokens_wrapped(
     canvas_w: int,
     y: int,
     margin: int = _MARGIN,
-) -> None:
-    """Draw word tokens centered, wrapping so no line exceeds canvas width.
+) -> list[tuple[str, bool, float, int, ImageFont.FreeTypeFont]]:
+    """Wrap tokens to the canvas width and return positioned tokens.
 
-    Each token gets a solid black drop shadow and an optional stroke (when
-    config.stroke is set). The active token is painted in highlight_color at
-    font_highlight size (baseline-aligned with the surrounding words).
+    Returns a list of (text, is_active, x, y, font) so the caller can render both
+    the shadow mask and the crisp text from identical positions. The active token
+    uses font_highlight (baseline-aligned with the surrounding words).
     """
     max_w = canvas_w - 2 * margin
     space_w = draw.textlength(" ", font=font)
@@ -180,10 +218,7 @@ def _draw_tokens_wrapped(
     total_h = line_h * len(lines) + config.line_spacing * (len(lines) - 1)
     start_y = y - total_h // 2
 
-    stroke_kwargs: dict = {}
-    if config.stroke and config.stroke_width > 0:
-        stroke_kwargs = {"stroke_width": config.stroke_width, "stroke_fill": config.stroke_color}
-
+    placed: list[tuple[str, bool, float, int, ImageFont.FreeTypeFont]] = []
     for row, line_tokens in enumerate(lines):
         f_list = [font_highlight if is_active else font for _, is_active in line_tokens]
         widths = [draw.textlength(text, font=f) for (text, _), f in zip(line_tokens, f_list)]
@@ -193,13 +228,11 @@ def _draw_tokens_wrapped(
         cur_y = start_y + row * (line_h + config.line_spacing)
 
         for (text, is_active), tok_w, f in zip(line_tokens, widths, f_list):
-            fill = config.highlight_color if is_active else config.color
             # Baseline-align the larger highlight font with surrounding words.
             word_y = cur_y + (ascent - h_ascent) if is_active else cur_y
-            if config.shadow:
-                draw.text((x + config.shadow_offset, word_y + config.shadow_offset), text, font=f, fill=config.shadow_color)
-            draw.text((x, word_y), text, font=f, fill=fill, **stroke_kwargs)
+            placed.append((text, is_active, x, word_y, f))
             x += tok_w + space_w
+    return placed
 
 
 # ---------------------------------------------------------------------------

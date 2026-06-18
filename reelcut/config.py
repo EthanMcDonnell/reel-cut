@@ -73,20 +73,22 @@ class OutputConfig(BaseModel):
 class CaptionsConfig(BaseModel):
     enabled: bool = True
     style: Literal["word_highlight", "full_line", "none"] = "word_highlight"
-    font: str = "Montserrat-Bold"
+    font: str = "Inter"
     size: int = 72
     color: str = "#FFFFFF"
     highlight_color: str = "#FFD700"
     position: Literal["top", "center", "bottom"] = "center"
     stroke: bool = True
     stroke_color: str = "#000000"
-    stroke_width: int = 3
+    stroke_width: int = 8            # thick black outline (CapCut/Reels look)
     margin_pct: float = 8.0  # % of video width kept free on each side (left + right)
     words_per_line: int = 7  # max words shown on screen at once
     line_spacing: int = 10           # px between wrapped rows
-    shadow: bool = True              # draw a drop shadow behind text
+    shadow: bool = True              # soft blurred drop shadow behind text (for depth)
     shadow_color: str = "#000000"
-    shadow_offset: int = 6           # drop shadow shift (px)
+    shadow_offset: int = 5           # vertical drop of the soft shadow (px)
+    shadow_blur: int = 8             # gaussian blur radius of the soft shadow (px)
+    shadow_opacity: float = 0.5      # 0-1 opacity of the soft shadow
     grace_s: float = 0.3             # seconds a caption line stays visible after its last word ends
 
 
@@ -107,7 +109,7 @@ class ImagesConfig(BaseModel):
 
 class HeadingsConfig(BaseModel):
     enabled: bool = True
-    default_end_s: float = 3.0               # end time (s) written into the auto-created headings.json stub
+    default_end_s: float = 3.0               # end time (s) written into the auto-created headings.json stub; -1 = until end of video
     font: str = "PlayfairDisplay"            # bundled in reelcut/fonts/
     subtitle_font: str = "PlayfairDisplay-Italic"
     title_size: int = 96
