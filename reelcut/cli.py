@@ -639,10 +639,12 @@ def _phase2(cfg, doc, output_path: Path, verbose: bool, headings_path: Path | No
                 console.print(f"[bold]Step 6b+/6[/bold] Rendering {len(headings)} heading(s)…")
                 t = time.perf_counter()
                 from .image_overlay import merge_with_caption_frames
+                total_output_s = sum(e.end - e.start for e in edl if e.keep)
                 heading_frames = render_heading_frames(
                     headings, cfg.headings, tmp / "heading_frames",
                     fps=cfg.output.fps,
                     resolution=tuple(cfg.output.resolution),
+                    total_output_s=total_output_s,
                 )
                 caption_frames = merge_with_caption_frames(
                     heading_frames, caption_frames, tuple(cfg.output.resolution),
