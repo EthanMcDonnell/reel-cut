@@ -20,9 +20,8 @@ import fcntl
 import json
 import re
 import sys
-import urllib.request
 from pathlib import Path
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urlparse
 
 ROOT = Path(__file__).parent.parent
 
@@ -137,101 +136,6 @@ async def _block_ancestor(page, el) -> object:
             break
         current = parent
     return el
-
-
-def _caption_to_filename(text: str, index: int, ext: str) -> str:
-    """Turn caption/alt text into a safe filename."""
-    slug = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:60]
-    if not slug:
-        slug = f"image-{index:02d}"
-    return f"{slug}{ext}"
-
-
-async def _extract_article_images(page, page_url: str, dest_dir: Path) -> list[str]:
-    """Download all meaningful images from the article body."""
-    ARTICLE_SELECTORS = [
-        "article", "main", '[class*="post-content"]', '[class*="article-body"]',
-        '[class*="entry-content"]', '[class*="story-body"]', '[itemprop="articleBody"]',
-    ]
-
-    # Build JS to collect image info from the first matching article container
-    js = """(selectors) => {
-        let container = null;
-        for (const sel of selectors) {
-            container = document.querySelector(sel);
-            if (container) break;
-        }
-        if (!container) container = document.body;
-
-        return Array.from(container.querySelectorAll('img')).map(img => {
-            const src = img.currentSrc || img.src || '';
-            const alt = (img.alt || '').trim();
-            // Look for figcaption sibling or parent figure's caption
-            let caption = '';
-            const fig = img.closest('figure');
-            if (fig) {
-                const cap = fig.querySelector('figcaption');
-                if (cap) caption = cap.innerText.trim();
-            }
-            const naturalW = img.naturalWidth || 0;
-            const naturalH = img.naturalHeight || 0;
-            return { src, alt, caption, naturalW, naturalH };
-        });
-    }"""
-
-    try:
-        images = await page.evaluate(js, ARTICLE_SELECTORS)
-    except Exception:
-        return []
-
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-        "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
-        "Referer": page_url,
-    }
-
-    saved = []
-    seen_srcs = set()
-    idx = 0
-    for img in images:
-        src = img.get("src", "").strip()
-        if not src or src.startswith("data:"):
-            continue
-        # Skip tiny images (icons / tracking pixels) — require at least 100px in both dims
-        w, h = img.get("naturalW", 0), img.get("naturalH", 0)
-        if w > 0 and h > 0 and (w < 100 or h < 100):
-            continue
-        abs_src = urljoin(page_url, src)
-        # Deduplicate by resolved URL (strip query strings for comparison)
-        src_key = abs_src.split("?")[0]
-        if src_key in seen_srcs:
-            continue
-        seen_srcs.add(src_key)
-
-        # Determine extension
-        path_part = urlparse(abs_src).path
-        raw_ext = Path(path_part).suffix.lower()
-        ext = raw_ext if raw_ext in {".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif"} else ".jpg"
-
-        label = img.get("caption") or img.get("alt") or ""
-        fname = _caption_to_filename(label, idx, ext)
-        # Avoid collisions
-        dest = dest_dir / fname
-        collision = 0
-        while dest.exists():
-            collision += 1
-            dest = dest_dir / f"{dest.stem}-{collision}{ext}"
-
-        try:
-            req = urllib.request.Request(abs_src, headers=headers)
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                dest.write_bytes(resp.read())
-            saved.append(dest.name)
-            idx += 1
-        except Exception:
-            continue
-
-    return saved
 
 
 def _crop_window(el_top: float, el_height: float, vh: int) -> tuple[float, float]:
@@ -367,12 +271,6 @@ async def capture(url: str, output_dir: Path, snippets: list[str | dict] | None 
         except Exception as exc:
             await browser.close()
             return {"dir": str(output_dir), "files": [], "skipped": f"page load failed: {exc}"}
-
-        # --- Download embedded article images ---
-        try:
-            await _extract_article_images(main_page, url, source_dir)
-        except Exception:
-            pass
 
         # --- Load snippet-targeting JS helpers ---
         # bytes([95,115,115,95,42,46,106,115]) == b'_ss_*.js'
