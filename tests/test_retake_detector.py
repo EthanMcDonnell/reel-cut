@@ -148,6 +148,68 @@ def test_single_word_difference_does_not_truncate_match():
     assert ranges[0][1] == pytest.approx(2.5)
 
 
+def test_truncated_middle_take_does_not_strand_first_take_head():
+    """Three takes where the middle one is a truncated/abandoned fragment.
+
+    Regression (claude-1m-context-window-trap): the speaker said the full phrase,
+    abandoned a short restart, then said the full phrase again (the keeper):
+        take 1: "memory having to hold a value for every token at once" (complete)
+        take 2: "memory having to hold a"                               (abandoned)
+        take 3: "memory having to hold a value for every token at once" (kept)
+
+    Consecutive-only pairing compares take 1 → take 2. Because take 2 truncates
+    after 5 words while take 1 runs 11, the match ratio is 5/11 = 0.45 < 0.50, so
+    that pair is skipped and take 1's leading "memory having to" survives —
+    producing a stutter against take 3. Pairing take 1 directly against the final
+    occurrence (take 3) scores 11/16 = 0.69 and cuts take 1 entirely.
+    """
+    words = [
+        # take 1 — complete (indices 0-10)
+        _w("memory", 0.0, 0.4), _w("having", 0.5, 0.7), _w("to", 0.8, 0.9),
+        _w("hold", 1.0, 1.2), _w("a", 1.3, 1.4), _w("value", 1.5, 1.8),
+        _w("for", 1.9, 2.0), _w("every", 2.1, 2.3), _w("token", 2.4, 2.7),
+        _w("at", 2.8, 2.9), _w("once", 3.0, 3.3),
+        # take 2 — abandoned after 5 words (indices 11-15)
+        _w("memory", 4.0, 4.4), _w("having", 4.5, 4.7), _w("to", 4.8, 4.9),
+        _w("hold", 5.0, 5.2), _w("a", 5.3, 5.4),
+        # take 3 — the keeper (indices 16-27)
+        _w("memory", 6.0, 6.4), _w("having", 6.5, 6.7), _w("to", 6.8, 6.9),
+        _w("hold", 7.0, 7.2), _w("a", 7.3, 7.4), _w("value", 7.5, 7.8),
+        _w("for", 7.9, 8.0), _w("every", 8.1, 8.3), _w("token", 8.4, 8.7),
+        _w("at", 8.8, 8.9), _w("once", 9.0, 9.3), _w("done", 9.4, 9.8),
+    ]
+    ranges, _ = detect_retakes(words, min_retake_words=3, min_match_ratio=0.5)
+    # Both earlier takes collapse into a single cut ending at take 3's start.
+    assert len(ranges) == 1
+    assert ranges[0][0] == pytest.approx(0.0)   # cut begins at take 1's first word
+    assert ranges[0][1] == pytest.approx(6.0)   # cut ends at take 3 (the keeper)
+
+
+def test_transposed_words_still_detected_without_lowering_min_words():
+    """A retake where two adjacent words are transposed is still caught at mrw=3.
+
+    Regression (claude-1m-context-window-trap outro): the aligner swapped an
+    adjacent pair, so the two otherwise-identical takes share no exact 3-gram:
+        take 1: "follow for AI more fundamentals"   (flubbed; AI/more swapped)
+        take 2: "follow for more AI fundamentals"   (keeper)
+    Swap-variant seeding lets the takes collide on the n-gram spanning the swap,
+    and backward extension recovers the leading "follow" the interior seed skips,
+    so the whole flubbed take is cut without dropping min_retake_words to 2.
+    """
+    words = [
+        # take 1 — transposed "AI"/"more" (indices 0-4)
+        _w("follow", 0.0, 0.3), _w("for", 0.4, 0.6), _w("AI", 0.7, 0.9),
+        _w("more", 0.9, 1.1), _w("fundamentals", 1.2, 1.6),
+        # take 2 — the keeper, correct order (indices 5-9)
+        _w("follow", 8.0, 8.3), _w("for", 8.4, 8.6), _w("more", 8.7, 8.9),
+        _w("AI", 9.0, 9.2), _w("fundamentals", 9.3, 9.8),
+    ]
+    ranges, _ = detect_retakes(words, min_retake_words=3, max_retake_gap_s=12.0, min_match_ratio=0.5)
+    assert len(ranges) == 1
+    assert ranges[0][0] == pytest.approx(0.0)   # cut begins at take 1's "follow"
+    assert ranges[0][1] == pytest.approx(8.0)   # cut ends at take 2 (the keeper)
+
+
 def test_consecutive_mismatches_still_stop_extension():
     """A run of mismatches beyond max_retake_skip means genuine divergence → no cut."""
     words = [
