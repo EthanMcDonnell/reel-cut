@@ -93,11 +93,14 @@ def _render_heading_png(
     # Draw text on a supersampled canvas for crisp downscaled edges.
     txt = Image.new("RGBA", (w * _SS, hgt * _SS), (0, 0, 0, 0))
     draw = ImageDraw.Draw(txt)
-    title_font = _load_font(config.font, config.title_size, ("Black", "ExtraBold", "Bold", "SemiBold"))
     sub_font = _load_font(config.subtitle_font, config.subtitle_size, ("Italic", "Medium Italic", "Regular"))
 
+    # Word-wrap the title and shrink the font until it fits inside the side margins.
+    max_w = txt.width * (1 - 2 * config.margin_pct / 100)
+    title_font, title_lines = _fit_title(draw, h.title, config, max_w)
+
     top = int(hgt * _POSITION_TOP_FRAC.get(config.position, 0.08) * _SS)
-    y = _draw_centered(draw, txt.width, h.title.split("\n"), title_font, config.color, top)
+    y = _draw_centered(draw, txt.width, title_lines, title_font, config.color, top)
     if h.subtitle:
         y += int(18 * _SS)
         _draw_centered(draw, txt.width, [h.subtitle], sub_font, config.subtitle_color, y)
@@ -128,6 +131,47 @@ def _soft_shadow(txt: Image.Image, blur: int, opacity: float, w: int, h: int) ->
     r, g, b, a = shadow.split()
     a = a.point(lambda v: int(v * opacity))
     return Image.merge("RGBA", (r, g, b, a)).resize((w, h), Image.LANCZOS)
+
+
+def _fit_title(draw, text, config: HeadingsConfig, max_w: float):
+    """Return (font, lines) for the title — word-wrapped, then shrunk until every line fits
+    within max_w. Explicit "\\n" breaks are always honored. Stops shrinking at half the
+    configured size; if a single word is still too wide it's left to overflow (rare)."""
+    prefer = ("Black", "ExtraBold", "Bold", "SemiBold")
+    floor = max(1, int(config.title_size * 0.5))
+    size = config.title_size
+    while True:
+        font = _load_font(config.font, size, prefer)
+        lines = _wrap_lines(draw, text, font, max_w)
+        widest = max((_line_w(draw, ln, font) for ln in lines), default=0)
+        if widest <= max_w or size <= floor:
+            return font, lines
+        size -= 4
+
+
+def _wrap_lines(draw, text, font, max_w: float) -> list[str]:
+    """Greedy word-wrap each explicit "\\n" paragraph so no line exceeds max_w."""
+    out: list[str] = []
+    for para in text.split("\n"):
+        words = para.split()
+        if not words:
+            out.append("")
+            continue
+        cur = words[0]
+        for word in words[1:]:
+            trial = f"{cur} {word}"
+            if _line_w(draw, trial, font) <= max_w:
+                cur = trial
+            else:
+                out.append(cur)
+                cur = word
+        out.append(cur)
+    return out
+
+
+def _line_w(draw, line, font) -> float:
+    bbox = draw.textbbox((0, 0), line, font=font)
+    return bbox[2] - bbox[0]
 
 
 def _draw_centered(draw, canvas_w, lines, font, fill, top_y) -> int:
