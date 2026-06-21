@@ -35,6 +35,61 @@ def load_manifest() -> dict[str, list[str]]:
     return {e["shortname"]: e["files"] for e in json.loads(path.read_text())}
 
 
+# Spoken product names that gilbarbara namespaces under a parent brand, so the bare
+# word never exact-matches (e.g. "OneDrive" → "microsoft-onedrive"). Only distinctive
+# single-word names are listed; common English words (teams, edge, play, config…) are
+# intentionally omitted to avoid false logo hits. Extend as your vocabulary grows.
+LOGO_ALIASES: dict[str, str] = {
+    # Microsoft
+    "onedrive": "microsoft-onedrive",
+    "azure": "microsoft-azure",
+    "windows": "microsoft-windows",
+    # AWS
+    "lambda": "aws-lambda",
+    "cognito": "aws-cognito",
+    "dynamodb": "aws-dynamodb",
+    "redshift": "aws-redshift",
+    "cloudfront": "aws-cloudfront",
+    "cloudwatch": "aws-cloudwatch",
+    "cloudformation": "aws-cloudformation",
+    "cloudtrail": "aws-cloudtrail",
+    "fargate": "aws-fargate",
+    "athena": "aws-athena",
+    "kinesis": "aws-kinesis",
+    "amplify": "aws-amplify",
+    "beanstalk": "aws-elastic-beanstalk",
+    "lightsail": "aws-lightsail",
+    "neptune": "aws-neptune",
+    "quicksight": "aws-quicksight",
+    "documentdb": "aws-documentdb",
+    "elasticache": "aws-elasticache",
+    "eventbridge": "aws-eventbridge",
+    "route53": "aws-route53",
+    "ec2": "aws-ec2",
+    "ecs": "aws-ecs",
+    "eks": "aws-eks",
+    "s3": "aws-s3",
+    "sqs": "aws-sqs",
+    "sns": "aws-sns",
+    "rds": "aws-rds",
+    # Google
+    "gmail": "google-gmail",
+    "gemini": "google-gemini",
+    "bard": "google-bard",
+    "admob": "google-admob",
+    # GitHub
+    "copilot": "github-copilot",
+    # Adobe
+    "photoshop": "adobe-photoshop",
+    "illustrator": "adobe-illustrator",
+    "lightroom": "adobe-lightroom",
+    "premiere": "adobe-premiere",
+    "indesign": "adobe-indesign",
+    "dreamweaver": "adobe-dreamweaver",
+    "incopy": "adobe-incopy",
+}
+
+
 def normalize_slug(word: str) -> str:
     """Normalize a transcript word to a logos shortname slug."""
     slug = word.lower().replace(" ", "-").replace("_", "-")
