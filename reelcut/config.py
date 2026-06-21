@@ -119,6 +119,7 @@ class HeadingsConfig(BaseModel):
     subtitle_font: str = "PlayfairDisplay-Italic"
     title_size: int = 96
     subtitle_size: int = 46
+    margin_pct: float = 8.0                   # % of video width kept free on each side; title wraps/shrinks to fit
     color: str = "#F3C84E"                   # warm gold (sampled from reference)
     subtitle_color: str = "#FFFFFF"
     position: Literal["top", "upper-third", "center"] = "upper-third"
@@ -171,6 +172,14 @@ class AssetsConfig(BaseModel):
     location: str = "./assets"
 
 
+class AudioConfig(BaseModel):
+    enabled: bool = True
+    default_path: str = ""    # background music mixed under every video (full length, trimmed to
+                              # video duration) unless overridden in assets/<slug>/audio.json
+    ducking_lufs: float = 18.0  # how far (LUFS) music sits below the measured voice loudness.
+                                # Higher = quieter music. ~18 keeps speech clearly dominant.
+
+
 class ReelCutConfig(BaseModel):
     cuts: CutsConfig = Field(default_factory=CutsConfig)
     output: OutputConfig = Field(default_factory=OutputConfig)
@@ -178,6 +187,7 @@ class ReelCutConfig(BaseModel):
     captions: CaptionsConfig = Field(default_factory=CaptionsConfig)
     images: ImagesConfig = Field(default_factory=ImagesConfig)
     headings: HeadingsConfig = Field(default_factory=HeadingsConfig)
+    audio: AudioConfig = Field(default_factory=AudioConfig)
     whisper: WhisperConfig = Field(default_factory=WhisperConfig)
 
 

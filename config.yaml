@@ -18,7 +18,7 @@ cuts:
                                    # WhisperX start timestamps run 80-150ms late — this pad stops the
                                    # beginning of words getting clipped. Raise if sentence starts sound
                                    # cut off; lower if you hear too much silence before words.
-  word_end_scan_ms: 35             # how far (ms) to scan backward from a word's end timestamp to find
+  word_end_scan_ms: 10             # how far (ms) to scan backward from a word's end timestamp to find
                                    # the true silence onset. Stops sentence endings getting clipped by
                                    # stop consonants ("t","p","k") that look like silence at wider windows.
                                    # Raise if trailing silence is being left in; lower if word ends are clipped.
@@ -33,9 +33,14 @@ cuts:
                                    # window splitting. Prevents single transients fragmenting cuts.
   min_keep_ms: 200                 # drop kept segments shorter than this after cutting. Prevents isolated
                                    # sub-word fragments ("a", "I") becoming their own clip.
-  mid_sentence_cut_floor_ms: 1500  # gaps below this duration (ms) are never cut unless the preceding word
+  mid_sentence_cut_floor_ms: 1000  # gaps below this duration (ms) are never cut unless the preceding word
                                    # ends with sentence-ending punctuation (. ! ? , ; :). Prevents jump
                                    # cuts landing mid-phrase from restarts or pauses mid-delivery.
+  sentence_pause_s: 0.6            # sentence-boundary recovery when Whisper drops a full stop: a capitalised
+                                   # next word preceded by a pause >= this (seconds) counts as a sentence end.
+                                   # Drives caption line breaks and EDL cut permission. Lower = more boundaries
+                                   # (risk false splits at mid-sentence proper nouns); higher = fewer. See the
+                                   # .debug.1b.sentences.txt report (VIA=caps+pause column) to tune.
   repetition_detection: true       # detect and cut repeated takes (earlier occurrence cut, last take kept)
   min_retake_words: 3              # default: 4 | minimum consecutive words to qualify as a repeated take
   max_retake_gap_s: 12             # default: 20 | max seconds between first and second occurrence to count
@@ -73,6 +78,15 @@ output:
   location: ./output/
   render_workers: 8                 # number of parallel workers for frame rendering.
 
+audio:
+  enabled: true
+  default_path: ""                  # background music mixed under the voice. Applied full-length
+                                    # to every video and trimmed to the video duration unless
+                                    # overridden in assets/<slug>/audio.json. Empty = no music.
+  ducking_lufs: 18                  # music is auto-leveled to sit this many LUFS below the measured
+                                    # voice loudness (so the source file's level doesn't matter).
+                                    # Higher = quieter music. Per-track gain_db trims on top.
+
 captions:
   enabled: true
   style: full_line                 # word_highlight | full_line | none
@@ -94,7 +108,7 @@ captions:
   margin_pct: 8                     # % of video width kept free on each side — increase to pull captions inward
   words_per_line: 5                 # max words shown on screen at once (default: 7)
   line_spacing: 10                 # px between wrapped rows
-  grace_s: 0.3                     # seconds a caption line stays visible after its last word ends
+  grace_s: 0.6                     # seconds a caption line stays visible after its last word ends
 
 images:
   enabled: true
@@ -121,8 +135,9 @@ headings:
   default_end_s: -1             # default end time (output-timeline seconds) for the auto-created headings.json stub
   font: PlayfairDisplay          # bundled in reelcut/fonts/ (elegant gold serif look)
   subtitle_font: PlayfairDisplay-Italic
-  title_size: 96                 # title point size at 1080-wide
+  title_size: 96                 # title point size at 1080-wide (auto-shrinks if it won't fit)
   subtitle_size: 46
+  margin_pct: 8.0                # % of video width kept free on each side; title wraps/shrinks to fit
   color: "#F3C84E"               # warm gold
   subtitle_color: "#FFFFFF"
   position: upper-third          # top | upper-third | center
@@ -166,6 +181,10 @@ whisper:
   retranscribe_large_gap_ms: 1500  # default: 1500 | gap (ms) between any two consecutive words that
                                    # triggers retranscription regardless of confidence. Catches false
                                    # starts Whisper absorbed without surfacing twice. Set 0 to disable.
+  retranscribe_low_conf_gap_floor_ms: 350  # default: 350 | when a low-confidence word is preceded by a
+                                   # gap at least this large, its retranscription window extends back
+                                   # across the gap. Catches speech Whisper dropped into the gap (mangling
+                                   # the boundary word) even when the gap is below the large-gap floor.
   compression_ratio_threshold: null # default: 2.4 | gzip compression ratio above which a segment is
                                    # discarded as a hallucination loop. Raise (e.g. 3.0) to tolerate
                                    # repeated phrases; set null to disable entirely.
