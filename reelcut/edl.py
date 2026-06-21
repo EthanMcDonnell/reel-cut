@@ -100,7 +100,7 @@ def generate_scriptless_edl(
             seg_end = nxt.end
 
         entries.append(EDLEntry(
-            start=seg_start, end=seg_end, keep=True,
+            start=seg_start, end=seg_end + pad_s, keep=True,
             source_clip=clip_path, reason="speech",
         ))
 
