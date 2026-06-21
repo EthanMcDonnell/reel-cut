@@ -296,6 +296,7 @@ def retranscribe_suspicious_regions(
     silence_threshold_db: float = -40.0,
     min_silence_ms: int = 200,
     failure_tolerance_ratio: float = 0.02,
+    vad_threshold: float = 0.5,
 ) -> tuple[list[WordTimestamp], int, list[dict]]:
     """Detect and retranscribe suspicious audio regions to surface hidden false-start words.
 
@@ -351,8 +352,11 @@ def retranscribe_suspicious_regions(
     """
     import tempfile
 
+    import numpy as np
     import soundfile as sf
     from faster_whisper import WhisperModel
+
+    from .vad import get_speech_timestamps
 
     wav_path = Path(wav_path)
     audio, sample_rate = sf.read(str(wav_path), dtype="float32")
@@ -397,9 +401,22 @@ def retranscribe_suspicious_regions(
     # Case 4: individual low-confidence word — catches hallucinations that are too short
     # or too isolated to trigger Cases 1–3. Prevents silent dropping during alignment
     # from stretching neighbors into spurious wide-word windows.
-    for w in words:
+    # A low-conf word immediately after a gap is the signature of speech Whisper
+    # dropped into that gap and mangled the boundary word (e.g. "fresh [out of the
+    # oven] See," with "See," scoring 0.03). Reach back across the preceding gap so
+    # the silence-splitter can isolate and recover the dropped phrase — even when the
+    # gap is below the Case 3 large-gap floor. Anchor on the *previous word's start*,
+    # not its end: inter-word timestamps are imprecise, so a window edge at words[i-1].end
+    # lands mid-syllable and clips a half-word off the prior sentence. Feeding the
+    # previous word's start to _expand_to_sentence carries the window edge out to the
+    # enclosing sentence boundary, which is preceded by real silence — a clean cut.
+    low_conf_gap_floor_s = config.retranscribe_low_conf_gap_floor_ms / 1000
+    for i, w in enumerate(words):
         if w.confidence < conf_threshold:
-            raw_windows.append((w.start, w.end, "low_conf_word"))
+            win_start = w.start
+            if i > 0 and (w.start - words[i - 1].end) >= low_conf_gap_floor_s:
+                win_start = words[i - 1].start
+            raw_windows.append((win_start, w.end, "low_conf_word"))
 
     if not raw_windows:
         return list(words), 0, []
@@ -493,24 +510,48 @@ def retranscribe_suspicious_regions(
             if len(sub_chunk) < int(sample_rate * 0.1):
                 continue
 
-            # Skip sub-clips with no VAD-detected speech to prevent Whisper
-            # hallucinating on breaths or noise between speech attempts.
-            from .vad import get_speech_timestamps as _vad_check
-            _vad_mono = sub_chunk if sub_chunk.ndim == 1 else sub_chunk.mean(axis=1)
-            if not _vad_check(_vad_mono, sr=sample_rate, min_speech_ms=100):
-                sub_clips_log.append({"start_s": sub_start_s, "end_s": sub_end_s, "words": []})
-                continue
-
             if clips_dir is not None:
                 sub_path = clips_dir / f"{label}_{win_start:.3f}_sub{seg_i}.wav"
                 cleanup_sub = False
+                sf.write(str(sub_path), sub_chunk, sample_rate)
             else:
+                sub_path = None
+                cleanup_sub = False
+
+            # Skip sub-clips with no detectable audio energy so Whisper doesn't
+            # hallucinate on breath sounds or noise between speech attempts.
+            # Uses the same amplitude + tolerance logic as _split_audio_at_silences.
+            _mono = sub_chunk if sub_chunk.ndim == 1 else sub_chunk.mean(axis=1)
+            _thr = float(10 ** (silence_threshold_db / 20))
+            _frame = max(1, int(sample_rate * 0.01))
+            _n_frames = len(_mono) // _frame
+            _active = sum(
+                float(np.mean(np.abs(_mono[i*_frame:(i+1)*_frame]) > _thr)) >= failure_tolerance_ratio
+                for i in range(_n_frames)
+            )
+            if _n_frames > 0 and _active / _n_frames < 0.05:
+                sub_clips_log.append({"start_s": sub_start_s, "end_s": sub_end_s, "words": []})
+                continue
+
+            # Amplitude alone can't distinguish a loud breath from speech, so a
+            # breath between takes clears the energy gate above and Whisper
+            # hallucinates words over it (e.g. a URL). Silero VAD is purpose-built
+            # for speech-vs-breath; skip sub-clips it finds no speech in.
+            try:
+                if not get_speech_timestamps(_mono, sr=sample_rate, threshold=vad_threshold):
+                    sub_clips_log.append({"start_s": sub_start_s, "end_s": sub_end_s, "words": []})
+                    continue
+            except Exception:
+                pass  # VAD unavailable — fall back to the amplitude gate only
+
+            if sub_path is None:
                 with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
                     sub_path = Path(f.name)
                 cleanup_sub = True
 
             try:
-                sf.write(str(sub_path), sub_chunk, sample_rate)
+                if cleanup_sub:
+                    sf.write(str(sub_path), sub_chunk, sample_rate)
                 sub_words = _transcribe_with_model(model, sub_path, retranscribe_config)
                 sub_clip_found: list[WordTimestamp] = []
                 for w in sub_words:
@@ -800,6 +841,49 @@ def _norm_word(w: str) -> str:
     return w.strip().lower().rstrip(".,!?;:'\"")
 
 
+# Sentence-terminal punctuation — the single set used everywhere a sentence
+# boundary is decided (captions, EDL cut permission, alignment windowing).
+_TERMINAL_PUNCT = (".", "!", "?")
+
+# Clause-terminal punctuation — a natural pause within a sentence. Used only
+# for EDL cut permission (a comma pause is a safe place to remove silence),
+# never for caption line splits.
+_CLAUSE_PUNCT = (",", ";", ":")
+
+# Default minimum pause (seconds) before a capitalised word that marks a
+# sentence boundary Whisper failed to punctuate. Within-sentence inter-word
+# gaps are typically well under this; requiring a real pause keeps mid-sentence
+# proper nouns from triggering a false boundary.
+SENTENCE_PAUSE_S = 0.4
+
+
+def is_sentence_boundary(
+    curr_word: str,
+    next_word: str | None,
+    gap_s: float,
+    pause_threshold_s: float = SENTENCE_PAUSE_S,
+    include_clause: bool = False,
+) -> bool:
+    """True if a sentence boundary falls after curr_word.
+
+    Single source of truth for sentence segmentation. Signals:
+    - explicit terminal punctuation on curr_word ('.', '!', '?');
+    - a capitalised next_word following a pause >= pause_threshold_s, which
+      recovers boundaries Whisper left unpunctuated (full stops it omits are
+      far less consistent than the capitalisation that opens the next sentence); and
+    - with include_clause=True, clause punctuation (',', ';', ':') — a safe
+      pause to cut silence at, used for EDL cut permission only.
+    """
+    end = curr_word.rstrip()
+    if end.endswith(_TERMINAL_PUNCT):
+        return True
+    if include_clause and end.endswith(_CLAUSE_PUNCT):
+        return True
+    if next_word and next_word[:1].isupper() and gap_s >= pause_threshold_s:
+        return True
+    return False
+
+
 def _find_sentence_end(
     words: list[WordTimestamp],
     from_idx: int,
@@ -816,7 +900,7 @@ def _find_sentence_end(
     """
     result = len(words) - 1
     for i in range(from_idx, len(words)):
-        if words[i].word.rstrip().endswith((".", "?")):
+        if words[i].word.rstrip().endswith(_TERMINAL_PUNCT):
             result = i
             break
         if i > from_idx:
@@ -918,8 +1002,13 @@ def _expand_to_sentence(
         caps_floor_s=max_duration_s, hard_cap_s=max_duration_s,
     )
 
-    exp_start = words[sent_start_idx].start
-    natural_end = words[sent_end_idx].end
+    # Clamp so expansion only ever grows the requested window, never shrinks it.
+    # The backward scan stops at the first capitalised word; when the flagged word
+    # is itself capitalised (Whisper's spurious mid-utterance sentence boundary),
+    # sent_start_idx lands on it and words[sent_start_idx].start can fall *after*
+    # win_start — which would drop a preceding gap the caller deliberately included.
+    exp_start = min(words[sent_start_idx].start, win_start)
+    natural_end = max(words[sent_end_idx].end, win_end)
     hard_capped = natural_end > exp_start + max_duration_s
     exp_end = min(natural_end, exp_start + max_duration_s)
 

@@ -9,7 +9,7 @@ from typing import Literal
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 from .config import CaptionsConfig
-from .transcriber import WordTimestamp
+from .transcriber import WordTimestamp, is_sentence_boundary, SENTENCE_PAUSE_S
 
 CaptionStyle = Literal["word_highlight", "full_line", "none"]
 
@@ -29,6 +29,7 @@ def render_caption_frames(
     output_dir: str | Path,
     fps: int = 30,
     resolution: tuple[int, int] = (1080, 1920),
+    sentence_pause_s: float = SENTENCE_PAUSE_S,
 ) -> list[CaptionFrame]:
     """Generate per-frame PNG caption overlays.
 
@@ -42,7 +43,7 @@ def render_caption_frames(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     font, font_highlight = _load_fonts(config)
-    lines = _group_into_lines(words, config.words_per_line, config.grace_s)
+    lines = _group_into_lines(words, config.words_per_line, config.grace_s, sentence_pause_s)
     total_duration = words[-1].end
 
     frames: list[CaptionFrame] = []
@@ -320,15 +321,11 @@ def _best_face_index(path: str) -> int:
 # Frame cache builder
 # ---------------------------------------------------------------------------
 
-def _ends_sentence(word: WordTimestamp) -> bool:
-    """True if this word ends with sentence-terminal punctuation."""
-    return word.word.rstrip().endswith((".", "!", "?"))
-
-
 def _group_into_lines(
     words: list[WordTimestamp],
     words_per_line: int,
     gap_break_s: float,
+    sentence_pause_s: float = SENTENCE_PAUSE_S,
 ) -> list[list[WordTimestamp]]:
     """Group words into display lines. Breaks on word-count limit, a timing gap >= gap_break_s,
     or a sentence boundary so each caption block starts at the beginning of a sentence.
@@ -342,7 +339,7 @@ def _group_into_lines(
     current: list[WordTimestamp] = [words[0]]
     for w in words[1:]:
         gap = w.start - current[-1].end
-        sentence_end = _ends_sentence(current[-1])
+        sentence_end = is_sentence_boundary(current[-1].word, w.word, gap, sentence_pause_s)
         if len(current) >= words_per_line or gap >= gap_break_s or sentence_end:
             lines.append(current)
             current = [w]

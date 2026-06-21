@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Literal
 
 from .gap_detector import Gap
-from .transcriber import WordTimestamp
+from .transcriber import WordTimestamp, is_sentence_boundary
 
 SegmentReason = Literal["speech", "silence", "breath", "noise", "outtake", "retake"]
 
@@ -27,6 +27,7 @@ def generate_scriptless_edl(
     min_keep_ms: int = 50,
     speech_pad_ms: int = 30,
     mid_sentence_cut_floor_ms: int = 3000,
+    sentence_pause_s: float = 0.4,
 ) -> list[EDLEntry]:
     """Build an EDL with no script: keep all speech, cut at every marked gap.
 
@@ -70,7 +71,9 @@ def generate_scriptless_edl(
             gap = gap_map.get((round(curr.end, 4), round(nxt.start, 4)))
 
             if gap and gap.cut and (
-                _is_sentence_end(curr) or gap.duration_ms >= mid_sentence_cut_floor_ms
+                is_sentence_boundary(curr.word, nxt.word, nxt.start - curr.end,
+                                     pause_threshold_s=sentence_pause_s, include_clause=True)
+                or gap.duration_ms >= mid_sentence_cut_floor_ms
             ):
                 cut_start = gap.start                    # raw word end — never inside the word
                 cut_end   = nxt.start - pad_s            # keep natural lead before next word
@@ -273,16 +276,4 @@ def _optimize_edl(entries: list[EDLEntry], min_keep_ms: int) -> list[EDLEntry]:
             merged.append(entry)
 
     return merged
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-_SENTENCE_END_CHARS = frozenset(".!?,;:")
-
-
-def _is_sentence_end(word: WordTimestamp) -> bool:
-    return bool(word.word) and word.word[-1] in _SENTENCE_END_CHARS
-
 
