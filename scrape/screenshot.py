@@ -62,18 +62,11 @@ _KH = bytes([104, 101, 105, 103, 104, 116]).decode()
 
 # JS expressions built from bytes — immune to quote-mangling formatters
 _JS_ISNULL = bytes([101,32,61,62,32,33,101,32,124,124,32,33,101,46,116,97,103,78,97,109,101]).decode()
-# returns [x, y, width, height] as an array to avoid string-key dict accesses
-_JS_RECT = bytes([101,32,61,62,32,123,32,99,111,110,115,116,32,114,32,61,32,101,46,103,101,116,66,111,117,110,100,105,110,103,67,108,105,101,110,116,82,101,99,116,40,41,59,32,114,101,116,117,114,110,32,91,114,46,120,44,32,114,46,121,44,32,114,46,119,105,100,116,104,44,32,114,46,104,101,105,103,104,116,93,59,32,125]).decode()
-# scrollIntoView handles custom scroll containers; fall back to window.scrollTo for SPAs
-_JS_SCROLL_ABS = (
-    "e => {"
-    " e.scrollIntoView({block: 'center', behavior: 'instant'});"
-    " const r = e.getBoundingClientRect();"
-    " if (r.top < 0 || r.top > window.innerHeight) {"
-    "   const absY = r.top + window.pageYOffset;"
-    "   window.scrollTo({top: Math.max(0, absY - window.innerHeight/2 + r.height/2), behavior: 'instant'});"
-    " }"
-    " }"
+# Bounding rect [x, y, width, height] of the highlighted region (Range or block) recorded by
+# _ss_highlight.js, measured after the post-scroll settle. Null if nothing was highlighted.
+_JS_REGION_RECT = (
+    "() => { const r = window.__ssRegion; if (!r) return null;"
+    " const b = r.getBoundingClientRect(); return [b.x, b.y, b.width, b.height]; }"
 )
 
 # Per-snippet match metadata set on window by _ss_find.js (found / confidence / matchType).
@@ -223,10 +216,12 @@ async def _capture_snippet(
         if not el or await page.evaluate(_JS_ISNULL, el):
             return _miss("text not found on page", meta)
 
-        await page.evaluate(_JS_SCROLL_ABS, el)
+        # Highlight first: this locates the snippet across inline tags, marks it, scrolls it
+        # to centre, and records the highlighted region on window for measurement below.
+        await page.evaluate(js_highlight, {"anchor": anchor, "snippet": raw})
         await page.wait_for_timeout(600)
 
-        r = await page.evaluate(_JS_RECT, el)
+        r = await page.evaluate(_JS_REGION_RECT)
         if not r or r[2] == 0:
             return _miss("matched element has no size", meta)
         vw, vh = 390, 844
@@ -236,7 +231,6 @@ async def _capture_snippet(
         y, crop_h = _crop_window(r[1], r[3], vh)
         clip = {_KX: 0, _KY: y, _KW: vw, _KH: crop_h}
 
-        await page.evaluate(js_highlight, anchor)
         fname = f"snippet-{index:02d}.png"
         await page.screenshot(path=str(source_dir / fname), clip=clip)
         await page.evaluate(js_unhighlight)
