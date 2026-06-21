@@ -31,8 +31,9 @@ def detect_retakes(
     Scans the transcript for sequences of >= min_retake_words consecutive words that
     appear more than once within max_retake_gap_s seconds. For each repeated sequence,
     the match is extended greedily forward to measure true overlap. Only pairs where
-    extended_match_len / cut_len >= min_match_ratio are treated as retakes, preventing
-    short coincidental phrase overlaps from triggering large erroneous cuts.
+    extended_match_len / cut_len > min_match_ratio are treated as retakes, preventing
+    short coincidental phrase overlaps from triggering large erroneous cuts. A ratio
+    exactly on the threshold is treated as a coincidental overlap and not cut.
 
     All occurrences except the final one are treated as failed takes and returned as
     (start, end) time ranges to cut. The cut range spans from the start of the repeated
@@ -147,14 +148,14 @@ def detect_retakes(
                 ci, cj = i - back, j - back
                 ratio = match_len / cut_len
 
-                kept = ratio >= min_match_ratio
+                kept = ratio > min_match_ratio
                 candidates.append(RetakeCandidate(
                     ngram=ngram,
                     cut_len=cut_len,
                     match_len=match_len,
                     ratio=ratio,
                     kept=kept,
-                    skip_reason="" if kept else f"ratio {ratio:.2f} < threshold {min_match_ratio:.2f}",
+                    skip_reason="" if kept else f"ratio {ratio:.2f} <= threshold {min_match_ratio:.2f}",
                     cut_start_s=words[ci].start,
                     cut_end_s=words[cj].start,
                 ))
