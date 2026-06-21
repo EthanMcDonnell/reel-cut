@@ -71,6 +71,8 @@ def transcribe(
         from .captions_doc import save_captions_doc
         save_captions_doc(doc, captions_path)
         _scaffold_headings(captions_path, cfg.headings.default_end_s)
+        _scaffold_images(captions_path)
+        _scaffold_audio(captions_path)
         console.print(f"[green]Captions doc →[/green] {captions_path}")
     else:
         input_folder = Path(footage)
@@ -90,6 +92,7 @@ def transcribe(
                     save_captions_doc(doc, captions_path)
                     _scaffold_headings(captions_path, cfg.headings.default_end_s)
                     _scaffold_images(captions_path)
+                    _scaffold_audio(captions_path)
                     console.print(f"[green]Captions doc →[/green] {captions_path}")
                 except Exception as exc:
                     err_console.print(f"[red]Failed:[/red] {video.name} — {exc}")
@@ -105,6 +108,7 @@ def transcribe(
             save_captions_doc(doc, captions_path)
             _scaffold_headings(captions_path, cfg.headings.default_end_s)
             _scaffold_images(captions_path)
+            _scaffold_audio(captions_path)
             console.print(f"[green]Captions doc →[/green] {captions_path}")
 
     console.print(
@@ -146,7 +150,7 @@ def render(
 
     console.rule(f"[bold]Rendering → {output_path}[/bold]")
     _phase2(cfg, doc, output_path, verbose, headings_path=cap_path.parent / "headings.json",
-            images_path=cap_path.parent / "images.json")
+            images_path=cap_path.parent / "images.json", audio_path=cap_path.parent / "audio.json")
 
 
 # ---------------------------------------------------------------------------
@@ -206,7 +210,7 @@ def run(
                 continue
 
             warnings = _phase2(cfg, doc, out_path, verbose, headings_path=cap_path.parent / "headings.json",
-                               images_path=cap_path.parent / "images.json")
+                               images_path=cap_path.parent / "images.json", audio_path=cap_path.parent / "audio.json")
             all_warnings.extend(warnings)
         except Exception as exc:
             err_console.print(f"[red]Failed:[/red] {video.name} — {exc}")
@@ -520,7 +524,7 @@ def _phase1(cfg, clips: list[str], output_dir: Path, verbose: bool):
             wordless_drops=wordless_drops,
             image_cues=None,
         )
-        console.print(f"[green]Debug report  →[/green] {debug_base}.debug.{{1.raw,2.post-retrans,3.post-align,4.post-vad,5.timeline,6.summary}}.txt")
+        console.print(f"[green]Debug report  →[/green] {debug_base}.debug.{{1.raw,1b.sentences,2.post-retrans,3.post-align,4.post-vad,5.timeline,6.summary}}.txt")
 
         # Build captions doc
         doc_edl = [
@@ -542,7 +546,6 @@ def _phase1(cfg, clips: list[str], output_dir: Path, verbose: bool):
             source_clips=clips,
             edl=doc_edl,
             words=doc_words,
-            images=[],
         )
 
 
@@ -550,7 +553,8 @@ def _phase1(cfg, clips: list[str], output_dir: Path, verbose: bool):
 # Phase 2 — render core
 # ---------------------------------------------------------------------------
 
-def _phase2(cfg, doc, output_path: Path, verbose: bool, headings_path: Path | None = None) -> list[str]:
+def _phase2(cfg, doc, output_path: Path, verbose: bool, headings_path: Path | None = None,
+            images_path: Path | None = None, audio_path: Path | None = None) -> list[str]:
     """Render final video from a CaptionsDoc. Returns warnings."""
     from .caption import render_caption_frames
     from .image_spec import load_images
@@ -598,7 +602,7 @@ def _phase2(cfg, doc, output_path: Path, verbose: bool, headings_path: Path | No
             )
             _tlog(time.perf_counter() - t, f"{len(caption_frames)} frames")
 
-        # Image cues: logos (auto-detected from words) + people/screenshots (from captions doc)
+        # Image cues: logos (auto-detected from words) + people/screenshots (from images.json)
         all_image_cues: list[ImageCue] = []
         if cfg.images.enabled:
             logo_cues = detect_image_cues(caption_words, cfg.images)
@@ -660,15 +664,53 @@ def _phase2(cfg, doc, output_path: Path, verbose: bool, headings_path: Path | No
                 )
                 _tlog(time.perf_counter() - t, f"{len(heading_frames)} frames")
 
+        # Background audio (audio.json) — music/SFX mixed under the voice
+        audio_tracks = _resolve_audio_tracks(cfg, edl, audio_path, warnings)
+
         # Final render
         from .renderer import _USE_VIDEOTOOLBOX
         encoder = "h264_videotoolbox (hardware)" if _USE_VIDEOTOOLBOX else "libx264 (software)"
         console.print(f"[bold]Step 6c/6[/bold] Rendering final video… encoder: [cyan]{encoder}[/cyan]")
         t = time.perf_counter()
-        out = do_render(edl, caption_frames, cfg, output_path)
+        out = do_render(edl, caption_frames, cfg, output_path, audio_tracks=audio_tracks)
         console.print(f"\n[green bold]Done![/green bold] → {out}  ({time.perf_counter() - t:.1f}s)")
 
     return warnings
+
+
+def _resolve_audio_tracks(cfg, edl, audio_path: Path | None, warnings: list[str]) -> list[dict]:
+    """Resolve audio.json (+ config default) to renderer-ready background track dicts.
+
+    With no audio.json (or an empty one), a single full-length track is created from
+    cfg.audio.default_path. `end = -1` is resolved to the total output duration so the
+    track spans the whole video; anything past the end is cut by the mixer.
+    """
+    if not cfg.audio.enabled:
+        return []
+
+    from .audio_spec import AudioSpec, load_audio
+
+    specs = load_audio(audio_path) if audio_path else []
+    if not specs and cfg.audio.default_path:
+        specs = [AudioSpec()]  # one default full-length track from config
+
+    total_output_s = sum(e.end - e.start for e in edl if e.keep)
+    tracks: list[dict] = []
+    for spec in specs:
+        path = spec.path or cfg.audio.default_path
+        if not path:
+            continue
+        p = Path(path)
+        if not p.exists():
+            console.print(f"  [yellow]Audio file not found: {path}[/yellow]")
+            warnings.append(f"Audio file not found: {path}")
+            continue
+        end = spec.end if spec.end >= 0 else total_output_s
+        tracks.append({"path": str(p), "start": spec.start, "end": end, "gain_db": spec.gain_db})
+
+    if tracks:
+        console.print(f"  Background audio: {[Path(t['path']).name for t in tracks]}")
+    return tracks
 
 
 def _resolve_image_spec(spec, display_duration_s: float):
@@ -742,6 +784,17 @@ def _scaffold_images(captions_path: Path) -> None:
         return
     ip.write_text("[]\n")
     console.print(f"[green]Images stub →[/green] {ip} [dim](add screenshot/person entries)[/dim]")
+
+
+def _scaffold_audio(captions_path: Path) -> None:
+    """Drop an editable audio.json stub (empty list) next to the captions file, never
+    clobbering an existing one. Empty list falls back to config audio.default_path (one
+    full-length track); add entries to override the path/timing/volume per video."""
+    ap = captions_path.parent / "audio.json"
+    if ap.exists():
+        return
+    ap.write_text("[]\n")
+    console.print(f"[green]Audio stub →[/green] {ap} [dim](add background music tracks, or leave empty for the config default)[/dim]")
 
 
 def _assets_or_ts_dir(cfg, slug: str | None) -> Path:
