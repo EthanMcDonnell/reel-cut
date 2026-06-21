@@ -270,13 +270,11 @@ def test_coincidental_overlap_divergent_context_no_cut():
     assert R(words) == []
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "PRECISION BUG: two distinct sentences sharing one 3-gram ('the model is') "
-    "score match_len=3 / cut_len=6 = ratio 0.50, exactly at min_match_ratio, so "
-    "a real sentence is deleted. Cannot raise the floor without dropping genuine "
-    "0.50 cuts (e.g. 'and a lot' is 0.75 but the memory cluster has 0.50 anchors). "
-    "A token-set/LCS similarity on whole utterances separates these cleanly."))
 def test_two_distinct_sentences_sharing_one_trigram_no_cut():
+    """Two distinct sentences sharing one 3-gram ('the model is') score
+    match_len=3 / cut_len=6 = ratio 0.50, exactly at min_match_ratio. A ratio
+    sitting exactly on the threshold is a coincidental overlap, not a retake, so
+    it is not cut (keep condition is strict `>`)."""
     words, _ = build("i think the model is fast",
                      "we know the model is slow")
     assert R(words) == []

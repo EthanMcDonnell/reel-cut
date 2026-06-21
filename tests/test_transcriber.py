@@ -2,11 +2,13 @@ from dataclasses import dataclass, field
 import pytest
 from reelcut.transcriber import (
     _caps_split,
+    _expand_to_sentence,
     _find_sentence_end,
     _merge_leading_comma_tokens,
     _merge_retranscribe_windows,
     _reconcile_retranscribed,
     _words_to_whisperx_segments,
+    is_sentence_boundary,
     WordTimestamp,
 )
 
@@ -88,6 +90,91 @@ def test_caps_split_does_not_fire_before_hard_cap():
 
 def test_empty_words():
     assert _find_sentence_end([], 0, 0, caps_floor_s=10.0, hard_cap_s=20.0) == len([]) - 1
+
+
+# ---------------------------------------------------------------------------
+# is_sentence_boundary
+# ---------------------------------------------------------------------------
+
+def test_boundary_terminal_punctuation():
+    assert is_sentence_boundary("down.", "Next", gap_s=0.0)
+    assert is_sentence_boundary("really?", "next", gap_s=0.0)
+    assert is_sentence_boundary("wow!", "then", gap_s=0.0)
+
+def test_boundary_no_punctuation_no_caps():
+    assert not is_sentence_boundary("the", "cookie", gap_s=1.0)
+
+def test_boundary_caps_after_pause_recovers_missing_fullstop():
+    """Whisper dropped the full stop, but a real pause precedes a capitalised word."""
+    assert is_sentence_boundary("down", "Anthropic", gap_s=0.5)
+
+def test_boundary_caps_without_pause_is_not_a_boundary():
+    """Mid-sentence proper noun (no preceding pause) must not split."""
+    assert not is_sentence_boundary("about", "Fable's", gap_s=0.1)
+
+def test_boundary_none_next_word():
+    assert not is_sentence_boundary("end", None, gap_s=5.0)
+
+def test_boundary_clause_punct_only_when_enabled():
+    """Commas/semicolons/colons are cut-permission boundaries (EDL), not caption splits."""
+    assert not is_sentence_boundary("words,", "and", gap_s=0.0)
+    assert is_sentence_boundary("words,", "and", gap_s=0.0, include_clause=True)
+    assert is_sentence_boundary("list:", "one", gap_s=0.0, include_clause=True)
+
+
+# ---------------------------------------------------------------------------
+# _expand_to_sentence
+# ---------------------------------------------------------------------------
+
+def test_expand_low_conf_window_reaches_previous_sentence_start():
+    """Regression: 'fresh [out of the oven] See,' — the dropped phrase lives in the
+    0.7s gap before the low-conf 'See,'. Case 4 anchors the window on the previous
+    word's *start* (fresh, 27.44); expansion must carry the edge back to the previous
+    sentence's onset ('Something') — a clean, silence-preceded boundary — rather than
+    cutting mid-word at the imprecise fresh.end timestamp."""
+    words = [
+        W("Something", 27.00, 27.44),  # previous sentence start (capitalised)
+        W("fresh",     27.44, 27.90),
+        W("See,",      28.60, 29.16),  # capitalised — Whisper's spurious boundary
+        W("a",         29.16, 29.30),
+        W("cookie.",   29.30, 29.80),
+    ]
+    exp_start, exp_end, _ = _expand_to_sentence(words, win_start=27.44, win_end=29.16)
+    assert exp_start == pytest.approx(27.00)  # back to the sentence onset, not mid-word
+    assert exp_end >= 29.16
+
+
+def test_expand_does_not_shrink_below_window_start():
+    """Clamp invariant: expansion must never move the start later than win_start,
+    even when the backward scan stops on a capitalised word after it."""
+    words = [
+        W("fresh",  27.44, 27.90),
+        W("See,",   28.60, 29.16),   # capitalised — would otherwise anchor exp_start here
+        W("a",      29.16, 29.30),
+        W("cookie.", 29.30, 29.80),
+    ]
+    exp_start, _, _ = _expand_to_sentence(words, win_start=27.90, win_end=29.16)
+    assert exp_start <= 27.90  # not shrunk forward to 28.60
+
+
+def test_expand_end_never_shrinks_below_window():
+    """exp_end must never fall below the requested win_end."""
+    words = [W("a", 0.0, 0.5), W("Word.", 0.5, 1.0), W("next", 2.0, 2.5)]
+    _, exp_end, _ = _expand_to_sentence(words, win_start=0.0, win_end=1.8)
+    assert exp_end >= 1.8
+
+
+def test_expand_still_grows_to_sentence_bounds():
+    """Normal case: window over an interior word expands out to sentence start/end."""
+    words = [
+        W("The",     0.0, 0.3),
+        W("quick",   0.3, 0.6),
+        W("brown",   0.6, 0.9),
+        W("fox.",    0.9, 1.2),
+    ]
+    exp_start, exp_end, _ = _expand_to_sentence(words, win_start=0.6, win_end=0.9)
+    assert exp_start == pytest.approx(0.0)   # back to "The"
+    assert exp_end == pytest.approx(1.2)     # forward to "fox."
 
 
 # ---------------------------------------------------------------------------

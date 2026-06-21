@@ -59,3 +59,19 @@ class TestRenderHeadingFrames:
         a = Image.open(on[0].image_path).convert("RGBA")
         b = Image.open(off[0].image_path).convert("RGBA")
         assert a.tobytes() != b.tobytes()
+
+    def test_long_title_stays_within_side_margins(self, tmp_path):
+        # A title too wide for one line must wrap/shrink to fit the configured margins.
+        res = (1080, 1920)
+        cfg = HeadingsConfig(margin_pct=8.0, shadow=False)
+        frames = render_heading_frames(
+            [HeadingSpec(title="Can a prime number be illegal?", start=0, end=1, scrim=False)],
+            cfg, tmp_path, 30, res,
+        )
+        # scrim + shadow off → the only painted pixels are the title glyphs themselves.
+        alpha = Image.open(frames[0].image_path).convert("RGBA").split()[3]
+        margin_px = int(res[0] * cfg.margin_pct / 100)
+        bbox = alpha.getbbox()
+        assert bbox is not None
+        assert bbox[0] >= margin_px - 2, f"text overflows left edge: {bbox}"
+        assert bbox[2] <= res[0] - margin_px + 2, f"text overflows right edge: {bbox}"
