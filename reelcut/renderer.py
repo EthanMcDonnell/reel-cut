@@ -36,6 +36,7 @@ def render(
     caption_frames: list[CaptionFrame],
     config: ReelCutConfig,
     output_path: str | Path | None = None,
+    audio_tracks: list[dict] | None = None,
 ) -> Path:
     """Render final video from EDL keep-segments with optional caption overlay.
 
@@ -88,7 +89,7 @@ def render(
                 caption_seq = _prepare_caption_sequence(caption_frames, config, tmpdir)
 
             progress.update(task, description="Encoding final output…")
-            _final_encode(concat_path, output_path, config, caption_seq)
+            _final_encode(concat_path, output_path, config, caption_seq, audio_tracks)
 
         progress.update(task, description=f"Done → {output_path}", completed=1, total=1)
 
@@ -233,10 +234,16 @@ def _final_encode(
     output_path: Path,
     config: ReelCutConfig,
     caption_seq: tuple[Path, int] | None = None,
+    audio_tracks: list[dict] | None = None,
 ) -> None:
     """Re-encode to final output spec, optionally overlaying caption frames in the same pass."""
     w, h = config.output.resolution
     fps = config.output.fps
+
+    # Auto-level background tracks relative to the measured voice loudness. Done once here
+    # (not in _build_streams, which can run twice on the videotoolbox→libx264 fallback).
+    if audio_tracks:
+        _level_audio_tracks(input_path, audio_tracks, config.audio.ducking_lufs)
 
     def _build_streams() -> tuple:
         main = ffmpeg.input(str(input_path))
@@ -246,6 +253,7 @@ def _final_encode(
         video = main.video.filter("fps", fps=fps)
         # async resampling keeps audio locked to video PTS after the fps conversion.
         audio = main.audio.filter("aresample", **{"async": 1000})
+        audio = _mix_audio_tracks(audio, audio_tracks)
         if caption_seq is not None:
             seq_dir, min_frame = caption_seq
             overlay_raw = ffmpeg.input(
@@ -294,6 +302,80 @@ def _final_encode(
     except ffmpeg.Error as exc:
         stderr = exc.stderr.decode() if exc.stderr else ""
         raise RuntimeError(f"Final encode failed:\n{stderr}") from exc
+
+
+def _measure_lufs(path: str | Path) -> float | None:
+    """Measure integrated loudness (LUFS) of an audio source via a loudnorm analysis pass.
+
+    Returns the integrated LUFS, or None if it can't be measured (silent/invalid input).
+    """
+    import json
+
+    try:
+        out = (
+            ffmpeg
+            .input(str(path))
+            .audio
+            .filter("loudnorm", I=-23, print_format="json")
+            .output("-", format="null")
+            .run(capture_stderr=True, quiet=True)
+        )
+    except ffmpeg.Error:
+        return None
+
+    stderr = out[1].decode(errors="ignore")
+    start = stderr.rfind("{")
+    end = stderr.rfind("}")
+    if start == -1 or end == -1 or end < start:
+        return None
+    try:
+        measured = float(json.loads(stderr[start : end + 1])["input_i"])
+    except (ValueError, KeyError):
+        return None
+    return measured if measured > -70.0 else None  # -inf/-70 ≈ silence
+
+
+def _level_audio_tracks(voice_path: Path, audio_tracks: list[dict], ducking_lufs: float) -> None:
+    """Compute each background track's static gain (dB) so it sits `ducking_lufs` below the
+    voice, regardless of the source file's mastering level. Stores the result in `_gain_db`
+    on each track dict. Uses the per-track gain_db as a manual trim on top.
+    """
+    voice_lufs = _measure_lufs(voice_path)
+    for t in audio_tracks:
+        manual = t.get("gain_db", 0.0)
+        music_lufs = _measure_lufs(t["path"])
+        if voice_lufs is None or music_lufs is None:
+            # Can't measure → fall back to a fixed attenuation by the ducking amount.
+            t["_gain_db"] = manual - ducking_lufs
+        else:
+            target = voice_lufs - ducking_lufs
+            t["_gain_db"] = manual + (target - music_lufs)
+
+
+def _mix_audio_tracks(voice, audio_tracks: list[dict] | None):
+    """Mix background tracks (audio.json) under the voice stream.
+
+    Each track is trimmed to its [start, end] window, gain-adjusted (the auto-leveled
+    `_gain_db` from _level_audio_tracks), and delayed to its start. `amix(duration="first")`
+    ties the result to the voice (=video) length, so audio past the end of the video is cut.
+    """
+    if not audio_tracks:
+        return voice
+
+    fmt = dict(sample_rates="48000", channel_layouts="stereo")
+    mix = [voice.filter("aformat", **fmt)]
+    for t in audio_tracks:
+        bg = ffmpeg.input(t["path"]).audio
+        length = max(0.0, t["end"] - t["start"])
+        bg = bg.filter("atrim", duration=length).filter("asetpts", "PTS-STARTPTS")
+        gain_db = t.get("_gain_db", 0.0)
+        if abs(gain_db) > 0.01:
+            bg = bg.filter("volume", f"{gain_db:.2f}dB")
+        if t["start"] > 0:
+            bg = bg.filter("adelay", str(int(round(t["start"] * 1000))), all=1)
+        mix.append(bg.filter("aformat", **fmt))
+
+    return ffmpeg.filter(mix, "amix", inputs=len(mix), duration="first", normalize=0)
 
 
 def _blank_frame(w: int, h: int, directory: Path) -> Path:
