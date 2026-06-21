@@ -20,13 +20,14 @@ Read `assets/<slug>/<clip-name>.debug.6.summary.txt` in full. This covers config
 
 ## Step 2 — Pull additional files only if needed
 
-Pipeline order: 1.raw → 2.post-retrans → 3.post-align → 4.post-vad → 5.timeline → 6.summary
+Pipeline order: 1.raw → 1b.sentences → 2.post-retrans → 3.post-align → 4.post-vad → 5.timeline → 6.summary
 
 - **`*.debug.4.post-vad.txt`** — read when hallucinations were dropped or retake boundaries look wrong. Shows every word after VAD filtering (final word list) with confidence scores and `[OUTTAKE]` flags.
 - **`*.debug.3.post-align.txt`** — read when a word is missing and you want to know if VAD dropped it. Shows words after WhisperX alignment, before VAD.
 - **`*.debug.2.post-retrans.txt`** — read when a word is missing and you want to know if alignment dropped it. Shows words after retranscription, before alignment.
 - **`*.debug.5.timeline.txt`** — read when there's a specific bad moment ("why didn't this gap get cut?"). Shows words and gaps interleaved with KEEP/CUT decisions and skip reasons.
 - **`*.debug.1.raw.txt`** — read only when a word is missing from all other files. Shows raw Whisper output before any processing.
+- **`*.debug.1b.sentences.txt`** — read when captions run sentences together or cuts land mid-sentence. Shows raw words grouped into sentences by `is_sentence_boundary`, with `VIA` = `punct` (Whisper full stop) or `caps+pause` (recovered boundary). A long run with no break means a missing full stop; a `caps+pause` split where none belongs means the pause threshold is too low.
 
 ## Step 3 — Diagnose by section
 
