@@ -125,6 +125,7 @@ images:
   display_duration_s: 1.0        # seconds to show logo after its keyword is first spoken
   fade_duration_s: 0             # fade in and out duration in seconds (0 to disable)
   margin_pct: 5                  # % of video height from the edge to the logo/image overlay.
+  corner_drop_pct: 6             # extra % of video height to lower the displaced (corner) images when overlapping
 
 
 # ---------------------------------------------------------------------------

@@ -109,6 +109,7 @@ class ImagesConfig(BaseModel):
     display_duration_s: float = 2.0
     fade_duration_s: float = 0.25
     margin_pct: float = 5.0            # % of video height from edge to logo
+    corner_drop_pct: float = 6.0       # extra % of video height to lower displaced (corner) images
 
 
 

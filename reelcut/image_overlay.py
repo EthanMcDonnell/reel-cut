@@ -63,7 +63,7 @@ def render_image_frames(
     fade_frames = int(config.fade_duration_s * fps)
     margin_px = int(h * config.margin_pct / 100)
     # Drop the corner (displaced) slots a little below the top edge.
-    corner_y = margin_px + int(h * 0.06)
+    corner_y = margin_px + int(h * config.corner_drop_pct / 100)
 
     slots = _assign_slots(cues)
 
