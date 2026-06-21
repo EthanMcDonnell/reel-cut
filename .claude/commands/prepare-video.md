@@ -30,5 +30,6 @@ Summarise:
 - Keep / cut duration after fixes
 - Anomalies found and recommended fix for each (for the user to apply)
 - Any remaining issues that need a human listen (ambiguous takes, uncertain boundaries)
+- `headings.json` and `images.json` stubs were auto-created in the slug folder — optionally add a title card / image overlays later by filling them in (covered in `/produce-video`)
 - Next step: `/produce-video <slug>`
 
