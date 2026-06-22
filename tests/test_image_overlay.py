@@ -34,6 +34,12 @@ class TestAssignSlots:
         slots = dict(zip([c.type for c in cues], _assign_slots(cues)))
         assert slots == {"person": "center", "logo": "top_left"}
 
+    def test_concept_outranks_logo_for_center(self):
+        # concept (priority 2) keeps center over logo (priority 3) when overlapping.
+        cues = [_cue("logo", 0.0, 2.0, "logo"), _cue("concept", 0.5, 1.5, "concept")]
+        slots = dict(zip([c.type for c in cues], _assign_slots(cues)))
+        assert slots == {"concept": "center", "logo": "top_left"}
+
     def test_freed_slot_is_reused(self):
         # logo2 starts after the overlapping pair ends → center is free again.
         cues = [

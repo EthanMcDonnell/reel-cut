@@ -17,12 +17,14 @@ class ImageSpec:
 
     type: "person"     — name is a Wikipedia person name; image fetched automatically
     type: "screenshot" — path points to a local image file
+    type: "concept"    — name is a concept keyword from concepts.yaml (bug, handcuffs, …),
+                         resolved to a sticker/emoji automatically
     """
-    type: str               # "person" | "screenshot"
+    type: str               # "person" | "screenshot" | "concept"
     start: float            # source-clip seconds (same timeline as words/edl)
     end: float              # source-clip seconds (remapped to output-timeline at render time)
     source_clip: str = ""   # path to source clip — copy from the words the image is anchored to
-    name: str = ""          # person full name, e.g. "Sam Altman"
+    name: str = ""          # person full name (type=person) or concept keyword (type=concept)
     path: str = ""          # absolute path to screenshot PNG/JPG
 
 

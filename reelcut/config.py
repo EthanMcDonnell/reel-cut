@@ -106,6 +106,7 @@ class ImagesConfig(BaseModel):
     position: Literal["top", "center", "bottom"] = "top"
     logo_overlay_size_pct: float = 25.0  # logo width as % of video width
     overlay_size_pct: float = 50.0     # person/screenshot width as % of video width
+    concept_size_pct: float = 24.0     # concept-gag (sticker/emoji) width as % of video width
     display_duration_s: float = 2.0
     fade_duration_s: float = 0.25
     margin_pct: float = 5.0            # % of video height from edge to logo
