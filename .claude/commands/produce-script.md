@@ -2,7 +2,7 @@
 name: produce-script
 description: Produce a single video script from a user-supplied prompt (URL, phrase, DB article ID/title, or Obsidian video idea reference)
 tools: Read, Glob, Edit, Bash, WebFetch, WebSearch, Agent
-model: sonnet
+model: opus
 permissionMode: default
 ---
 Produces a complete, validated video script from a user-supplied prompt. The prompt may be a URL (engineering blog post, article), a phrase or topic idea, a reference to an article in `scrape/db/`, or a reference to an existing file in the Obsidian Video Ideas folder (`Vault/Videos/Video Ideas/`).
@@ -81,29 +81,42 @@ After fetching a Reddit article, scan `content` and `description` for external U
 
 If the primary source returned an error or empty content, stop: "⚠️ Couldn't fetch `<url>` directly — research is from search snippets only. Paste the article text to continue, or type 'proceed' to write from secondary sources."
 
-We then want to collate all information as well as provide some summarisation and insight for future steps what are key points across sources that could be used.
+We then want to collate all information as well as provide some summarisation and insight for future steps what are key points across sources that could be used. While collating, also mine the single most surprising or counterintuitive fact across the sources, and name the assumption a viewer probably holds that this fact overturns — this is the raw material the angle stage needs.
 
 Build the following `topic_package` once resolved:
 
 ```
+SERIES: <tbbt | updates | ai-concepts | breath | intrigue | ai-fundamentals | misc>
+MOST_SURPRISING_FACT: <the single most counterintuitive fact across the sources, and the assumption the viewer probably holds that it overturns>
+
+(one block per source)
 TOPIC: <concise topic title>
 SOURCE_URLS: <comma-separated list of source URLs, or "none">
 FULL_CONTENT: <complete raw article content>
 KEY_DISCUSSION_POINTS: <summarise/provide key talking points>
-
-(if multiple sources, create multiple)
-TOPIC: <concise topic title>
-SOURCE_URLS: <comma-separated list of source URLs, or "none">
-FULL_CONTENT: <complete raw article content>
-KEY_DISCUSSION_POINTS: <summarise/provide key talking points>
-
 ```
 
 If no usable content can be resolved from the prompt, abort with: "Could not resolve prompt to a scriptable topic — please provide a URL or more specific phrase."
 
+## Stage 0.5 — Angle Generation & Selection
+
+The angle (the framing/lens on the topic) is the single biggest driver of whether a short-form video lands - two angles on the same facts can be 10x apart in performance. Manufacture it with breadth and selection, the same way the hook stage does.
+
+Generate **3–5 genuinely distinct angles** on the `topic_package`. An angle is the framing, not the hook wording: the lens that decides what the video is *about*. Make them diverge — pull from different framings:
+
+- **Counterintuitive reframe** — "they did the opposite of what you'd expect" (e.g. "they migrated none of them").
+- **Personal threat** — what this costs *the viewer* specifically.
+- **Mystery / "what is this"** — a real artifact that sounds impossible before you explain it.
+- **Hidden knowledge** — "everyone does X but no one tells you Y."
+- **Shocking number** — anchor on a specific, jaw-drop stat.
+
+Lean into what wins on this channel: shocking/specific numbers, developer-frustration points hit daily but not understood, mystery artifacts that look impossible, and timely news with a jaw-drop stat. Use `MOST_SURPRISING_FACT` as the seed.
+
+Ask the user to confirm the recommended angle or pick another. The chosen `ANGLE` drives Stage 1 (hooks) and Stage 3 (script).
+
 ## Stage 1 — Hook Generation
 
-Invoke the `hooks` skill. Use the rules and patterns it returns to write 3 hooks for the `topic_package`. Store them as `HOOK_1` through `HOOK_3`, each with a `PATTERN` and `TEXT` field.
+Invoke the `hooks` skill. Use the rules and patterns it returns to write 3 hooks that deliver the chosen `ANGLE` for the `topic_package`. Store them as `HOOK_1` through `HOOK_3`, each with a `PATTERN` and `TEXT` field.
 
 ## Stage 2 — Hook Approval
 
@@ -112,7 +125,7 @@ Use confirmed hook in Stage 3.
 
 ## Stage 3 — Script Writing
 
-Invoke the `scripts` skill and `stop-slop` skill, use the full `topic_package` and confirmed hook (PATTERN + TEXT) to create a captivating short form content script for platforms like Instagram Reels. 
+Invoke the `scripts` skill and `stop-slop` skill, use the full `topic_package`, the chosen `ANGLE`, and the confirmed hook (PATTERN + TEXT) to create a captivating short form content script for platforms like Instagram Reels. Apply the voice profile for `SERIES` from the `scripts` skill's **Series Voice Profiles** (register, target length, and whether to add a CTA). 
 
 For every claim, stat, or quote that will appear in the script:
 
@@ -123,13 +136,20 @@ For every claim, stat, or quote that will appear in the script:
 
 Any claim that cannot be traced to a specific sentence in `FULL_CONTENT` is cut, not paraphrased from memory.
 
-## Stage 3.5 — Script Writing
+## Stage 3.5 — Save & QC Gate
 After the script is written, save it:
 
 1. Save to `/Users/ethanmcdonnell/Library/Mobile Documents/iCloud~md~obsidian/Documents/Vault/Videos/Videos To Do/`
 2. Use kebab-case filename describing the topic (e.g. `netflix-cdn-architecture.md`)
 3. No empty lines in the saved file
 4. Ignore any other existing `.md` files in the `Videos/` folder — do not read, reference, or modify them
+5. **Run the deterministic QC linter and block on it.** It catches mechanical defects (em dashes, banned throat-clearing openers, missing apostrophes, format and blank-line violations) that self-review keeps missing:
+
+   ```bash
+   .venv/bin/python .claude/skills/scripts/scripts/lint_script.py "<saved_file_path>"
+   ```
+
+   If it exits non-zero, fix every reported blocking error, re-save, and re-run until it passes. Warnings are advisory — review them, but they don't block. Do not continue to Stage 4 until the linter passes.
 
 Wait for the saved file path before continuing.
 

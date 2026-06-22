@@ -37,22 +37,15 @@ A surprising fact stops the scroll. An unresolved implication or personal threat
 Use only if it fits the topic and the content of the video. Don't force a pattern if it doesn't fit.
 
 ### Recent Update
-**Format:** "[Large Company/Researcher] just [did X]."
+**Format:** "[Large Company/Researcher/Person] just [did X]."
 **Best for:** news, tech updates, security disclosures.
-**Seen working for:** justinbuilds.mov
-**Examples:**
-- "The FBI just stuck their fingers into encryped messages."
-- "Anthropic just made their pro and max plans worthless"
-
-### Simple But Surprising
-**Format:** "[Company/person] just [action in super simple conversational language that is surprising]."
-**Best for:** Absurd corporate decisions, Tech news, AI updates, viral tech moments.
 **Seen working for:** justinbuilds.mov
 **Key rule:** The action itself must be the surprise — short, almost quirky. If you need to append "and [stat/consequence]" to make it land, the action isn't surprising enough. Rewrite the action. Target under 12 words.
 **Examples:**
 - "OpenAI just banned its own AI from talking about goblins."
-**Anti-example (too long, stat does the work instead of the action):**
-- "GitHub just switched Copilot to metered billing and some users' bills are jumping from $120 to over $1,000."
+- "The FBI just stuck their fingers into encryped messages."
+- "Anthropic just made their pro and max plans worthless"
+- Anthropics co-founder just stood at the vatican and told the pope his own company cant be trused
 
 ### Hidden Knowledge
 **Format:** "Everyone tells you to [do X] but no one tells you [the thing they miss]."
@@ -67,6 +60,9 @@ Use only if it fits the topic and the content of the video. Don't force a patter
 **Seen working for:** Own channel
 **Examples:**
 - "What is 42.zip and why was it so dangerous?"
+
+
+
 
 ## Hook Quality Test
 

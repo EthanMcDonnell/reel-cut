@@ -8,93 +8,99 @@ description: >
 # Scripts
 
 ## Voice & Tone
-- Conversational, confident, opinionated
-- Sound like a friend explaining a topic.
-- Use CASUAL, flowing everyday english.
+- Conversational, confident, opinionated — write like a friend explaining a topic in casual, flowing, everyday English. Open with natural connectors, not formal declarative statements.
+- Write to the **stop-slop** skill's rules as you draft.
+- **Creator presence:** write as a person talking to the viewer, not a narrator. Use "I" deliberately — one personal touch per script ("I looked this up and it's kind of wild", "this one surprised me").
+- **Second-person address:** speak directly to the viewer at least once with "you" ("every time you open Spotify", "the next time you watch Netflix").
+- **Emotional vocabulary:** use honest feeling words ("wild", "kind of crazy", "surprisingly simple", "this is the clever part") — neutral, technical language kills engagement. One or two beats per script, not every sentence.
+- **Tangible over abstract:** concrete verbs and nouns ("ship hard drives", "deleted it"), not abstractions ("paradigm shift", "embracing chaos"). Punchy, not philosophical.
 
-### Questions to Raise
-Raise a question to user if at any point:
-- something about what is required doesnt make sense or is too vague
-- there is contradicting requirements
----
+## Series Voice Profiles
+The default voice above is the polished explainer. When writing for a series, modulate register, length, and CTA to fit its audience — the channel's top performer (`ai-concepts`) won by sounding casual and native, not polished. If no series is given, use the default voice.
 
-## Target Audience
-Tech-curious viewers swiping through social media. Step through concepts clearly and don't assume prior knowledge.
+| Series | Register | Target length | CTA |
+|--------|----------|---------------|-----|
+| tbbt | Polished explainer; precise, confident | 130–190 | Optional follow ("Follow for how big tech really works") |
+| updates | Casual, native, timely; sound like you just read the news | 100–150 | Comment-bait fits well |
+| ai-concepts | Casual, native dev voice; loose grammar and lowercase are fine when they land | 100–150 | Comment-bait encouraged ("Comment X and I'll send you …") |
+| breath | Brisk, no fluff; one tool, 60 seconds | under 120 | Optional |
+| intrigue | Story-driven, a little mysterious; build the reveal | 120–175 | Optional follow ("Follow for tech you won't believe exists") |
+| ai-fundamentals | Clear first-principles; slightly more teacherly | 130–190 | Optional |
 
-## Non-Negotiable Rules
-**Technology First:** Any technology that a high school software engineering student wouldnt understand needs to be explained.
-**One topic only:** Don't cram multiple concepts. One thing, explained well.
-**Word count:** Use only as many words as the topic needs — never pad to fill length. Hard cap is 225 words. Simple concepts should be fine under 150. Only reach toward 225 when the topic genuinely requires more steps to build understanding.
-**Learning payoff:** The viewer must walk away able to explain the core mechanism to someone else. Don't just surprise — genuinely teach. Use analogies to make abstract concepts concrete and sticky.
-**Source integrity:** Verify every claim against its source verbatim. If the source says "errors", write errors — not "timeouts". If a stat appears in article B, it doesn't belong in a script about article A.
-**One source, one story:** Never merge two sources into one narrative. If two articles cover different events or time periods, they produce two separate stories. Citing both as references for one script will produce an inaccurate account.
-**Attribution must match the actual speaker:** "The document says X" is only valid if the document is the literal source of X. If a person quoted in the document said X, attribute it to that person. If the encyclical says one thing and a speaker at the same event says another, they are different claims and must be kept separate. Never let a quote from a speech become a claim of the document, or vice versa.
+**CTA (optional):** when it fits the series, close with one native line — comment-bait ("Comment X and I'll send you …") or a follow that ties to the topic. Keep it conversational, never salesy. It folds into the end of the CONCLUSION; it is not a new header.
 
-## Voice and Tone
-**Use conversational tone** — Start with natural connectors rather than formal declarative statements. Write like you're talking to a friend.
-Apply all rules from the **stop-slop** skill to all script output.
-**Creator presence:** Write as a person talking to the viewer, not as a narrator. Use "I" sparingly but deliberately — one personal touch per script is enough. Examples: "I looked this up and it's kind of wild", "this one surprised me", "I've actually used this."
-**Emotional vocabulary:** Use feeling words where they're honest — "wild", "kind of crazy", "surprisingly simple", "this is the clever part". Neutral and technical language kills engagement. Don't overdo it — one or two emotional beats per script, not every sentence.
-**Second-person address:** Speak directly to the viewer at least once. Use "you" — "every time you open Spotify", "the next time you watch Netflix", "if you've ever wondered why". Makes the content feel personal, not like a lecture.
-**Use tangible language over abstract concepts** — Prefer concrete actions and objects. Keep it punchy, not philosophical:
-- Good: Concrete verbs and nouns ("buy lava lamps," "ship hard drives," "deleted it")
-- Bad: Abstract concepts ("physics vs algorithms," "embracing chaos," "paradigm shift")
+## Audience & Scope
+- **Audience:** tech-curious viewers swiping through social media. Step through concepts clearly; assume no prior knowledge.
+- **One topic only:** don't cram multiple concepts. One thing, explained well.
+- **Technology first:** any technology a high-school CS student wouldn't understand needs explaining.
+- **Learning payoff:** the viewer must walk away able to explain the core mechanism to someone else. Don't just surprise them — teach. Use analogies to make abstract concepts concrete and sticky.
+- **Word count:** use only as many words as the topic needs — never pad. Shorter wins: the channel's 100k-view performers run ~175 words. Hard cap 190. Simple concepts should land under 130; reach toward 190 only when the topic genuinely needs more steps.
 
-## Additional Requirements
-**Personal stakes:** Every script must answer "why should I care?" in the SETUP.
-## Take the Viewer on a Journey
-Structure each script as a journey of discovery — not a lecture. The viewer should feel like they're figuring something as you speak, not being told the answer.
-**The arc:** Pose a compelling problem → build tension and curiosity → reveal the solution with satisfaction → land a reframe that changes how they see the world.
-**Quantify where possible** — When your sources provide specific numbers, use them instead of vague modifiers. Never fabricate statistics (see Research rule), but prioritize concrete details when they're available:
-- Good: Specific counts, percentages, timings, byte sizes, geographic locations (when stated in sources)
-- Bad: "many," "massive," "complex," "chaotic," "significant" (vague descriptors)
-**Stats must support the claim they're attached to:** Before using a statistic, verify it actually proves the point you're making — not just that it's related to the topic. A number that contradicts or is irrelevant to the claim is worse than no number at all.
-**Narrative causality:** Before finalising, read the script as a causal chain. Does A actually cause B? Can B happen before A has occurred? Every step must logically follow from the previous — especially in incident post-mortems where sequence is the whole point.
-**Connect components explicitly:** When two separate concepts combine to create an effect, show the connection at the moment it matters — don't introduce them independently and leave the viewer to bridge the gap.
-**Determinism vs luck:** If something is guaranteed and attacker-controlled, say so. Vague phrasing implies coincidence. Make precision legible.
-**Incremental logic building** — Each sentence should follow logically from the previous. Don't skip steps or jump to abstract conclusions:
-- Good: "Encryption needs truly random numbers. Computers are only pseudo-random and follow mathematical algorithms based on an initial seed. If the seed isn't random, nothing generated from it is truly random either."
-- Bad: "Computers are deterministic by nature" (too abstract, skips the journey)
-**Step-through explanation** — Walk the viewer through the concept as if they're experiencing it in real time. Reveal each piece only when it's needed. The viewer should feel like they're figuring it out alongside you — not being briefed. Each step earns the next.
+## Source Integrity (non-negotiable)
+- **Verify every claim against its source verbatim.** If the source says "errors", write errors, not "timeouts".
+- **One source, one story.** Never merge two sources into one narrative. Two articles covering different events produce two separate stories; citing both for one script produces an inaccurate account.
+- **Attribution must match the speaker.** "The document says X" is valid only if the document is the literal source of X. If a person quoted in it said X, attribute it to that person. Never let a quote from a speech become a claim of the document, or vice versa.
+- **Statistics:**
+  - Pull specific numbers from your sources instead of vague modifiers — counts, percentages, timings, byte sizes, locations. Never fabricate them.
+  - A stat must support the exact claim it's attached to, not just relate to the topic. A number that contradicts or is irrelevant to the claim is worse than none.
+  - A stat that appears in one article doesn't belong in a script about another.
 
-## Examples & Claims
-**Examples must have a verifiable mechanism** — Any example used to illustrate risk must show a clear, traceable path from cause to harm. If you cannot explain how the harm occurred end-to-end, find a better example.
-**The solution should feel like a resolution, not a tutorial** — Actionable steps are the payoff to the tension built. Frame them as the answer the viewer has been waiting for, not a how-to guide.
-**Avoid redundant qualifiers** — Review phrasing before finalising. If two terms mean the same thing, pick one.
-**Be precise about the strength of claims** — Don't imply equivalence between things that differ in weight. Overstatement breaks trust.
-**Prime the viewer for the solution** — Before writing the solution section, check whether the setup has built enough tension for the viewer to be pulling toward it. If not, set up the open loop earlier in the script.
+## Narrative & Retention
+Take the viewer on a journey of discovery, not a lecture — they should feel like they're figuring it out alongside you.
 
-## Retention Rules
-No sentence should be dead weight. If a sentence doesn't advance the story, raise the stakes, or deepen understanding, cut it.
-Never close all loops before the payoff. Reveal just enough to satisfy, then open the next question.
-**Retention killers — never do these:**
-- Reveal the HOW before the PAYOFF section
-- Explain the solution before building curiosity
-- Deliver a weak payoff that doesn't earn the hook
-- Answer everything upfront
-     
+- **The arc:** pose a compelling problem → build tension and curiosity → reveal the solution with satisfaction → land a reframe that changes how they see things.
+- **Incremental logic:** each sentence follows from the last — don't skip steps or jump to an abstract conclusion. Reveal each piece only when it's needed; each step earns the next.
+  - Good: "Encryption needs truly random numbers. Computers are only pseudo-random, following an algorithm from an initial seed. If the seed isn't random, nothing built from it is either."
+  - Bad: "Computers are deterministic by nature." (too abstract, skips the journey)
+- **Narrative causality:** read the finished script as a causal chain. Does A actually cause B? Can B happen before A? Every step must follow from the previous — critical in incident post-mortems where sequence is the whole point.
+- **Connect components explicitly:** when two concepts combine to create an effect, show the connection at the moment it matters — don't introduce them separately and leave the viewer to bridge the gap.
+- **Determinism vs luck:** if something is guaranteed and attacker-controlled, say so. Vague phrasing implies coincidence; make precision legible.
+- **Examples need a verifiable mechanism:** any example illustrating risk must show a traceable path from cause to harm. If you can't explain it end-to-end, find a better example.
+- **Be precise about claim strength:** don't imply equivalence between things of different weight. Overstatement breaks trust.
+
+**Retention:**
+- Open the first loop in the very first SCRIPT line. The 42.zip winner did it in one breath: "It's a 42 kilobyte file, that's it, or at least that's what it seems." State the mundane fact, then undercut it so the viewer has to stay.
+- No dead weight — if a sentence doesn't advance the story, raise the stakes, or deepen understanding, cut it. Short sentences carry the reveal; vary length but keep the spine tight.
+- Hold the loops — never close them all before the payoff. Reveal just enough to satisfy, then open the next question. If the setup hasn't built enough tension, open the loop earlier.
+- The solution is a resolution, not a tutorial — frame actionable steps as the answer the viewer has been waiting for, not a how-to guide.
+- Never reveal the HOW before the PAYOFF, explain the solution before building curiosity, or deliver a payoff too weak to earn the hook.
+
+**Open-loop phrases** — drop these in throughout SETUP and PAYOFF to hold tension:
+- Partial answers: answer the what, withhold the how
+- "But here's the part nobody talks about…"
+- "That's not even the clever part…"
+- "But how do they actually do this?"
+- "There's a reason this works so well…"
+- "This saves them millions, but there's more…"
+- "So you might be wondering…" (before the payoff)
+
 ## Script Structure
-**HOOK**
-Hook is first. Immediately follow with one sentence that answers "why should I care?" — state who is affected, quantify the impact, or make the personal threat concrete. Do not reveal the explanation, just the stakes.
-**SETUP**
-Why this matters. Build curiosity. Open loops. Why is this important/worth watching. Delay the HOW.
-**EXTRA**
-Explain if required any prerequisite tech/information the viewer may need.
-**PAYOFF**
-Reveal HOW it works or discuss main content. Build genuine understanding — use analogies where helpful.
-**REFERENCES**
-URLs for any statistics or data used.
+**HOOK** — comes first. Immediately follow with one sentence answering "why should I care?": who's affected, the scale of impact, or the concrete personal threat. Reveal the stakes, not the explanation.
+**SETUP** — why this matters. Build curiosity, open loops, delay the HOW.
+**EXTRA** — any prerequisite tech or context the viewer needs (only if required).
+**PAYOFF** — reveal HOW it works. Build genuine understanding; use analogies where helpful.
+- "OpenAI solves this with PostgreSQL, read replicas spread across regions, and aggressive edge caching."
+- "Netflix ships hard drives to ISPs and preloads content during off-peak hours."
+**CONCLUSION** — one sentence reinforcing the main message and landing the reframe.
+- "They chose simplicity over complexity, then scaled it to 800 million users."
+- "Sometimes the best engineering solution is shipping hard drives around the world."
+- "That's how you serve a billion users without breaking."
+**REFERENCES** — URLs for any statistics or data used.
 
 ## Exact Output Format
-The script and the saved file must both use this exact format — bold headers, no blank lines between sections, no deviations:
+The script and the saved file must both use this exact format — bold headers, no blank lines between sections, no deviations. SETUP, EXTRA, and PAYOFF fold into the single **SCRIPT** block:
 ```
+**HOOK**
+[CONTENT]
 **SCRIPT**
+[CONTENT (SETUP, EXTRA, PAYOFF)]
+**CONCLUSION**
 [CONTENT]
 **REFERENCES:** 
 [URLs]
 ```
 This is not a documentation template — it is the literal output format. Do not substitute plain text labels, do not add blank lines between sections, do not reformat when saving to file.
 
-## Mandatory Post-Write Review
-After writing the script and before saving or delivering it, invoke the `stop-slop` skill on the output. Fix every issue it flags. Do not skip this step.
-
+## Process
+- **Questions to raise:** ask the user before writing if any requirement is vague, doesn't make sense, or contradicts another.
+- **Mandatory post-write review:** after writing and before saving or delivering, invoke the **stop-slop** skill on the output and fix every issue it flags. Do not skip this step.
