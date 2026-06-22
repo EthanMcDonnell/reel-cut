@@ -4,7 +4,7 @@ import json
 from PIL import Image
 
 from reelcut.config import HeadingsConfig
-from reelcut.heading import HeadingSpec, load_headings, render_heading_frames
+from reelcut.heading import HeadingSpec, _series_number, load_headings, render_heading_frames
 
 
 class TestLoadHeadings:
@@ -75,3 +75,44 @@ class TestRenderHeadingFrames:
         assert bbox is not None
         assert bbox[0] >= margin_px - 2, f"text overflows left edge: {bbox}"
         assert bbox[2] <= res[0] - margin_px + 2, f"text overflows right edge: {bbox}"
+
+    def test_placeholder_needs_registry(self, tmp_path):
+        # A {n:...} token with no slug/registry is a hard error, not a silent passthrough.
+        try:
+            render_heading_frames(
+                [HeadingSpec(title="Big Tech #{n:tbbt}", start=0, end=1)],
+                HeadingsConfig(), tmp_path, 30, (108, 192),
+            )
+            assert False, "expected ValueError"
+        except ValueError:
+            pass
+
+
+class TestSeriesNumber:
+    def test_assigns_and_is_idempotent_per_slug(self, tmp_path):
+        reg = tmp_path / "series_index.json"
+        # First time a slug is seen → next number in that series; re-asking is stable.
+        assert _series_number("tbbt", "openai-postgres", reg) == 1
+        assert _series_number("tbbt", "dropbox-magic-pocket", reg) == 2
+        assert _series_number("tbbt", "openai-postgres", reg) == 1  # idempotent
+        # Counters are per-series.
+        assert _series_number("intrigue", "42-zip", reg) == 1
+        assert json.loads(reg.read_text()) == {
+            "tbbt": ["openai-postgres", "dropbox-magic-pocket"],
+            "intrigue": ["42-zip"],
+        }
+
+    def test_token_renders_the_number(self, tmp_path):
+        reg = tmp_path / "series_index.json"
+        # Two distinct rendered numbers must produce two distinct PNGs.
+        a = render_heading_frames(
+            [HeadingSpec(title="Big Tech #{n:tbbt}", start=0, end=1, scrim=False)],
+            HeadingsConfig(shadow=False), tmp_path / "a", 30, (1080, 1920),
+            slug="vid-a", registry_path=reg,
+        )
+        b = render_heading_frames(
+            [HeadingSpec(title="Big Tech #{n:tbbt}", start=0, end=1, scrim=False)],
+            HeadingsConfig(shadow=False), tmp_path / "b", 30, (1080, 1920),
+            slug="vid-b", registry_path=reg,
+        )
+        assert Image.open(a[0].image_path).tobytes() != Image.open(b[0].image_path).tobytes()

@@ -658,6 +658,8 @@ def _phase2(cfg, doc, output_path: Path, verbose: bool, headings_path: Path | No
                     fps=cfg.output.fps,
                     resolution=tuple(cfg.output.resolution),
                     total_output_s=total_output_s,
+                    slug=headings_path.parent.name,
+                    registry_path=headings_path.parent.parent / "series_index.json",
                 )
                 caption_frames = merge_with_caption_frames(
                     heading_frames, caption_frames, tuple(cfg.output.resolution),

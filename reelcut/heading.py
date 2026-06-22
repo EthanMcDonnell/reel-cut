@@ -9,7 +9,8 @@ No animation; the styling matches the approved Playfair-Display gold look.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+import re
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
@@ -20,6 +21,9 @@ from .config import HeadingsConfig
 _SS = 2  # supersample factor — render large, downscale for crisp edges
 _FONTS_DIR = Path(__file__).parent / "fonts"
 _POSITION_TOP_FRAC = {"top": 0.05, "upper-third": 0.08, "center": 0.40}
+
+# `{n:<series>}` in a title/subtitle → this video's 1-based episode number within <series>.
+_SERIES_TOKEN_RE = re.compile(r"\{n:([a-z0-9][a-z0-9\-]*)\}")
 
 
 @dataclass
@@ -55,10 +59,16 @@ def render_heading_frames(
     fps: int,
     resolution: tuple[int, int],
     total_output_s: float = 0.0,
+    slug: str | None = None,
+    registry_path: Path | None = None,
 ) -> list[CaptionFrame]:
     """Render each heading to one static PNG and emit a CaptionFrame per output frame in its
     [start, end) window — the same PNG path is reused for every frame (no animation).
-    An end of -1 means "until the end of the video" (requires total_output_s)."""
+    An end of -1 means "until the end of the video" (requires total_output_s).
+
+    A `{n:<series>}` token in a title/subtitle is replaced with this video's episode number
+    in that series, allocated once via the `series_index.json` registry (needs slug +
+    registry_path)."""
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -69,10 +79,42 @@ def render_heading_frames(
         end = total_output_s if h.end < 0 else h.end
         if end <= h.start:
             continue
+        h = replace(
+            h,
+            title=_resolve_series_tokens(h.title, slug, registry_path),
+            subtitle=_resolve_series_tokens(h.subtitle, slug, registry_path),
+        )
         png = _render_heading_png(h, config, resolution, output_dir / f"heading_{idx:02d}.png")
         for fn in range(int(h.start * fps), int(end * fps)):
             frames.append(CaptionFrame(frame_number=fn, image_path=png))
     return frames
+
+
+# ---------------------------------------------------------------------------
+# Series episode counter
+# ---------------------------------------------------------------------------
+
+def _resolve_series_tokens(text: str, slug: str | None, registry_path: Path | None) -> str:
+    """Replace every `{n:<series>}` in `text` with this slug's 1-based number in that series."""
+    if not text or "{n:" not in text:
+        return text
+    if slug is None or registry_path is None:
+        raise ValueError("a {n:<series>} heading token needs both slug and registry_path")
+    return _SERIES_TOKEN_RE.sub(
+        lambda m: str(_series_number(m.group(1), slug, Path(registry_path))), text
+    )
+
+
+def _series_number(series: str, slug: str, registry_path: Path) -> int:
+    """This slug's 1-based position in `series` within the append-only registry. Appending a
+    new slug (and persisting it) is the only write — re-renders reuse the stored position, so
+    a video's number never drifts."""
+    registry = json.loads(registry_path.read_text()) if registry_path.exists() else {}
+    slugs = registry.setdefault(series, [])
+    if slug not in slugs:
+        slugs.append(slug)
+        registry_path.write_text(json.dumps(registry, indent=2) + "\n")
+    return slugs.index(slug) + 1
 
 
 # ---------------------------------------------------------------------------
