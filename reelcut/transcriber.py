@@ -994,20 +994,17 @@ def _expand_to_sentence(
         anchor_start_idx,
     )
 
-    # Scan backward: find the nearest genuine sentence start — a capitalised word
-    # preceded by terminal punctuation or a pause >= pause_threshold_s.  This
-    # mirrors is_sentence_boundary so both the 1b debug and expansion use the
-    # same sentence resolution and mid-sentence capitals (proper nouns, etc.)
-    # don't prematurely terminate the scan.
+    # Scan backward: find the nearest genuine sentence start using the shared
+    # is_sentence_boundary predicate so expansion and the 1b debug always agree.
     sent_start_idx = anchor_start_idx
     for i in range(anchor_start_idx, -1, -1):
         if not (words[i].word and words[i].word[0].isupper()):
             continue
-        if i == 0:
-            sent_start_idx = i
-            break
-        gap = words[i].start - words[i - 1].end
-        if words[i - 1].word.rstrip().endswith(_TERMINAL_PUNCT) or gap >= pause_threshold_s:
+        if i == 0 or is_sentence_boundary(
+            words[i - 1].word, words[i].word,
+            words[i].start - words[i - 1].end,
+            pause_threshold_s,
+        ):
             sent_start_idx = i
             break
 
