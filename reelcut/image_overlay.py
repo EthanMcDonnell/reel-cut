@@ -74,12 +74,7 @@ def render_image_frames(
         except Exception:
             continue
 
-        if cue.type == "logo":
-            size_pct = config.logo_overlay_size_pct
-        elif cue.type == "concept":
-            size_pct = config.concept_size_pct
-        else:
-            size_pct = config.overlay_size_pct
+        size_pct = config.logo_overlay_size_pct if cue.type == "logo" else config.overlay_size_pct
         target_w = int(w * size_pct / 100)
 
         # Resize maintaining aspect ratio

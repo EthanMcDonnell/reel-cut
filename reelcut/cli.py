@@ -625,10 +625,7 @@ def _phase2(cfg, doc, output_path: Path, verbose: bool, headings_path: Path | No
                     name=spec.name,
                     path=spec.path,
                 )
-                cue = _resolve_image_spec(
-                    remapped_spec, cfg.images.display_duration_s,
-                    concepts_dir=Path(cfg.assets.location) / "_concepts",
-                )
+                cue = _resolve_image_spec(remapped_spec, cfg.images.display_duration_s)
                 if cue:
                     all_image_cues.append(cue)
 
@@ -718,7 +715,7 @@ def _resolve_audio_tracks(cfg, edl, audio_path: Path | None, warnings: list[str]
     return tracks
 
 
-def _resolve_image_spec(spec, display_duration_s: float, concepts_dir: Path | None = None):
+def _resolve_image_spec(spec, display_duration_s: float):
     """Resolve an ImageSpec from the captions doc to an ImageCue."""
     from .image_finder import ImageCue
 
@@ -756,10 +753,10 @@ def _resolve_image_spec(spec, display_duration_s: float, concepts_dir: Path | No
     elif spec.type == "concept":
         if not spec.name:
             return None
-        from .concept_resolver import resolve_concept
-        img = resolve_concept(spec.name, concepts_dir)
+        from .entity_resolver import resolve_entity_image
+        img = resolve_entity_image(spec.name, "concept")
         if img is None:
-            console.print(f"  [yellow]Could not resolve concept image for: {spec.name}[/yellow]")
+            console.print(f"  [yellow]Could not resolve Wikipedia image for concept: {spec.name}[/yellow]")
             return None
         return ImageCue(
             keyword=spec.name,
