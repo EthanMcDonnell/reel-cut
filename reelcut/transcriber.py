@@ -193,12 +193,18 @@ def filter_words_by_vad(
     words: list[WordTimestamp],
     wav_path: str | Path,
     threshold: float = 0.5,
+    silence_threshold_db: float = -40.0,
+    failure_tolerance_ratio: float = 0.02,
 ) -> list[WordTimestamp]:
-    """Drop words that fall outside VAD-detected speech regions.
+    """Drop words that are both outside VAD-detected speech regions and silent.
 
-    Uses Silero VAD via ONNX (no PyTorch) to find speech segments, then
-    keeps only words whose midpoint lands inside a speech segment.
+    Uses Silero VAD via ONNX (no PyTorch) to find speech segments, then keeps
+    any word whose midpoint lands inside a speech segment. Words Silero misses
+    (short, quiet, or sentence-initial speech it clips at segment onset) are
+    rescued if their audio window carries real energy — only words that are
+    non-speech *and* silent are dropped as hallucinations.
     """
+    import numpy as np
     import soundfile as sf
     from .vad import get_speech_timestamps
 
@@ -209,10 +215,17 @@ def filter_words_by_vad(
     if not segments:
         return words
 
+    threshold_linear = float(10 ** (silence_threshold_db / 20))
+
     kept: list[WordTimestamp] = []
     for w in words:
         mid = (w.start + w.end) / 2
         if any(seg["start"] <= mid <= seg["end"] for seg in segments):
+            kept.append(w)
+            continue
+        # Silero missed it — rescue if the word's window has real sound.
+        chunk = audio[int(w.start * sr) : int(w.end * sr)]
+        if len(chunk) < 16 or float(np.mean(np.abs(chunk) > threshold_linear)) >= failure_tolerance_ratio:
             kept.append(w)
 
     return kept

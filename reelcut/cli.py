@@ -407,7 +407,12 @@ def _phase1(cfg, clips: list[str], output_dir: Path, verbose: bool):
 
             before = len(words)
             try:
-                words = filter_words_by_vad(words, wav, threshold=cfg.cuts.vad_threshold)
+                words = filter_words_by_vad(
+                    words, wav,
+                    threshold=cfg.cuts.vad_threshold,
+                    silence_threshold_db=cfg.cuts.silence_threshold_db,
+                    failure_tolerance_ratio=cfg.cuts.failure_tolerance_ratio,
+                )
                 vad_method = "Silero VAD (ONNX)"
                 vad_color = "green"
             except Exception as exc:
