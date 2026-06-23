@@ -13,7 +13,7 @@ from .image_finder import ImageCue
 # one keeps the center and the rest are displaced to the corners in this order.
 _SLOTS = ("center", "top_left", "top_right")
 
-# Lower number = higher priority for the center slot: text > wikipedia > concept > logo.
+# Lower number = higher priority for the center slot: screenshot > person > concept > logo.
 _TYPE_PRIORITY = {"screenshot": 0, "person": 1, "concept": 2, "logo": 3}
 
 
