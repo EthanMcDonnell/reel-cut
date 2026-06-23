@@ -395,7 +395,7 @@ def retranscribe_suspicious_regions(
     # so skip any gap where the preceding word ends with sentence-ending punctuation.
     for i in range(len(words) - 1):
         gap = words[i + 1].start - words[i].end
-        if gap >= large_gap_s and not words[i].word.rstrip().endswith((".", "!", "?")):
+        if gap >= large_gap_s and not words[i].word.rstrip().endswith(_TERMINAL_PUNCT):
             raw_windows.append((words[i].end, words[i + 1].start, "large_gap"))
 
     # Case 4: individual low-confidence word — catches hallucinations that are too short

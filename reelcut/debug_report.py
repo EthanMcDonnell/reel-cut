@@ -409,7 +409,7 @@ def _group_sentences(words, boundary_fn, pause_s):
     for prev, w in zip(words, words[1:]):
         gap = w.start - prev.end
         if boundary_fn(prev.word, w.word, gap, pause_s):
-            via = "punct" if prev.word.rstrip().endswith((".", "!", "?")) else "caps+pause"
+            via = "punct" if boundary_fn(prev.word, None, 0, pause_s) else "caps+pause"
             groups.append((current, via))
             current = [w]
         else:
