@@ -424,7 +424,10 @@ def retranscribe_suspicious_regions(
     # --- Expand each window to the enclosing sentence ---
     expansion_records: list[dict] = []
     for orig_start, orig_end, label in raw_windows:
-        exp_start, exp_end, hard_capped = _expand_to_sentence(words, orig_start, orig_end)
+        exp_start, exp_end, hard_capped = _expand_to_sentence(
+            words, orig_start, orig_end,
+            pause_threshold_s=config.cuts.sentence_pause_s,
+        )
         expansion_records.append({
             "orig_start": orig_start,
             "orig_end": orig_end,
@@ -964,11 +967,13 @@ def _expand_to_sentence(
     win_start: float,
     win_end: float,
     max_duration_s: float = 20.0,
+    pause_threshold_s: float = SENTENCE_PAUSE_S,
 ) -> tuple[float, float, bool]:
     """Expand a retranscription window outward to the enclosing sentence boundaries.
 
-    Scans backward from win_start for the nearest capitalised word (sentence
-    start) and forward from win_end for the nearest fullstop/questionmark.
+    Scans backward from win_start for the nearest genuine sentence start (a
+    capitalised word preceded by terminal punctuation or a pause >=
+    pause_threshold_s) and forward from win_end for the nearest terminal punct.
     A capitalised word is only used as a fallback split point when the window
     would exceed max_duration_s. Total duration capped at max_duration_s.
 
@@ -989,10 +994,20 @@ def _expand_to_sentence(
         anchor_start_idx,
     )
 
-    # Scan backward: find the nearest capitalised word (sentence start)
+    # Scan backward: find the nearest genuine sentence start — a capitalised word
+    # preceded by terminal punctuation or a pause >= pause_threshold_s.  This
+    # mirrors is_sentence_boundary so both the 1b debug and expansion use the
+    # same sentence resolution and mid-sentence capitals (proper nouns, etc.)
+    # don't prematurely terminate the scan.
     sent_start_idx = anchor_start_idx
     for i in range(anchor_start_idx, -1, -1):
-        if words[i].word and words[i].word[0].isupper():
+        if not (words[i].word and words[i].word[0].isupper()):
+            continue
+        if i == 0:
+            sent_start_idx = i
+            break
+        gap = words[i].start - words[i - 1].end
+        if words[i - 1].word.rstrip().endswith(_TERMINAL_PUNCT) or gap >= pause_threshold_s:
             sent_start_idx = i
             break
 
