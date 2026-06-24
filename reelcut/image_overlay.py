@@ -96,7 +96,8 @@ def render_image_frames(
                 y = (h - logo_h) // 2
             x = (w - target_w) // 2
 
-        start_frame = int(cue.start * fps)
+        delay_frames = int(config.start_delay_s * fps)
+        start_frame = max(int(cue.start * fps), delay_frames)
         end_frame = int(cue.end * fps)
         total = end_frame - start_frame
         if total <= 0:
