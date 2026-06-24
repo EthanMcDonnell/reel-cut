@@ -231,6 +231,68 @@ def test_leading_insertion_on_abandoned_take():
     assert_keep_last(words, starts)
 
 
+# Real clip: salesforce-idle-kubernetes-agent (2026-06-24), ~1:00–1:07.
+# Three segments back-to-back:
+#   seg1  "they could easily see that it was."   ← flub of scripted "…see it."
+#   seg2  "it was literally the no…"             ← abandoned false start
+#   seg3  "it was literally that nobody could cut it."  ← the good take
+# Two *different* disfluencies are stacked here, and only one is a retake:
+#   • seg2→seg3 is a true retake ("it was literally" repeats) — detected & cut.
+#   • seg1's tail "that it was" is a SCRIPT substitution ("see it" → "see that
+#     it was"), not a repeat of anything. It leaks into the kept audio as
+#     "…they could easily see that it was. It was literally that nobody…".
+# These two tests pin both halves: the retake half must keep working (below),
+# and the leaked-flub half is captured as the xfail spec further down.
+
+def test_salesforce_abandoned_take_is_cut_leftover_documented():
+    """The abandoned 'it was literally the no…' take is correctly cut.
+
+    This is the half the retake detector *can* see: 'it was literally' repeats
+    in seg2 and seg3, so the cut runs from seg2's start to seg3's (the keeper).
+    seg1 and seg3 are kept. Regression guard: do not let a future change to the
+    leading-flub problem below break this correct, repetition-based cut.
+
+    Note what survives: seg1's tail 'that it was' stays in the kept audio. That
+    is expected here and is the subject of the xfail spec immediately below — it
+    is out of scope for *repetition*-based detection.
+    """
+    words, starts = build("they could easily see that it was",
+                          "it was literally the no",
+                          "it was literally that nobody could cut it")
+    r = R(words)
+    assert len(r) == 1, f"expected exactly the seg2 retake cut, got {r}"
+    assert r[0][0] == pytest.approx(starts[1]), "cut should start at the abandoned take"
+    assert r[0][1] == pytest.approx(starts[2]), "cut should end at the keeper (seg3)"
+
+
+@pytest.mark.xfail(strict=True, reason=(
+    "seg1's tail 'that it was' is a script substitution ('see it' → 'see that "
+    "it was'), not a repeat — no counterpart exists in any later take, so "
+    "repetition matching structurally cannot reach it. It is also HARDER than "
+    "test_leading_insertion_on_abandoned_take: the leftover sits across the "
+    "region's largest silence (the seg1→seg2 pause), so snapping the cut back "
+    "to the nearest silence boundary stops short of it. Cutting it needs "
+    "alignment against the teleprompter script (the cluster/script-similarity "
+    "rewrite in RETAKE_DETECTION_NOTES.md), which knows the line was 'see it'."))
+def test_salesforce_leading_flub_sentence_should_also_be_cut():
+    """Ideal: the leading flubbed sentence is absorbed into the cut too.
+
+    seg1 'they could easily see that it was' should collapse to the scripted
+    'they could easily see', dropping the 'that it was' substitution. Combined
+    with the seg2 retake cut, the single ideal cut therefore runs from seg1's
+    'that' through to the keeper (seg3) — flips to XPASS when the rewrite that
+    consults the script lands, forcing a deliberate review.
+    """
+    words, starts = build("they could easily see that it was",
+                          "it was literally the no",
+                          "it was literally that nobody could cut it")
+    that_start = words[4].start  # they(0) could(1) easily(2) see(3) that(4)
+    r = R(words)
+    assert len(r) == 1, f"expected one merged cut, got {r}"
+    assert r[0][0] == pytest.approx(that_start), "cut should start at the leading flub 'that'"
+    assert r[0][1] == pytest.approx(starts[2]), "cut should end at the keeper (seg3)"
+
+
 def test_trailing_junk_on_abandoned_take_absorbed():
     """Trailing flub on the abandoned take is between matched-end and keeper → cut."""
     words, starts = build("the model runs locally now wait no",
