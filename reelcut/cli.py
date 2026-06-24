@@ -228,6 +228,132 @@ def run(
 
 
 # ---------------------------------------------------------------------------
+# reelcut split-hooks  (Phase 2 — multi-hook A/B variants)
+# ---------------------------------------------------------------------------
+
+@app.command(name="split-hooks")
+def split_hooks(
+    config_path: str = typer.Argument("config.yaml", help="Path to config.yaml"),
+    captions_path: str = typer.Argument(..., help="Path to the master .captions.json (multi-hook take)"),
+    render: bool = typer.Option(False, "--render", help="Render each variant; otherwise just emit variant dirs."),
+    slug: str | None = typer.Option(None, "--slug", help="Master slug (overrides dir name)."),
+    verbose: bool = typer.Option(False, "--verbose", "-v"),
+) -> None:
+    """Split a multi-hook take into N standalone variant videos (one per hook + shared body).
+
+    Reads `hooks.json` (LLM-authored boundaries) next to the captions file and emits, for
+    each hook, a sibling `assets/<slug>-hookN/` dir with its own captions/headings/images,
+    then renders `output/<slug>-hookN.mp4` (with --render)."""
+    import json
+    import math
+
+    from .captions_doc import load_captions_doc, save_captions_doc
+    from .config import load_config
+    from .heading import _SERIES_TOKEN_RE, _series_number
+    from .hook_split import (
+        build_variant_doc, edl_edges, filter_images, hook_output_duration,
+        make_variant_heading, snap_boundary,
+    )
+
+    try:
+        cfg = load_config(config_path)
+    except (FileNotFoundError, ValueError) as exc:
+        err_console.print(f"[red]Config error:[/red] {exc}")
+        raise typer.Exit(1)
+
+    cap_path = Path(captions_path)
+    if not cap_path.exists():
+        err_console.print(f"[red]Error:[/red] captions file not found: {cap_path}")
+        raise typer.Exit(1)
+
+    hooks_path = cap_path.parent / "hooks.json"
+    if not hooks_path.exists():
+        err_console.print(
+            f"[red]Error:[/red] hooks.json not found at {hooks_path}. "
+            "split-hooks only applies to multi-hook takes — author hooks.json first "
+            "(see produce-video Step 4c)."
+        )
+        raise typer.Exit(1)
+
+    doc = load_captions_doc(cap_path)
+    hooks_data = json.loads(hooks_path.read_text())
+    hooks = hooks_data.get("hooks", [])
+    body_start = float(hooks_data["body_start"])
+    if not hooks:
+        err_console.print(f"[red]Error:[/red] hooks.json has no hooks: {hooks_path}")
+        raise typer.Exit(1)
+
+    master_slug = _resolve_slug(cfg, slug) or cap_path.parent.name
+    registry_path = cap_path.parent.parent / "series_index.json"
+
+    # Resolve the episode number ONCE for the master slug, so all variants share the
+    # same Day {n} (§8). Variants get a literal number baked in → they never touch the
+    # registry and can't drift apart.
+    series = None
+    for h in hooks:
+        for text in (h.get("subtitle", ""), h.get("title", "")):
+            m = _SERIES_TOKEN_RE.search(text or "")
+            if m:
+                series = m.group(1)
+                break
+        if series:
+            break
+    episode_number = _series_number(series, master_slug, registry_path) if series else None
+    if episode_number is not None:
+        console.print(f"  Episode number for [cyan]{master_slug}[/cyan] in [cyan]{series}[/cyan]: {episode_number}")
+
+    edges = edl_edges(doc.edl)
+    images_path = cap_path.parent / "images.json"
+    master_images = json.loads(images_path.read_text()) if images_path.exists() else []
+    audio_path = cap_path.parent / "audio.json"
+    assets_dir = cap_path.parent.parent
+
+    render_cmds: list[str] = []
+    for i, hook in enumerate(hooks, 1):
+        hs = snap_boundary(float(hook["start"]), edges)
+        he = snap_boundary(float(hook["end"]), edges)
+        bs = snap_boundary(body_start, edges)
+        variant_doc = build_variant_doc(doc, (hs, he), bs)
+
+        variant_slug = f"{master_slug}-hook{i}"
+        vdir = assets_dir / variant_slug
+        vdir.mkdir(parents=True, exist_ok=True)
+
+        cap_out = vdir / f"{variant_slug}.captions.json"
+        save_captions_doc(variant_doc, cap_out)
+
+        heading = make_variant_heading(hook, hook_output_duration(doc.edl, (hs, he)), episode_number)
+        (vdir / "headings.json").write_text(json.dumps([heading], indent=2) + "\n")
+
+        included = [(hs, he), (bs, math.inf)]
+        (vdir / "images.json").write_text(json.dumps(filter_images(master_images, included), indent=2) + "\n")
+
+        if audio_path.exists():
+            (vdir / "audio.json").write_text(audio_path.read_text())
+
+        console.print(f"[green]Variant {i}/{len(hooks)} →[/green] {vdir}")
+
+        if render:
+            out_dir = Path(cfg.output.location)
+            out_dir.mkdir(parents=True, exist_ok=True)
+            output_path = out_dir / f"{variant_slug}.mp4"
+            console.rule(f"[bold]Rendering → {output_path}[/bold]")
+            _phase2(
+                cfg, variant_doc, output_path, verbose,
+                headings_path=vdir / "headings.json",
+                images_path=vdir / "images.json",
+                audio_path=vdir / "audio.json",
+            )
+        else:
+            render_cmds.append(f"reelcut render {config_path} {cap_out}")
+
+    if not render:
+        console.print("\n[bold]Render each variant:[/bold]")
+        for c in render_cmds:
+            console.print(f"  [cyan]{c}[/cyan]")
+
+
+# ---------------------------------------------------------------------------
 # reelcut preview-edl
 # ---------------------------------------------------------------------------
 
