@@ -20,12 +20,16 @@ class ImageCue:
 def detect_image_cues(
     words: list[WordTimestamp],
     config: ImagesConfig,
+    reset_boundaries: list[float] | None = None,
 ) -> list[ImageCue]:
     """Scan output-timeline words against logos manifest; return first-occurrence cues.
 
-    Each matched shortname is emitted at most once (first occurrence in the output
-    timeline). Handles possessives ("Anthropic's"), possessive-plurals ("Anthropics'"),
-    and plain plurals ("APIs") by trying slug variants before giving up.
+    Each matched shortname is emitted at most once *per section* — by default the whole
+    video is one section, so a logo fires once. `reset_boundaries` (output-timeline
+    seconds, e.g. heading-card edges) clear the seen set as the timeline crosses each
+    boundary, so a brand re-mentioned in a later section fires its logo again there.
+    Handles possessives ("Anthropic's"), possessive-plurals ("Anthropics'"), and plain
+    plurals ("APIs") by trying slug variants before giving up.
     """
     from .image_resolver import load_manifest, normalize_slug, resolve_logo
 
@@ -49,7 +53,18 @@ def detect_image_cues(
     seen: set[str] = set()
     cues: list[ImageCue] = []
 
+    boundaries = sorted(t for t in (reset_boundaries or []) if t > 0)
+    bi = 0
+
     for word in words:
+        # Crossing one or more section boundaries clears the seen set so logos re-fire.
+        crossed = False
+        while bi < len(boundaries) and word.start >= boundaries[bi]:
+            bi += 1
+            crossed = True
+        if crossed:
+            seen.clear()
+
         variants = _slug_variants(word.word, normalize_slug)
 
         # Whisper capitalises proper nouns — a lowercase word is almost certainly a

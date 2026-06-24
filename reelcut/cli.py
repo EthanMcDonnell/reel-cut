@@ -608,10 +608,19 @@ def _phase2(cfg, doc, output_path: Path, verbose: bool, headings_path: Path | No
             )
             _tlog(time.perf_counter() - t, f"{len(caption_frames)} frames")
 
+        # Heading specs (output-timeline) — loaded once: their card edges double as the
+        # logo-reset boundaries so a brand re-mentioned in a later section re-fires its logo.
+        total_output_s = sum(e.end - e.start for e in edl if e.keep)
+        heading_specs = []
+        if cfg.headings.enabled and headings_path and headings_path.exists():
+            from .heading import load_headings
+            heading_specs = load_headings(headings_path)
+        logo_reset_boundaries = _heading_reset_boundaries(heading_specs, total_output_s)
+
         # Image cues: logos (auto-detected from words) + people/screenshots (from images.json)
         all_image_cues: list[ImageCue] = []
         if cfg.images.enabled:
-            logo_cues = detect_image_cues(caption_words, cfg.images)
+            logo_cues = detect_image_cues(caption_words, cfg.images, logo_reset_boundaries)
             all_image_cues.extend(logo_cues)
             if logo_cues:
                 console.print(f"  Logos detected: {[c.keyword for c in logo_cues]}")
@@ -651,26 +660,23 @@ def _phase2(cfg, doc, output_path: Path, verbose: bool, headings_path: Path | No
             _tlog(time.perf_counter() - t)
 
         # Heading overlays — hand-authored title cards (headings.json), composited on top
-        if cfg.headings.enabled and headings_path and headings_path.exists():
-            from .heading import load_headings, render_heading_frames
-            headings = load_headings(headings_path)
-            if headings:
-                console.print(f"[bold]Step 6b+/6[/bold] Rendering {len(headings)} heading(s)…")
-                t = time.perf_counter()
-                from .image_overlay import merge_with_caption_frames
-                total_output_s = sum(e.end - e.start for e in edl if e.keep)
-                heading_frames = render_heading_frames(
-                    headings, cfg.headings, tmp / "heading_frames",
-                    fps=cfg.output.fps,
-                    resolution=tuple(cfg.output.resolution),
-                    total_output_s=total_output_s,
-                    slug=headings_path.parent.name,
-                    registry_path=headings_path.parent.parent / "series_index.json",
-                )
-                caption_frames = merge_with_caption_frames(
-                    heading_frames, caption_frames, tuple(cfg.output.resolution),
-                )
-                _tlog(time.perf_counter() - t, f"{len(heading_frames)} frames")
+        if cfg.headings.enabled and heading_specs:
+            from .heading import render_heading_frames
+            console.print(f"[bold]Step 6b+/6[/bold] Rendering {len(heading_specs)} heading(s)…")
+            t = time.perf_counter()
+            from .image_overlay import merge_with_caption_frames
+            heading_frames = render_heading_frames(
+                heading_specs, cfg.headings, tmp / "heading_frames",
+                fps=cfg.output.fps,
+                resolution=tuple(cfg.output.resolution),
+                total_output_s=total_output_s,
+                slug=headings_path.parent.name,
+                registry_path=headings_path.parent.parent / "series_index.json",
+            )
+            caption_frames = merge_with_caption_frames(
+                heading_frames, caption_frames, tuple(cfg.output.resolution),
+            )
+            _tlog(time.perf_counter() - t, f"{len(heading_frames)} frames")
 
         # Background audio (audio.json) — music/SFX mixed under the voice
         audio_tracks = _resolve_audio_tracks(cfg, edl, audio_path, warnings)
@@ -684,6 +690,20 @@ def _phase2(cfg, doc, output_path: Path, verbose: bool, headings_path: Path | No
         console.print(f"\n[green bold]Done![/green bold] → {out}  ({time.perf_counter() - t:.1f}s)")
 
     return warnings
+
+
+def _heading_reset_boundaries(heading_specs: list, total_output_s: float) -> list[float]:
+    """Output-timeline times at which logo dedup should reset — the start and end of every
+    titled heading card. Each card marks a new section, so a brand named again after a card
+    edge re-fires its logo. Empty-title (stub) headings don't count."""
+    bounds: set[float] = set()
+    for h in heading_specs:
+        if not h.title:
+            continue
+        end = total_output_s if h.end < 0 else h.end
+        bounds.add(round(h.start, 4))
+        bounds.add(round(end, 4))
+    return sorted(b for b in bounds if b > 0)
 
 
 def _resolve_audio_tracks(cfg, edl, audio_path: Path | None, warnings: list[str]) -> list[dict]:

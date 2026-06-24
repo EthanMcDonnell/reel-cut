@@ -43,6 +43,25 @@ class TestRenderHeadingFrames:
         png = frames[0].image_path
         assert Image.open(png).size == (108, 192)
 
+    def test_back_to_back_headings_each_get_own_window(self, tmp_path):
+        # Three sequential cards (e.g. stacked hooks) must each render to their own PNG
+        # over their own frame range, with no collisions.
+        cfg = HeadingsConfig()
+        heads = [
+            HeadingSpec(title="Hook One", start=0.0, end=2.0),
+            HeadingSpec(title="Hook Two", start=2.0, end=4.0),
+            HeadingSpec(title="Hook Three", start=4.0, end=6.0),
+        ]
+        frames = render_heading_frames(heads, cfg, tmp_path, fps=30, resolution=(108, 192))
+        assert len(frames) == 30 * 6                      # full 6s covered, no gaps
+        assert len({f.frame_number for f in frames}) == len(frames)  # no duplicate frames
+        by_png = {}
+        for f in frames:
+            by_png.setdefault(f.image_path, []).append(f.frame_number)
+        assert len(by_png) == 3                           # one distinct PNG per card
+        ranges = sorted((min(v), max(v)) for v in by_png.values())
+        assert ranges == [(0, 59), (60, 119), (120, 179)]
+
     def test_skips_empty_or_zero_length(self, tmp_path):
         cfg = HeadingsConfig()
         heads = [
