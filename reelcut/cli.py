@@ -239,11 +239,11 @@ def split_hooks(
     slug: str | None = typer.Option(None, "--slug", help="Master slug (overrides dir name)."),
     verbose: bool = typer.Option(False, "--verbose", "-v"),
 ) -> None:
-    """Split a multi-hook take into N standalone variant videos (one per hook + shared body).
+    """Split a multi-hook take into N variant videos (one per hook + the shared body).
 
-    Reads `hooks.json` (LLM-authored boundaries) next to the captions file and emits, for
-    each hook, a sibling `assets/<slug>-hookN/` dir with its own captions/headings/images,
-    then renders `output/<slug>-hookN.mp4` (with --render)."""
+    Slices each hook and the body into their own segment dir under `assets/`, renders
+    each once, then (with --render) concatenates `hookN + body` into
+    `output/<slug>-hookN.mp4` — so the body is encoded once, not N times."""
     import json
     import math
 
@@ -251,8 +251,8 @@ def split_hooks(
     from .config import load_config
     from .heading import _SERIES_TOKEN_RE, _series_number
     from .hook_split import (
-        build_variant_doc, edl_edges, filter_images, hook_output_duration,
-        make_variant_heading, snap_boundary,
+        build_segment_doc, edl_edges, filter_images, make_variant_heading,
+        segment_output_duration, snap_boundary,
     )
 
     try:
@@ -307,50 +307,76 @@ def split_hooks(
     master_images = json.loads(images_path.read_text()) if images_path.exists() else []
     audio_path = cap_path.parent / "audio.json"
     assets_dir = cap_path.parent.parent
+    bs = snap_boundary(body_start, edges)
 
-    render_cmds: list[str] = []
+    def _write_segment(seg_slug: str, seg_doc, headings: list, included: list) -> Path:
+        """Persist a segment's dir (captions + headings + filtered images + audio) and
+        return the segment dir."""
+        sdir = assets_dir / seg_slug
+        sdir.mkdir(parents=True, exist_ok=True)
+        save_captions_doc(seg_doc, sdir / f"{seg_slug}.captions.json")
+        (sdir / "headings.json").write_text(json.dumps(headings, indent=2) + "\n")
+        (sdir / "images.json").write_text(json.dumps(filter_images(master_images, included), indent=2) + "\n")
+        if audio_path.exists():
+            (sdir / "audio.json").write_text(audio_path.read_text())
+        return sdir
+
+    # The shared body: sliced and rendered once, then concatenated after each hook.
+    body_slug = f"{master_slug}-body"
+    body_doc = build_segment_doc(doc, bs, math.inf)
+    body_dir = _write_segment(body_slug, body_doc, headings=[], included=[(bs, math.inf)])
+    console.print(f"[green]Body segment →[/green] {body_dir}")
+
+    # Each hook: sliced into its own segment with its heading card.
+    hook_segments: list[tuple[str, object, Path]] = []
     for i, hook in enumerate(hooks, 1):
         hs = snap_boundary(float(hook["start"]), edges)
         he = snap_boundary(float(hook["end"]), edges)
-        bs = snap_boundary(body_start, edges)
-        variant_doc = build_variant_doc(doc, (hs, he), bs)
-
-        variant_slug = f"{master_slug}-hook{i}"
-        vdir = assets_dir / variant_slug
-        vdir.mkdir(parents=True, exist_ok=True)
-
-        cap_out = vdir / f"{variant_slug}.captions.json"
-        save_captions_doc(variant_doc, cap_out)
-
-        heading = make_variant_heading(hook, hook_output_duration(doc.edl, (hs, he)), episode_number)
-        (vdir / "headings.json").write_text(json.dumps([heading], indent=2) + "\n")
-
-        included = [(hs, he), (bs, math.inf)]
-        (vdir / "images.json").write_text(json.dumps(filter_images(master_images, included), indent=2) + "\n")
-
-        if audio_path.exists():
-            (vdir / "audio.json").write_text(audio_path.read_text())
-
-        console.print(f"[green]Variant {i}/{len(hooks)} →[/green] {vdir}")
-
-        if render:
-            out_dir = Path(cfg.output.location)
-            out_dir.mkdir(parents=True, exist_ok=True)
-            output_path = out_dir / f"{variant_slug}.mp4"
-            console.rule(f"[bold]Rendering → {output_path}[/bold]")
-            _phase2(
-                cfg, variant_doc, output_path, verbose,
-                headings_path=vdir / "headings.json",
-                images_path=vdir / "images.json",
-                audio_path=vdir / "audio.json",
-            )
-        else:
-            render_cmds.append(f"reelcut render {config_path} {cap_out}")
+        hook_doc = build_segment_doc(doc, hs, he)
+        heading = make_variant_heading(hook, segment_output_duration(doc.edl, hs, he), episode_number)
+        hook_slug = f"{master_slug}-hook{i}"
+        hdir = _write_segment(hook_slug, hook_doc, headings=[heading], included=[(hs, he)])
+        hook_segments.append((hook_slug, hook_doc, hdir))
+        console.print(f"[green]Hook {i}/{len(hooks)} segment →[/green] {hdir}")
 
     if not render:
-        console.print("\n[bold]Render each variant:[/bold]")
-        for c in render_cmds:
-            console.print(f"  [cyan]{c}[/cyan]")
+        console.print(
+            "\n[bold]Segments emitted.[/bold] Re-run with [cyan]--render[/cyan] to render each "
+            "segment once and concatenate hookN + body into the finals."
+        )
+        return
+
+    from .renderer import concat_videos
+
+    out_dir = Path(cfg.output.location)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp = Path(tmpdir)
+
+        # Render the shared body once.
+        body_mp4 = tmp / f"{body_slug}.mp4"
+        console.rule(f"[bold]Rendering body (once) → {body_mp4.name}[/bold]")
+        _phase2(
+            cfg, body_doc, body_mp4, verbose,
+            headings_path=body_dir / "headings.json",
+            images_path=body_dir / "images.json",
+            audio_path=body_dir / "audio.json",
+        )
+
+        # Render each hook once, then concat hookN + body into the final.
+        for hook_slug, hook_doc, hdir in hook_segments:
+            hook_mp4 = tmp / f"{hook_slug}.mp4"
+            console.rule(f"[bold]Rendering {hook_slug} → {hook_mp4.name}[/bold]")
+            _phase2(
+                cfg, hook_doc, hook_mp4, verbose,
+                headings_path=hdir / "headings.json",
+                images_path=hdir / "images.json",
+                audio_path=hdir / "audio.json",
+            )
+            final = out_dir / f"{hook_slug}.mp4"
+            console.print(f"  Concatenating → {final}")
+            concat_videos([hook_mp4, body_mp4], final)
+            console.print(f"[green bold]Variant →[/green bold] {final}")
 
 
 # ---------------------------------------------------------------------------

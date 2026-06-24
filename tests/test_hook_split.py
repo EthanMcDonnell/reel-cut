@@ -1,4 +1,4 @@
-"""Tests for the multi-hook splitter — variant slicing, headings, image filtering, snapping."""
+"""Tests for the multi-hook splitter — segment slicing, headings, image filtering, snapping."""
 import json
 import math
 from pathlib import Path
@@ -8,11 +8,11 @@ from typer.testing import CliRunner
 from reelcut.captions_doc import CaptionsDoc, CaptionWord, EdlEntry, save_captions_doc
 from reelcut.cli import app
 from reelcut.hook_split import (
-    build_variant_doc,
+    build_segment_doc,
     edl_edges,
     filter_images,
-    hook_output_duration,
     make_variant_heading,
+    segment_output_duration,
     snap_boundary,
 )
 
@@ -44,33 +44,27 @@ def _doc() -> CaptionsDoc:
     return CaptionsDoc(source_clips=[CLIP], edl=edl, words=words)
 
 
-class TestBuildVariantDoc:
-    def test_hook1_keeps_hook1_and_body_only(self):
-        doc = build_variant_doc(_doc(), (1.0, 2.0), 5.0)
-        kept = [w.word for w in doc.words]
-        assert kept == ["Alpha", "one", "See", "the", "body", "here"]
-        assert "Beta" not in kept and "two" not in kept
+class TestBuildSegmentDoc:
+    def test_hook1_segment_is_hook1_only(self):
+        seg = build_segment_doc(_doc(), 1.0, 2.0)
+        assert [w.word for w in seg.words] == ["Alpha", "one"]
+        assert [(e.start, e.end, e.keep) for e in seg.edl] == [(1.0, 2.0, True)]
 
-    def test_edl_is_hook_then_bridge_then_body(self):
-        doc = build_variant_doc(_doc(), (1.0, 2.0), 5.0)
-        spans = [(e.start, e.end, e.keep) for e in doc.edl]
-        assert spans == [(1.0, 2.0, True), (2.0, 5.0, False), (5.0, 8.0, True)]
+    def test_hook2_segment_is_hook2_only(self):
+        seg = build_segment_doc(_doc(), 3.0, 4.0)
+        assert [w.word for w in seg.words] == ["Beta", "two"]
+        assert [(e.start, e.end, e.keep) for e in seg.edl] == [(3.0, 4.0, True)]
 
-    def test_output_length_is_hook_plus_body_kept(self):
-        doc = build_variant_doc(_doc(), (1.0, 2.0), 5.0)
-        total = sum(e.end - e.start for e in doc.edl if e.keep)
-        assert total == 4.0  # hook1 1.0s + body 3.0s
-
-    def test_hook2_variant_drops_hook1(self):
-        doc = build_variant_doc(_doc(), (3.0, 4.0), 5.0)
-        kept = [w.word for w in doc.words]
-        assert kept == ["Beta", "two", "See", "the", "body", "here"]
+    def test_body_segment_is_body_only(self):
+        seg = build_segment_doc(_doc(), 5.0, math.inf)
+        assert [w.word for w in seg.words] == ["See", "the", "body", "here"]
+        assert [(e.start, e.end, e.keep) for e in seg.edl] == [(5.0, 8.0, True)]
 
 
-class TestHookOutputDuration:
+class TestSegmentOutputDuration:
     def test_sums_kept_overlap(self):
-        assert hook_output_duration(_doc().edl, (1.0, 2.0)) == 1.0
-        assert hook_output_duration(_doc().edl, (3.0, 4.0)) == 1.0
+        assert segment_output_duration(_doc().edl, 1.0, 2.0) == 1.0
+        assert segment_output_duration(_doc().edl, 5.0, math.inf) == 3.0
 
 
 class TestMakeVariantHeading:
@@ -99,10 +93,9 @@ class TestFilterImages:
             {"type": "concept", "start": 3.2, "end": 3.8, "name": "hook2-thing"},
             {"type": "person", "start": 6.0, "end": 6.5, "name": "Body Person"},
         ]
-        hook1 = filter_images(images, [(1.0, 2.0), (5.0, math.inf)])
-        assert [i["name"] for i in hook1] == ["Body Person"]
-        hook2 = filter_images(images, [(3.0, 4.0), (5.0, math.inf)])
-        assert [i["name"] for i in hook2] == ["hook2-thing", "Body Person"]
+        assert [i["name"] for i in filter_images(images, [(1.0, 2.0)])] == []
+        assert [i["name"] for i in filter_images(images, [(3.0, 4.0)])] == ["hook2-thing"]
+        assert [i["name"] for i in filter_images(images, [(5.0, math.inf)])] == ["Body Person"]
 
 
 class TestSnapBoundary:
@@ -130,7 +123,7 @@ class TestSplitHooksCommand:
         assert result.exit_code != 0
         assert "hooks.json" in result.output
 
-    def test_emits_variant_dirs(self, tmp_path):
+    def test_emits_body_and_hook_segments(self, tmp_path):
         config = str(Path(__file__).parent.parent / "config.yaml")
         viddir = tmp_path / "assets" / "vid"
         viddir.mkdir(parents=True)
@@ -151,12 +144,16 @@ class TestSplitHooksCommand:
         result = CliRunner().invoke(app, ["split-hooks", config, str(cap)])
         assert result.exit_code == 0, result.output
 
-        # Two sibling variant dirs under assets/, both Day 1 (same episode).
-        h1 = tmp_path / "assets" / "vid-hook1"
-        h2 = tmp_path / "assets" / "vid-hook2"
+        assets = tmp_path / "assets"
+        body, h1, h2 = assets / "vid-body", assets / "vid-hook1", assets / "vid-hook2"
+
+        # Body has no heading card and owns the body-anchored image.
+        assert json.loads((body / "headings.json").read_text()) == []
+        assert [i["name"] for i in json.loads((body / "images.json").read_text())] == ["Body Person"]
+
+        # Each hook carries its own card, both the same episode (Day 1), and only its own image.
         for d in (h1, h2):
             assert (d / f"{d.name}.captions.json").exists()
             assert json.loads((d / "headings.json").read_text())[0]["subtitle"] == "Day 1"
-        # hook2-only image only lands in the hook2 variant.
-        assert [i["name"] for i in json.loads((h1 / "images.json").read_text())] == ["Body Person"]
-        assert [i["name"] for i in json.loads((h2 / "images.json").read_text())] == ["hook2-thing", "Body Person"]
+        assert json.loads((h1 / "images.json").read_text()) == []
+        assert [i["name"] for i in json.loads((h2 / "images.json").read_text())] == ["hook2-thing"]

@@ -1,18 +1,18 @@
-"""Multi-hook split — slice a multi-hook take into N standalone variant docs.
+"""Multi-hook split — slice a multi-hook take into per-segment docs for concat.
 
 A single teleprompter take records N alternative hooks up front followed by one
-shared body. Each variant video = hook_i + the shared body, rendered as a complete
-standalone video so every "once per video" feature (logo first-occurrence, heading,
-concept gag) is correct for free. This module holds the pure, deterministic slicing
-logic; the LLM-authored boundaries live in `hooks.json` and the `reelcut split-hooks`
-command drives it.
+shared body. We slice each hook and the body into their own independent segment doc,
+render each **once**, then `ffmpeg`-concatenate `hookN + body` into N final videos —
+so the body is encoded once, not N times. (Tradeoff: logos are deduped per render, so
+a brand named in both a hook and the body shows its logo in each.) This module holds
+the pure, deterministic slicing logic; the LLM-authored boundaries live in `hooks.json`
+and the `reelcut split-hooks` command drives it.
 
 All times here are **source-clip seconds** (same timeline as captions words/edl),
 except `make_variant_heading`, which emits **output-timeline** seconds for the card.
 """
 from __future__ import annotations
 
-import math
 from dataclasses import replace
 
 from .captions_doc import CaptionsDoc, EdlEntry
@@ -53,55 +53,27 @@ def _clip_edl(edl: list[EdlEntry], r_start: float, r_end: float) -> list[EdlEntr
     return out
 
 
-def build_variant_doc(
-    master: CaptionsDoc, hook_range: tuple[float, float], body_start: float
-) -> CaptionsDoc:
-    """Return a CaptionsDoc containing only `hook_range ∪ [body_start, ∞)`.
+def build_segment_doc(master: CaptionsDoc, start: float, end: float) -> CaptionsDoc:
+    """Return a CaptionsDoc containing only the words+EDL in `[start, end)`.
 
-    The span between the hook and the body (the other hooks + their pauses) is
-    replaced by a single cut entry so the EDL stays a continuous partition — the
-    output-timeline remap then places body words right after the hook with no gap.
-    Boundaries are assumed pre-snapped to EDL edges (see `snap_boundary`)."""
-    hook_start, hook_end = hook_range
-    clip = (
-        master.source_clips[0]
-        if master.source_clips
-        else (master.edl[0].source_clip if master.edl else "")
-    )
-
-    hook_edl = _clip_edl(master.edl, hook_start, hook_end)
-    body_edl = _clip_edl(master.edl, body_start, math.inf)
-
-    new_edl = list(hook_edl)
-    if body_start - hook_end > 1e-6:
-        new_edl.append(
-            EdlEntry(
-                source_clip=clip,
-                start=round(hook_end, 4),
-                end=round(body_start, 4),
-                keep=False,
-                reason="outtake",
-            )
-        )
-    new_edl.extend(body_edl)
-
-    new_words = [
-        w for w in master.words
-        if hook_start <= w.start < hook_end or w.start >= body_start
-    ]
+    Each hook and the shared body are sliced into their own independent segment doc
+    and rendered once; the finals are `ffmpeg`-concatenated (hookN + body) downstream.
+    Boundaries are assumed pre-snapped to EDL edges (see `snap_boundary`). Use
+    `end=math.inf` for the body (everything from body_start onward)."""
+    new_edl = _clip_edl(master.edl, start, end)
+    new_words = [w for w in master.words if start <= w.start < end]
     return CaptionsDoc(source_clips=list(master.source_clips), edl=new_edl, words=new_words)
 
 
-def hook_output_duration(edl: list[EdlEntry], hook_range: tuple[float, float]) -> float:
-    """Length of the hook on the variant's output timeline = sum of kept EDL
-    durations intersected with `hook_range`. Used for the heading's end time."""
-    hook_start, hook_end = hook_range
+def segment_output_duration(edl: list[EdlEntry], start: float, end: float) -> float:
+    """Length of `[start, end)` on the output timeline = sum of kept EDL durations
+    intersected with the range. Used for a hook's heading end time."""
     total = 0.0
     for e in edl:
         if not e.keep:
             continue
-        s = max(e.start, hook_start)
-        en = min(e.end, hook_end)
+        s = max(e.start, start)
+        en = min(e.end, end)
         if en > s:
             total += en - s
     return round(total, 4)
