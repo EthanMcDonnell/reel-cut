@@ -106,15 +106,15 @@ def _resolve_series_tokens(text: str, slug: str | None, registry_path: Path | No
 
 
 def _series_number(series: str, slug: str, registry_path: Path) -> int:
-    """This slug's 1-based position in `series` within the append-only registry. Appending a
-    new slug (and persisting it) is the only write — re-renders reuse the stored position, so
-    a video's number never drifts."""
+    """Return this slug's episode number in `series`. New slugs increment `last`; re-renders
+    reuse the stored number so a video's episode number never drifts."""
     registry = json.loads(registry_path.read_text()) if registry_path.exists() else {}
-    slugs = registry.setdefault(series, [])
-    if slug not in slugs:
-        slugs.append(slug)
+    entry = registry.setdefault(series, {"last": 0, "slugs": {}})
+    if slug not in entry["slugs"]:
+        entry["last"] += 1
+        entry["slugs"][slug] = entry["last"]
         registry_path.write_text(json.dumps(registry, indent=2) + "\n")
-    return slugs.index(slug) + 1
+    return entry["slugs"][slug]
 
 
 # ---------------------------------------------------------------------------
