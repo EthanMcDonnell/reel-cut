@@ -185,37 +185,6 @@ def _extract_segments(
     return paths
 
 
-def concat_videos(paths: list[Path], output: Path) -> Path:
-    """Join finished MP4s end-to-end with the concat demuxer (stream copy, no re-encode).
-
-    Requires identical encode params across inputs — true for clips rendered from the
-    same config. Used to splice `hookN + body` into a variant final without re-encoding
-    the shared body. Note: background music (if any) is not made continuous across the
-    seam — each input keeps its own audio — so enable music per-final, not per-segment.
-    """
-    import os
-
-    output.parent.mkdir(parents=True, exist_ok=True)
-    fd, list_path = tempfile.mkstemp(suffix=".txt")
-    try:
-        with os.fdopen(fd, "w") as f:
-            for p in paths:
-                f.write(f"file '{Path(p).resolve()}'\n")
-        cmd = (
-            ffmpeg
-            .input(list_path, format="concat", safe=0)
-            .output(str(output), c="copy", movflags="+faststart")
-            .overwrite_output()
-            .compile()
-        )
-        proc = subprocess.run(cmd, capture_output=True, timeout=300)
-        if proc.returncode != 0:
-            raise RuntimeError(f"FFmpeg concat failed:\n{proc.stderr.decode(errors='ignore')}")
-    finally:
-        os.unlink(list_path)
-    return output
-
-
 def _concatenate(segment_paths: list[Path], output: Path) -> None:
     """Write a concat list file and join segments with FFmpeg concat demuxer."""
     concat_list = output.parent / "concat_list.txt"
