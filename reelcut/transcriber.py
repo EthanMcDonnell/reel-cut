@@ -310,6 +310,7 @@ def retranscribe_suspicious_regions(
     min_silence_ms: int = 200,
     failure_tolerance_ratio: float = 0.02,
     vad_threshold: float = 0.5,
+    sentence_pause_s: float = 0.4,
 ) -> tuple[list[WordTimestamp], int, list[dict]]:
     """Detect and retranscribe suspicious audio regions to surface hidden false-start words.
 
@@ -439,7 +440,7 @@ def retranscribe_suspicious_regions(
     for orig_start, orig_end, label in raw_windows:
         exp_start, exp_end, hard_capped = _expand_to_sentence(
             words, orig_start, orig_end,
-            pause_threshold_s=config.cuts.sentence_pause_s,
+            pause_threshold_s=sentence_pause_s,
         )
         expansion_records.append({
             "orig_start": orig_start,

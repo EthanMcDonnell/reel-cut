@@ -505,6 +505,7 @@ def _phase1(cfg, clips: list[str], output_dir: Path, verbose: bool):
                 min_silence_ms=cfg.cuts.min_silence_ms,
                 failure_tolerance_ratio=cfg.cuts.failure_tolerance_ratio,
                 vad_threshold=cfg.cuts.vad_threshold,
+                sentence_pause_s=cfg.cuts.sentence_pause_s,
             )
             retrans_log.extend(clip_retrans_log)
             if n_retrans:
