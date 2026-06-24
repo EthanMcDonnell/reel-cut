@@ -15,6 +15,32 @@ screenshot = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(screenshot)
 
 
+class TestParseSnippetSpec:
+    def test_bare_string_becomes_article_snippet_with_empty_fields(self):
+        spec = screenshot._parse_snippet_spec("some text")
+        assert spec == {
+            "article_snippet": "some text",
+            "script_context": "",
+            "trigger_show_word": "",
+            "trigger_go_away_word": "",
+        }
+
+    def test_full_dict_passes_through_unchanged(self):
+        full = {
+            "article_snippet": "a",
+            "script_context": "b",
+            "trigger_show_word": "c",
+            "trigger_go_away_word": "d",
+        }
+        assert screenshot._parse_snippet_spec(full) == full
+
+    def test_partial_dict_fills_missing_keys_with_empty_string(self):
+        spec = screenshot._parse_snippet_spec({"article_snippet": "only this"})
+        assert spec["script_context"] == ""
+        assert spec["trigger_show_word"] == ""
+        assert spec["trigger_go_away_word"] == ""
+
+
 class TestCropWindow:
     def test_short_element_gets_min_height(self):
         _, h = screenshot._crop_window(el_top=400, el_height=20, vh=844)
