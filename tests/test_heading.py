@@ -117,8 +117,8 @@ class TestSeriesNumber:
         # Counters are per-series.
         assert _series_number("intrigue", "42-zip", reg) == 1
         assert json.loads(reg.read_text()) == {
-            "tbbt": ["openai-postgres", "dropbox-magic-pocket"],
-            "intrigue": ["42-zip"],
+            "tbbt": {"last": 2, "slugs": {"openai-postgres": 1, "dropbox-magic-pocket": 2}},
+            "intrigue": {"last": 1, "slugs": {"42-zip": 1}},
         }
 
     def test_token_renders_the_number(self, tmp_path):
