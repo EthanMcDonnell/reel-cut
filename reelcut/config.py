@@ -33,6 +33,13 @@ class CutsConfig(BaseModel):
     max_retake_span_s: float = 60.0    # max duration of a single retake cut (the failed
                                        # take's own length); decoupled from max_retake_gap_s,
                                        # which bounds only the silence between takes
+    min_reword_overlap: float = 0.6    # sentence-overlap retake pass: a sentence is a failed
+                                       # take if a later sentence repeats at least this fraction
+                                       # of its (stopword-filtered) content words. Catches
+                                       # REWORDED takes the literal n-gram matcher misses.
+    min_reword_content_words: int = 3  # min stopword-filtered content words a sentence needs
+                                       # before the overlap pass will consider it (guards short
+                                       # sentences whose few common words overlap coincidentally)
     mid_sentence_cut_floor_ms: int = 3000
     sentence_pause_s: float = 0.4           # sentence-boundary recovery: when Whisper omits a full
                                             # stop, a capitalised next word preceded by a pause >= this

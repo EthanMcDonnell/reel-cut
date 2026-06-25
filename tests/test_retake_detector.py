@@ -414,3 +414,59 @@ def test_real_clip_first_reworded_take_is_cut():
     take_a_start, take_a_end = 38.44, 43.34
     covered = any(s <= take_a_start and e >= take_a_end for s, e in ranges)
     assert covered, f"reworded take A (38.44–43.34s) not cut; ranges={ranges}"
+
+
+# ---------------------------------------------------------------------------
+# Sentence-overlap pass (reworded takes the positional matcher can't see)
+# ---------------------------------------------------------------------------
+
+def test_reworded_take_cut_by_sentence_overlap():
+    """A take re-recorded with different word order/connectives shares no long
+    contiguous run (so the positional pass misses it) but most of its content words —
+    the sentence-overlap pass cuts the failed take down to the reworded keeper."""
+    words = [
+        _w("The", 0.0, 0.3), _w("server", 0.4, 0.9), _w("crashed", 1.0, 1.5),
+        _w("completely", 1.6, 2.2), _w("yesterday.", 2.3, 2.9),
+        # 1s gap, same line reworded (kept)
+        _w("The", 3.9, 4.2), _w("server", 4.3, 4.8), _w("totally", 4.9, 5.4),
+        _w("crashed", 5.5, 6.0), _w("yesterday.", 6.1, 6.7),
+    ]
+    ranges, _ = detect_retakes(words, min_retake_words=3, max_retake_gap_s=12.0, min_match_ratio=0.5)
+    assert len(ranges) == 1
+    assert ranges[0][0] == pytest.approx(0.0)   # cut begins at the failed take
+    assert ranges[0][1] == pytest.approx(3.9)   # …and ends at the keeper's first word
+
+
+def test_distinct_sentences_sharing_glue_words_not_cut():
+    """Two genuinely different sentences that share only common/glue words must not be
+    treated as a retake — the stopword filter keeps the overlap near zero."""
+    words = [
+        _w("First", 0.0, 0.4), _w("configure", 0.5, 1.0), _w("the", 1.1, 1.3), _w("server.", 1.4, 1.9),
+        _w("Then", 2.9, 3.3), _w("restart", 3.4, 3.9), _w("the", 4.0, 4.2), _w("database.", 4.3, 4.8),
+    ]
+    ranges, _ = detect_retakes(words, min_retake_words=3, max_retake_gap_s=12.0, min_match_ratio=0.5)
+    assert ranges == []
+
+
+def test_reworded_pass_preserves_unique_sentence_between_take_and_reprise():
+    """A unique sentence sitting between a reworded failed take and its reprise must
+    survive: the cut covers only the failed take (up to the next sentence), never the
+    intervening kept content."""
+    # Content overlaps but no 3 consecutive words match, so only the sentence-overlap
+    # pass (not the positional matcher) can pair the take with its reprise.
+    words = [
+        # failed take
+        _w("Memory", 0.0, 0.4), _w("leaked", 0.5, 0.9), _w("because", 1.0, 1.5),
+        _w("pointers", 1.6, 2.1), _w("dangled.", 2.2, 2.7),
+        # unique kept sentence, only sentence punctuation separates it (<2s gaps)
+        _w("Birds", 3.0, 3.4), _w("fly", 3.5, 3.8), _w("high", 3.9, 4.3), _w("above.", 4.4, 4.9),
+        # reworded reprise (kept)
+        _w("Pointers", 5.2, 5.7), _w("dangled", 5.8, 6.2), _w("so", 6.3, 6.5),
+        _w("memory", 6.6, 7.0), _w("leaked.", 7.1, 7.6),
+    ]
+    ranges, _ = detect_retakes(words, min_retake_words=3, max_retake_gap_s=12.0, min_match_ratio=0.5)
+    assert len(ranges) == 1
+    assert ranges[0][0] == pytest.approx(0.0)
+    assert ranges[0][1] == pytest.approx(3.0)   # ends at the unique sentence's first word
+    # no cut overlaps the unique sentence "Birds fly high above." (3.0s–4.9s)
+    assert not any(s < 4.9 and e > 3.0 for s, e in ranges)

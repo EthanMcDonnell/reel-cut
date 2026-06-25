@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from collections import Counter
 from dataclasses import dataclass
 from .transcriber import WordTimestamp
 
@@ -27,6 +28,8 @@ def detect_retakes(
     max_retake_skip: int = 1,
     take_boundary_s: float = 2.0,
     max_retake_span_s: float = 60.0,
+    min_reword_overlap: float = 0.6,
+    min_reword_content_words: int = 3,
 ) -> tuple[list[tuple[float, float]], list[RetakeCandidate]]:
     """Detect repeated phrases (retakes) in a word list.
 
@@ -44,6 +47,14 @@ def detect_retakes(
     of the discarded take(s)) exceeds max_retake_span_s is dropped as a safety net —
     this bounds take *length*, separate from max_retake_gap_s, which bounds the gap
     *between* takes.
+
+    A second, independent pass (_detect_reworded_takes) then catches failed takes that
+    were re-recorded with DIFFERENT wording: the positional matcher above only sees
+    contiguous literal repeats, so a take reworded with different connective words
+    slips through. That pass compares whole sentences by stopword-filtered content-word
+    overlap (min_reword_overlap over min_reword_content_words), and its cuts are unioned
+    with the positional ones. Both are then snapped to take boundaries (silence gaps or
+    sentence ends), so a cut never begins or ends inside an utterance.
 
     Returns:
         Tuple of:
@@ -174,7 +185,15 @@ def detect_retakes(
                 if kept:
                     raw_cuts.add((ci, cj))
 
-    if not raw_cuts:
+    # Second, independent pass: catch REWORDED whole-sentence retakes the literal
+    # n-gram matcher misses (a take re-recorded with different connective words shares
+    # most of its content but no long contiguous run, so the positional ratio gate
+    # rejects it). Compared on stopword-filtered content-word overlap per sentence.
+    reworded = _detect_reworded_takes(
+        words, min_reword_overlap, min_reword_content_words, max_retake_gap_s
+    )
+
+    if not raw_cuts and not reworded:
         return [], candidates
 
     # Convert word-index pairs → time ranges, then merge overlapping ones.
@@ -189,12 +208,11 @@ def detect_retakes(
         if i < len(words) and j < len(words)
     )
 
-    merged: list[tuple[float, float]] = [time_cuts_raw[0]]
-    for t_start, t_end in time_cuts_raw[1:]:
-        prev_start, prev_end = merged[-1]
-        if t_start < prev_end:          # overlapping → same retake event
-            merged[-1] = (prev_start, min(prev_end, t_end))
-        else:                           # adjacent/separate → keep distinct
+    merged: list[tuple[float, float]] = []
+    for t_start, t_end in time_cuts_raw:
+        if merged and t_start < merged[-1][1]:   # overlapping → same retake event
+            merged[-1] = (merged[-1][0], min(merged[-1][1], t_end))
+        else:                                    # adjacent/separate → keep distinct
             merged.append((t_start, t_end))
 
     # Discard any range whose span exceeds max_retake_span_s. The span is the duration
@@ -226,7 +244,18 @@ def detect_retakes(
         else:
             bridged.append((t_start, t_end))
 
-    snapped = _snap_to_take_boundaries(bridged, words, take_boundary_s, max_retake_span_s)
+    # Fold the positional and reworded-take cuts into one set, bridge sub-second gaps
+    # between them (a reworded take's cut often abuts the literal cut of the next take
+    # in the same cluster), then snap the unified set to take boundaries.
+    combined = sorted(bridged + reworded)
+    rebridged: list[tuple[float, float]] = []
+    for t_start, t_end in combined:
+        if rebridged and t_start - rebridged[-1][1] <= max_retake_bridge_s:
+            rebridged[-1] = (rebridged[-1][0], max(rebridged[-1][1], t_end))
+        else:
+            rebridged.append((t_start, t_end))
+
+    snapped = _snap_to_take_boundaries(rebridged, words, take_boundary_s, max_retake_span_s)
     return snapped, candidates
 
 
@@ -260,12 +289,19 @@ def _snap_to_take_boundaries(
     if not ranges:
         return ranges
     n = len(words)
-    # boundary[k] == True when word k starts a new take, i.e. it is preceded by a
-    # silence at least take_boundary_s long. The clip start (k == 0) is deliberately
-    # NOT a boundary: snapping must only ever land on a real pause, never run across
-    # intervening kept content to the clip edge when no silence separates them.
+    # boundary[k] == True when word k starts a new take. A take starts either after a
+    # silence at least take_boundary_s long OR right after a sentence-final word
+    # (".", "?", "!"). The punctuation case is essential: a speaker often runs a KEPT
+    # sentence straight into the next failed take with only a breath (< take_boundary_s)
+    # between them, so silence alone can't tell them apart — without the sentence test
+    # the snap would walk across the kept sentence and swallow it. The clip start
+    # (k == 0) is deliberately NOT a boundary: snapping must only ever land on a real
+    # pause/sentence end, never run to the clip edge across intervening kept content.
     boundary = [
-        k > 0 and words[k].start - words[k - 1].end >= take_boundary_s
+        k > 0 and (
+            words[k].start - words[k - 1].end >= take_boundary_s
+            or _is_sentence_end(words[k - 1].word)
+        )
         for k in range(n)
     ]
 
@@ -306,6 +342,76 @@ def _snap_to_take_boundaries(
         else:
             out.append((s, e))
     return out
+
+
+# Generic glue words carry no topical meaning, so they would inflate the content
+# overlap between two unrelated sentences that merely share grammar. Excluded from
+# the reworded-take overlap so the signal is the topical words a real retake repeats.
+_STOPWORDS = frozenset({
+    "the", "a", "an", "and", "or", "but", "it", "its", "was", "were", "is", "are",
+    "am", "be", "been", "to", "of", "in", "on", "at", "so", "that", "this", "these",
+    "those", "with", "as", "for", "i",
+})
+
+
+def _is_sentence_end(word: str) -> bool:
+    """True when a word ends a sentence (terminal . ? !), excluding an ellipsis (…),
+    which marks a trailing-off mid-thought rather than a sentence boundary."""
+    return bool(re.search(r"[.?!]$", word)) and not word.endswith("...")
+
+
+def _content_words(seg: list[WordTimestamp]) -> "Counter[str]":
+    """Multiset of stopword-filtered, normalized content words in a sentence."""
+    return Counter(
+        norm for norm in (_normalize(w.word) for w in seg)
+        if norm and norm not in _STOPWORDS
+    )
+
+
+def _detect_reworded_takes(
+    words: list[WordTimestamp],
+    min_overlap: float,
+    min_content_words: int,
+    max_gap_s: float,
+) -> list[tuple[float, float]]:
+    """Find failed takes that were re-recorded with DIFFERENT wording.
+
+    The positional matcher (above) scores match_len / (j - i): a reworded take shares
+    its content words but reorders them and swaps connective tissue, so it has no long
+    contiguous run and the ratio gate rejects it. Here each sentence is compared to
+    later sentences by content-word overlap instead. A sentence is a failed take when a
+    later sentence (within max_gap_s of silence) repeats >= min_overlap of its content
+    words; the cut spans just that sentence (start → next sentence start), so the true
+    keeper and any unique sentence sitting between the take and its reprise are left
+    untouched — overlapping/adjacent cuts are unioned by the caller.
+    """
+    sentences: list[list[WordTimestamp]] = []
+    cur: list[WordTimestamp] = []
+    for w in words:
+        cur.append(w)
+        if _is_sentence_end(w.word):
+            sentences.append(cur)
+            cur = []
+    if cur:
+        sentences.append(cur)
+
+    contents = [_content_words(s) for s in sentences]
+    cuts: list[tuple[float, float]] = []
+    for i, seg in enumerate(sentences):
+        ci = contents[i]
+        if sum(ci.values()) < min_content_words:
+            continue
+        for j in range(i + 1, len(sentences)):
+            if sentences[j][0].start - seg[-1].end > max_gap_s:
+                break  # later sentences only get further away
+            cj = contents[j]
+            if sum(cj.values()) < min_content_words:
+                continue
+            if sum((ci & cj).values()) / sum(ci.values()) >= min_overlap:
+                nxt = sentences[i + 1][0].start if i + 1 < len(sentences) else seg[-1].end
+                cuts.append((seg[0].start, nxt))
+                break
+    return cuts
 
 
 def _normalize(word: str) -> str:
