@@ -231,6 +231,20 @@ def test_leading_insertion_on_abandoned_take():
     assert_keep_last(words, starts)
 
 
+def test_leading_insertion_cut_when_sentence_punctuation_present():
+    """Same leading-'so' take as the xfail above, but with sentence punctuation.
+
+    Real transcripts carry terminal punctuation, which the sentence-overlap pass uses
+    to compare whole takes by content-word overlap. The failed take "so the model runs
+    locally now." shares all its content words with the keeper (the leading 'so' is a
+    stopword), so it is cut as a whole sentence — the path the punctuation-free xfail
+    above can't reach.
+    """
+    words, starts = build("so the model runs locally now.",
+                          "the model runs locally now.")
+    assert_keep_last(words, starts)
+
+
 # Real clip: salesforce-idle-kubernetes-agent (2026-06-24), ~1:00–1:07.
 # Three segments back-to-back:
 #   seg1  "they could easily see that it was."   ← flub of scripted "…see it."
