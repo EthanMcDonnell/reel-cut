@@ -30,6 +30,9 @@ class CutsConfig(BaseModel):
     max_retake_bridge_s: float = 1.0   # bridge sub-second gaps between consecutive retake
                                        # ranges of the same cluster (failed-take fragments
                                        # stranded by n-gram anchor misalignment)
+    max_retake_span_s: float = 60.0    # max duration of a single retake cut (the failed
+                                       # take's own length); decoupled from max_retake_gap_s,
+                                       # which bounds only the silence between takes
     mid_sentence_cut_floor_ms: int = 3000
     sentence_pause_s: float = 0.4           # sentence-boundary recovery: when Whisper omits a full
                                             # stop, a capitalised next word preceded by a pause >= this

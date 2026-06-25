@@ -269,3 +269,54 @@ def test_consecutive_mismatches_still_stop_extension():
     ]
     ranges, _ = detect_retakes(words, min_retake_words=3, min_match_ratio=0.5, max_retake_skip=1)
     assert ranges == []
+
+
+# ---------------------------------------------------------------------------
+# Gap vs span: max_retake_gap_s bounds the silence BETWEEN takes, not take length
+# ---------------------------------------------------------------------------
+
+def _long_back_to_back_retake():
+    """Two takes of one long (~14s) sentence, recorded back-to-back (0.2s pause).
+
+    The take body is far longer than max_retake_gap_s, but the takes themselves are
+    adjacent. The seed n-gram ends ~1.5s in (words[2]); under the old guard the
+    'gap' was measured seed-end → take 2 = 12.7s and the take was wrongly rejected.
+    """
+    return [
+        _w("the",    0.0,  0.5),
+        _w("fix",    0.6,  1.0),
+        _w("is",     1.1,  1.5),   # seed = the/fix/is ends here, ~1.5s into take 1
+        _w("really", 1.6,  3.0),
+        _w("quite",  3.1,  6.0),
+        _w("simple", 6.1,  10.0),
+        _w("here",   10.1, 14.0),  # take 1 spans 0.0 → 14.0
+        _w("the",    14.2, 14.7),  # take 2 starts after a 0.2s pause
+        _w("fix",    14.8, 15.2),
+        _w("is",     15.3, 15.7),
+        _w("really", 15.8, 17.0),
+        _w("quite",  17.1, 20.0),
+        _w("simple", 20.1, 24.0),
+        _w("here",   24.1, 28.0),
+    ]
+
+
+def test_long_back_to_back_retake_not_rejected_by_proximity():
+    """A long sentence re-recorded back-to-back is cut even though its body exceeds
+    max_retake_gap_s — the gap is measured between takes (0.2s), not across take 1."""
+    words = _long_back_to_back_retake()
+    ranges, _ = detect_retakes(words, min_retake_words=3, max_retake_gap_s=12.0, min_match_ratio=0.5)
+    assert len(ranges) == 1
+    assert ranges[0][0] == pytest.approx(0.0)    # cut begins at take 1's first word
+    assert ranges[0][1] == pytest.approx(14.2)   # cut ends at take 2 (the keeper)
+
+
+def test_span_cap_discards_runaway_cut_independent_of_gap():
+    """The span filter is governed by max_retake_span_s, not max_retake_gap_s: with a
+    tight span cap the same adjacent-take cut (14.2s span) is dropped as a safety net,
+    even though the inter-take gap easily passes max_retake_gap_s."""
+    words = _long_back_to_back_retake()
+    ranges, _ = detect_retakes(
+        words, min_retake_words=3, max_retake_gap_s=20.0, min_match_ratio=0.5,
+        max_retake_span_s=10.0,
+    )
+    assert ranges == []

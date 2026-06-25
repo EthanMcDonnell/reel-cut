@@ -26,19 +26,24 @@ def detect_retakes(
     max_retake_bridge_s: float = 1.0,
     max_retake_skip: int = 1,
     take_boundary_s: float = 2.0,
+    max_retake_span_s: float = 60.0,
 ) -> tuple[list[tuple[float, float]], list[RetakeCandidate]]:
     """Detect repeated phrases (retakes) in a word list.
 
     Scans the transcript for sequences of >= min_retake_words consecutive words that
-    appear more than once within max_retake_gap_s seconds. For each repeated sequence,
-    the match is extended greedily forward to measure true overlap. Only pairs where
-    extended_match_len / cut_len > min_match_ratio are treated as retakes, preventing
-    short coincidental phrase overlaps from triggering large erroneous cuts. A ratio
-    exactly on the threshold is treated as a coincidental overlap and not cut.
+    recur with at most max_retake_gap_s of silence between consecutive takes. For each
+    repeated sequence, the match is extended greedily forward to measure true overlap.
+    Only pairs where extended_match_len / cut_len > min_match_ratio are treated as
+    retakes, preventing short coincidental phrase overlaps from triggering large
+    erroneous cuts. A ratio exactly on the threshold is treated as a coincidental
+    overlap and not cut.
 
     All occurrences except the final one are treated as failed takes and returned as
     (start, end) time ranges to cut. The cut range spans from the start of the repeated
-    phrase to the start of the final (kept) occurrence.
+    phrase to the start of the final (kept) occurrence. A cut whose span (the duration
+    of the discarded take(s)) exceeds max_retake_span_s is dropped as a safety net —
+    this bounds take *length*, separate from max_retake_gap_s, which bounds the gap
+    *between* takes.
 
     Returns:
         Tuple of:
@@ -96,10 +101,6 @@ def detect_retakes(
                 # Require a meaningful gap: j must be beyond the end of i's n-gram.
                 if j < i + min_retake_words:
                     continue
-                # Proximity guard: real false starts happen within seconds of each other.
-                gap_s = words[j].start - words[i + min_retake_words - 1].end
-                if gap_s > max_retake_gap_s:
-                    continue
 
                 # Greedily extend the match forward beyond the initial n-gram.
                 # A genuine retake sounds like what it replaces — it will extend far.
@@ -147,6 +148,16 @@ def detect_retakes(
                         break
                 match_len += back_match
                 ci, cj = i - back, j - back
+
+                # Proximity guard: a retake follows hard on the take it replaces, so the
+                # silence *between* them is short. Measure that pause at the cut boundary
+                # (end of the failed take's last word cj-1 → start of the keeper at cj) —
+                # only known after the backward extension locates the boundary. Measuring
+                # from the seed instead either spans the failed take's body (seed at take
+                # start, inflating the gap so long back-to-back retakes are wrongly
+                # rejected) or falls inside the keeper (interior seed, hiding a real gap).
+                if words[cj].start - words[cj - 1].end > max_retake_gap_s:
+                    continue
                 ratio = match_len / cut_len
 
                 kept = ratio > min_match_ratio
@@ -186,11 +197,15 @@ def detect_retakes(
         else:                           # adjacent/separate → keep distinct
             merged.append((t_start, t_end))
 
-    # Discard any range whose span exceeds max_retake_gap_s.
+    # Discard any range whose span exceeds max_retake_span_s. The span is the duration
+    # of the discarded take(s) (first failed take → final keeper), which scales with
+    # sentence length, so it gets its own larger cap — decoupled from max_retake_gap_s,
+    # which bounds only the silence between consecutive takes. This is a safety net
+    # against a runaway merge; genuine retakes are gated by the ratio test above.
     time_ranges = [
         (t_start, t_end)
         for t_start, t_end in merged
-        if t_end - t_start <= max_retake_gap_s
+        if t_end - t_start <= max_retake_span_s
     ]
 
     # Bridge tiny gaps between consecutive ranges of the same retake cluster.
@@ -211,7 +226,7 @@ def detect_retakes(
         else:
             bridged.append((t_start, t_end))
 
-    snapped = _snap_to_take_boundaries(bridged, words, take_boundary_s, max_retake_gap_s)
+    snapped = _snap_to_take_boundaries(bridged, words, take_boundary_s, max_retake_span_s)
     return snapped, candidates
 
 

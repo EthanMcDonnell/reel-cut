@@ -451,6 +451,7 @@ def _phase1(cfg, clips: list[str], output_dir: Path, verbose: bool):
                     cfg.cuts.max_retake_gap_s,
                     cfg.cuts.min_match_ratio,
                     cfg.cuts.max_retake_bridge_s,
+                    max_retake_span_s=cfg.cuts.max_retake_span_s,
                 )
                 if ranges:
                     retake_ranges[str(clip_path)] = ranges
