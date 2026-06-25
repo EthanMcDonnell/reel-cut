@@ -210,6 +210,46 @@ def test_transposed_words_still_detected_without_lowering_min_words():
     assert ranges[0][1] == pytest.approx(8.0)   # cut ends at take 2 (the keeper)
 
 
+def test_three_takes_leading_divergence_snaps_to_take_boundaries():
+    """Three takes sharing a core phrase but diverging at the head, separated by
+    real (>take_boundary_s) silences — the 'no particular virus' billion-laughs cluster.
+
+        take A: "with no particular virus or stolen passwords instead it was just a few valid xml"
+        take B: "see there was no  virus or stolen password  instead it was just a few lines of valid xml"
+        take C: "see there was no  virus or stolen password  instead it was just a few lines of completely valid xml"  (keeper)
+
+    The pairwise matcher anchors on the shared core, so the A→B cut ends mid-take-B
+    (its tail "…just a few lines of valid xml" matches take C and is stranded as a
+    duplicate via the min-end merge) and take A's unmatched head "with no particular"
+    survives as a stutter. Boundary snapping pulls the cut start back to take A's
+    first word and pushes the end forward to take C's first word (both across the
+    surrounding silences), cutting takes A and B entirely and keeping only take C.
+    """
+    # A neutral kept sentence precedes take A across a real silence (as in the real
+    # clip, where "…a few valid xml pages." sits before the cluster). The leading
+    # silence is what lets the START snap find take A's boundary.
+    segments = [
+        "here is a totally different opening sentence",                                                  # kept lead-in
+        "with no particular virus or stolen passwords instead it was just a few valid xml",              # take A
+        "see there was no virus or stolen password instead it was just a few lines of valid xml",        # take B
+        "see there was no virus or stolen password instead it was just a few lines of completely valid xml",  # take C (keeper)
+    ]
+    words, seg_starts, t = [], [], 1.0
+    for si, seg in enumerate(segments):
+        if si:
+            t += 3.0  # real silence between segments (> take_boundary_s default of 2.0)
+        seg_starts.append(t)
+        for wi, tok in enumerate(seg.split()):
+            if wi:
+                t += 0.05
+            words.append(_w(tok, t, t + 0.15))
+            t += 0.15
+    ranges, _ = detect_retakes(words, min_retake_words=3, max_retake_gap_s=20.0, min_match_ratio=0.5)
+    assert len(ranges) == 1
+    assert ranges[0][0] == pytest.approx(seg_starts[1])   # cut begins at take A's first word
+    assert ranges[0][1] == pytest.approx(seg_starts[3])   # cut ends at take C (the keeper)
+
+
 def test_consecutive_mismatches_still_stop_extension():
     """A run of mismatches beyond max_retake_skip means genuine divergence → no cut."""
     words = [

@@ -25,6 +25,7 @@ def detect_retakes(
     min_match_ratio: float = 0.5,
     max_retake_bridge_s: float = 1.0,
     max_retake_skip: int = 1,
+    take_boundary_s: float = 2.0,
 ) -> tuple[list[tuple[float, float]], list[RetakeCandidate]]:
     """Detect repeated phrases (retakes) in a word list.
 
@@ -210,7 +211,86 @@ def detect_retakes(
         else:
             bridged.append((t_start, t_end))
 
-    return bridged, candidates
+    snapped = _snap_to_take_boundaries(bridged, words, take_boundary_s, max_retake_gap_s)
+    return snapped, candidates
+
+
+def _snap_to_take_boundaries(
+    ranges: list[tuple[float, float]],
+    words: list[WordTimestamp],
+    take_boundary_s: float,
+    max_reach_s: float,
+) -> list[tuple[float, float]]:
+    """Snap each cut's endpoints to take boundaries (silence gaps >= take_boundary_s).
+
+    The pairwise matcher anchors cuts on shared *content* words, so a cut can begin
+    or end inside a failed take rather than on a take boundary:
+
+      * Its END lands mid-take when an early take's tail happens to match a later
+        keeper's tail ("…virus or stolen password…") while the early take's own
+        keeper is a *different, later* take. The min-end merge then stops the cut at
+        that interior word, stranding the rest of the failed take as a duplicate.
+      * Its START lands mid-take when the failed take opens with words that have no
+        counterpart in the keeper ("With no particular…" vs "See there was no…"),
+        so nothing matches them and they survive as a stutter.
+
+    A genuine keeper always begins right after a real pause, so a cut endpoint that
+    sits *inside* an utterance (no flanking silence) is never a keeper boundary —
+    snap it outward to the nearest take boundary so the whole failed take is cut.
+
+    Anchor-safety: this only fires across a silence gap. The min-end merge exists to
+    stop a cut bleeding into the *kept* take; that take is continuous speech with no
+    interior boundary to snap to, so over-deep anchor ends are left untouched.
+    """
+    if not ranges:
+        return ranges
+    n = len(words)
+    # boundary[k] == True when word k starts a new take, i.e. it is preceded by a
+    # silence at least take_boundary_s long. The clip start (k == 0) is deliberately
+    # NOT a boundary: snapping must only ever land on a real pause, never run across
+    # intervening kept content to the clip edge when no silence separates them.
+    boundary = [
+        k > 0 and words[k].start - words[k - 1].end >= take_boundary_s
+        for k in range(n)
+    ]
+
+    snapped: list[tuple[float, float]] = []
+    for t_start, t_end in ranges:
+        # The range was built from word .start times, so these map back exactly.
+        ci = next((k for k in range(n) if words[k].start >= t_start - 1e-6), n)
+        cj = next((k for k in range(n) if words[k].start >= t_end - 1e-6), n)
+
+        # START: cut opens mid-take → pull back to that take's first word.
+        if ci < n and not boundary[ci]:
+            k = ci
+            while k > 0 and not boundary[k]:
+                k -= 1
+            if boundary[k] and t_start - words[k].start <= max_reach_s:
+                t_start = words[k].start
+
+        # END: cut closes mid-take → push forward to the next take's first word
+        # (the keeper), absorbing the rest of the failed take. The reach is measured
+        # over the absorbed *speech* (up to the last word before the boundary), not
+        # including the boundary silence — a long inter-take pause must not push the
+        # span over max_reach_s and abandon an otherwise-correct snap.
+        if cj < n and not boundary[cj]:
+            k = cj
+            while k < n and not boundary[k]:
+                k += 1
+            if k < n and words[k - 1].end - t_end <= max_reach_s:
+                t_end = words[k].start
+
+        snapped.append((t_start, t_end))
+
+    # Snapping can push neighbouring cuts into overlap — re-merge.
+    snapped.sort()
+    out: list[tuple[float, float]] = [snapped[0]]
+    for s, e in snapped[1:]:
+        if s <= out[-1][1]:
+            out[-1] = (out[-1][0], max(out[-1][1], e))
+        else:
+            out.append((s, e))
+    return out
 
 
 def _normalize(word: str) -> str:
