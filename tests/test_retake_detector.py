@@ -390,3 +390,27 @@ def test_real_clip_snap_does_not_swallow_kept_sentence_between_clusters():
         (s, e) for s, e in ranges if s < kept_end and e > kept_start
     ]
     assert not swallowed, f"kept sentence swallowed by cut(s): {swallowed}"
+
+
+def test_real_clip_first_reworded_take_is_cut():
+    """Regression (billion-laughs): the first take of the cluster is a REWORDED failed
+    take and must still be cut.
+
+        take A (38.44–43.34): "No virus, no stolen password, just a few valid xml pages."
+        take B+ (49.94→):     "(With no particular / See there was no) virus or stolen
+                               password … instead it was just a few lines of … valid XML."
+
+    Take A shares only "just a few valid xml" with the dense literal core the later
+    takes repeat, so the pairwise matcher's ratio gate (0.31 < 0.50) rejects it and it
+    survives. It is the same intended line, re-recorded, and should be cut down to the
+    final keeper take like the rest of the cluster.
+    """
+    words = [_w(t, s, e) for t, s, e in _BILLION_LAUGHS_RETAKE_REGION]
+    ranges, _ = detect_retakes(
+        words, min_retake_words=3, max_retake_gap_s=12.0, min_match_ratio=0.5,
+        max_retake_bridge_s=1.0, max_retake_span_s=60.0,
+    )
+    # Some cut must cover take A (38.44s → 43.34s).
+    take_a_start, take_a_end = 38.44, 43.34
+    covered = any(s <= take_a_start and e >= take_a_end for s, e in ranges)
+    assert covered, f"reworded take A (38.44–43.34s) not cut; ranges={ranges}"
