@@ -60,6 +60,7 @@ def transcribe(
 
     slug = _resolve_slug(cfg, slug)
     output_dir = _assets_or_ts_dir(cfg, slug)
+    _clean_transcription_artifacts(output_dir, console)
 
     if clips_folder:
         # Multi-clip mode: all clips → one captions doc
@@ -803,6 +804,23 @@ def _resolve_image_spec(spec, display_duration_s: float):
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _clean_transcription_artifacts(output_dir: Path, console: Console) -> None:
+    import shutil
+    cleaned = []
+    for p in output_dir.glob("*.captions.json"):
+        p.unlink()
+        cleaned.append(p.name)
+    for p in output_dir.glob("*.debug.*.txt"):
+        p.unlink()
+        cleaned.append(p.name)
+    clips_dir = output_dir / "retranscribe-clips"
+    if clips_dir.exists():
+        shutil.rmtree(clips_dir)
+        cleaned.append("retranscribe-clips/")
+    if cleaned:
+        console.print(f"[dim]Cleaned {len(cleaned)} artifact(s): {', '.join(cleaned)}[/dim]")
+
 
 def _resolve_slug(cfg, slug_arg: str | None) -> str | None:
     if slug_arg:
