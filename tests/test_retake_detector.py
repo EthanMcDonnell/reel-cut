@@ -320,3 +320,73 @@ def test_span_cap_discards_runaway_cut_independent_of_gap():
         max_retake_span_s=10.0,
     )
     assert ranges == []
+
+
+# ---------------------------------------------------------------------------
+# Real-clip regression: boundary snapping must not swallow a kept sentence that
+# flows into the next failed take with < take_boundary_s of silence.
+# ---------------------------------------------------------------------------
+
+# Exact words + timestamps from the billion-laughs clip
+# (Teleprompter-2026-24-06_00-16-42, debug.4.post-vad), 37.0s–110.0s. Three
+# distinct retake clusters — the "no virus / stolen password / valid xml" cluster,
+# the "so how does … that tiny do that much damage" cluster, and the "you define a
+# word once and reuse it" cluster — interleaved with one UNIQUE kept sentence,
+# "It comes down to a normal XML feature called entities, which are shortcuts."
+# (92.951–97.32s). That sentence is spoken straight into the following "You define…"
+# failed take with only a 0.72s gap (< take_boundary_s), so the START back-snap of
+# the "you define" cut walks its start backward across the whole kept sentence to the
+# real boundary at "So" @89.41, and the re-merge fuses all three cuts into one ~57s
+# range (49.94→107.15) that deletes the kept sentence.
+_BILLION_LAUGHS_RETAKE_REGION = [
+    ('and', 37.118, 37.239), ('crash.', 37.339, 37.72), ('No', 38.44, 38.601), ('virus,', 38.681, 39.163),
+    ('no', 39.464, 39.605), ('stolen', 39.705, 40.127), ('password,', 40.187, 40.81), ('just', 41.111, 41.312),
+    ('a', 41.372, 41.392), ('few', 41.492, 41.713), ('valid', 41.814, 42.215), ('xml', 42.476, 42.998),
+    ('pages.', 43.039, 43.34), ('With', 49.941, 50.081), ('no', 50.121, 50.262), ('particular', 50.322, 50.824),
+    ('virus', 50.864, 51.245), ('or', 51.365, 51.445), ('stolen', 51.526, 51.967), ('passwords,', 52.027, 52.669),
+    ('instead', 53.01, 53.592), ('it', 53.913, 53.973), ('was', 53.993, 54.114), ('just', 54.154, 54.334),
+    ('a', 54.395, 54.415), ('few', 54.535, 54.776), ('valid', 54.84, 55.5), ('xml.', 55.097, 55.338),
+    ('See,', 61.784, 61.905), ('there', 61.925, 62.046), ('was', 62.066, 62.167), ('no', 62.207, 62.328),
+    ('virus', 62.408, 62.832), ('or', 62.892, 62.973), ('stolen', 63.033, 63.396), ('password.', 63.456, 63.92),
+    ('Instead,', 64.38, 64.863), ('it', 65.204, 65.265), ('was', 65.305, 65.446), ('just', 65.486, 65.687),
+    ('a', 65.727, 65.768), ('few', 65.908, 66.23), ('lines', 66.331, 66.733), ('of', 66.833, 66.914),
+    ('valid', 67.034, 67.477), ('XML.', 67.758, 68.08), ('See,', 74.284, 74.404), ('there', 74.425, 74.545),
+    ('was', 74.566, 74.666), ('no', 74.707, 74.848), ('virus', 74.928, 75.392), ('or', 75.492, 75.593),
+    ('stolen', 75.654, 76.077), ('password.', 76.117, 76.52), ('Instead,', 77.06, 77.543), ('it', 77.643, 77.703),
+    ('was', 77.744, 77.884), ('just', 77.925, 78.166), ('a', 78.226, 78.246), ('few', 78.367, 78.648),
+    ('lines', 78.688, 79.05), ('of', 79.111, 79.191), ('completely', 79.271, 80.035), ('valid', 80.116, 80.518),
+    ('XML.', 80.699, 80.96), ('So,', 81.94, 81.98), ('how', 82.021, 82.102), ('does', 82.123, 82.285),
+    ('something', 82.326, 82.651), ('that...', 82.671, 82.793), ('So', 83.601, 83.725), ('how', 83.766, 83.849),
+    ('does', 83.89, 84.014), ('that?', 84.034, 84.158), ('So', 89.41, 89.531), ('how', 89.572, 89.693),
+    ('does', 89.713, 89.834), ('something', 89.854, 90.116), ('that', 90.157, 90.359), ('tiny', 90.399, 90.742),
+    ('do', 90.782, 90.923), ('that', 90.984, 91.145), ('much', 91.206, 91.448), ('damage?', 91.508, 91.69),
+    ('It', 92.951, 93.011), ('comes', 93.071, 93.311), ('down', 93.371, 93.612), ('to', 93.752, 93.873),
+    ('a', 93.913, 93.953), ('normal', 94.053, 94.414), ('XML', 94.574, 94.975), ('feature', 95.035, 95.356),
+    ('called', 95.416, 95.636), ('entities,', 95.736, 96.157), ('which', 96.518, 96.658), ('are', 96.719, 96.799),
+    ('shortcuts.', 96.839, 97.32), ('You', 98.04, 98.141), ('define', 98.181, 98.503), ('a', 98.543, 98.563),
+    ('word', 98.623, 98.925), ('once', 99.387, 99.568), ('and', 99.87, 99.971), ('reuse', 100.031, 100.433),
+    ('it', 100.493, 100.534), ('anywhere', 100.674, 101.016), ('so', 101.358, 101.539), ('often.', 101.56, 101.68),
+    ('You', 107.15, 107.251), ('define', 107.271, 107.553), ('a', 107.574, 107.614), ('word', 107.634, 107.856),
+    ('once,', 107.997, 108.178), ('and', 108.461, 108.562), ('re', 108.663, 108.844), ('-use', 108.864, 109.106),
+    ('it', 109.167, 109.207), ('anywhere.', 109.348, 109.57),
+]
+
+
+def test_real_clip_snap_does_not_swallow_kept_sentence_between_clusters():
+    """Regression (billion-laughs): a unique kept sentence sitting between two retake
+    clusters, run into the next failed take by a sub-take_boundary_s gap, must survive.
+
+    "It comes down to a normal XML feature called entities, which are shortcuts."
+    (92.951–97.32s) is not a retake of anything. Boundary snapping must not absorb it.
+    """
+    words = [_w(t, s, e) for t, s, e in _BILLION_LAUGHS_RETAKE_REGION]
+    ranges, _ = detect_retakes(
+        words, min_retake_words=3, max_retake_gap_s=12.0, min_match_ratio=0.5,
+        max_retake_bridge_s=1.0, max_retake_span_s=60.0,
+    )
+    # No cut may cover any word of the kept sentence (92.951s → 97.32s).
+    kept_start, kept_end = 92.951, 97.32
+    swallowed = [
+        (s, e) for s, e in ranges if s < kept_end and e > kept_start
+    ]
+    assert not swallowed, f"kept sentence swallowed by cut(s): {swallowed}"
