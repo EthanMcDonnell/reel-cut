@@ -448,6 +448,69 @@ def test_distinct_sentences_sharing_glue_words_not_cut():
     assert ranges == []
 
 
+# ---------------------------------------------------------------------------
+# Stumble-retake pass (a flub the speaker self-corrects, then re-records clean)
+# ---------------------------------------------------------------------------
+
+def _wc(word: str, start: float, end: float, conf: float) -> WordTimestamp:
+    return WordTimestamp(word=word, start=start, end=end, confidence=conf)
+
+
+# Exact words + confidences from the billion-laughs clip
+# (Teleprompter-2026-24-06_00-16-42.debug.4.post-vad, 96.8s–127.2s). The intended line
+# "So <entity> means the word lol" is flubbed as "So... No! means the word LOL" (the
+# aligner emits 'No!'@0.20, 'So...'@0.40 for the garbled self-correction, and mishears
+# the keeper's 'lol' as 'lull'), then re-recorded clean 11s later. The flub shares only
+# the run "means the word" with the keeper, so the ratio gate (0.43) and the content
+# overlap (0.5) both reject it; only the sub-confidence word + surviving run catch it.
+_STUMBLE_RETAKE_REGION = [
+    ('shortcuts.', 96.839, 97.320, 0.74),
+    ('You', 107.150, 107.251, 0.92), ('define', 107.271, 107.553, 0.75), ('a', 107.574, 107.614, 0.49),
+    ('word', 107.634, 107.856, 0.82), ('once,', 107.997, 108.178, 0.81), ('and', 108.461, 108.562, 0.67),
+    ('re', 108.663, 108.844, 0.99), ('-use', 108.864, 109.106, 0.96), ('it', 109.167, 109.207, 0.99),
+    ('anywhere.', 109.348, 109.570, 0.35), ('So...', 110.130, 110.431, 0.40), ('No!', 110.840, 111.340, 0.20),
+    ('means', 111.796, 112.077, 0.79), ('the', 112.118, 112.198, 1.00), ('word', 112.258, 112.499, 0.82),
+    ('LOL', 112.579, 112.760, 0.71),
+    ('So,', 123.762, 123.903, 0.76), ('ampersand', 124.044, 124.568, 0.73), ('lull', 124.769, 125.111, 0.81),
+    ('means', 125.393, 125.654, 0.85), ('the', 125.715, 125.815, 0.85), ('word', 125.856, 126.137, 0.92),
+    ('lull.', 126.238, 126.500, 0.85), ('The', 126.921, 127.022, 0.90), ('trick', 127.062, 127.243, 0.90),
+]
+
+
+def test_stumble_retake_cut_by_confidence_and_run():
+    """Regression (billion-laughs): a flubbed take "So... No! means the word LOL" that the
+    speaker re-records clean must be cut, even though its only shared run is the 3-word
+    template and the misheard word drops both the ratio and content-overlap below gate."""
+    words = [_wc(t, s, e, c) for t, s, e, c in _STUMBLE_RETAKE_REGION]
+    ranges, _ = detect_retakes(
+        words, min_retake_words=3, max_retake_gap_s=12.0, min_match_ratio=0.5,
+        max_retake_bridge_s=1.0, max_retake_span_s=60.0,
+    )
+    # The flubbed take (110.130s "So..." → 112.760s "LOL") must be cut whole, ending at
+    # the keeper's first word (123.762s) — never reaching into the keeper sentence.
+    flub_start, flub_end = 110.130, 112.760
+    keeper_start, keeper_end = 123.762, 126.500
+    assert any(s <= flub_start and e >= flub_end for s, e in ranges), \
+        f"flubbed take not cut; ranges={ranges}"
+    swallowed = [(s, e) for s, e in ranges if s < keeper_end and e > keeper_start]
+    assert not swallowed, f"keeper sentence swallowed by cut(s): {swallowed}"
+
+
+def test_low_confidence_word_alone_does_not_trigger_stumble_cut():
+    """A take with a sub-confidence word but NO repeated run with a neighbour is not a
+    retake — both signals must fire, so the lone low-confidence word is left untouched."""
+    words = [
+        _wc("Configure", 0.0, 0.4, 0.9), _wc("the", 0.5, 0.7, 0.9), _wc("Kubernetes", 0.8, 1.4, 0.20),
+        _wc("cluster.", 1.5, 2.0, 0.9),
+        _wc("Then", 3.0, 3.3, 0.9), _wc("restart", 3.4, 3.9, 0.9), _wc("every", 4.0, 4.3, 0.9),
+        _wc("node.", 4.4, 4.9, 0.9),
+    ]
+    ranges, _ = detect_retakes(
+        words, min_retake_words=3, max_retake_gap_s=12.0, min_match_ratio=0.5,
+    )
+    assert ranges == []
+
+
 def test_reworded_pass_preserves_unique_sentence_between_take_and_reprise():
     """A unique sentence sitting between a reworded failed take and its reprise must
     survive: the cut covers only the failed take (up to the next sentence), never the

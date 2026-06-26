@@ -30,6 +30,7 @@ def detect_retakes(
     max_retake_span_s: float = 60.0,
     min_reword_overlap: float = 0.6,
     min_reword_content_words: int = 3,
+    min_stumble_confidence: float = 0.35,
 ) -> tuple[list[tuple[float, float]], list[RetakeCandidate]]:
     """Detect repeated phrases (retakes) in a word list.
 
@@ -192,6 +193,18 @@ def detect_retakes(
     reworded = _detect_reworded_takes(
         words, min_reword_overlap, min_reword_content_words, max_retake_gap_s
     )
+
+    # Third pass: catch STUMBLE retakes that defeat both passes above. When a take is
+    # flubbed (a false start, a self-correction) the aligner emits sub-confidence tokens
+    # for the garbled audio and the misheard word is exactly the one distinctive slot —
+    # so the literal run shrinks below the ratio gate AND the content overlap drops below
+    # the reword threshold. Two independent signals still flag it: a below-confidence
+    # word inside the take, plus a surviving >= min_retake_words literal run shared with
+    # the clean re-recording. Folded in with the others below.
+    stumble = _detect_stumble_retakes(
+        words, min_retake_words, max_retake_gap_s, take_boundary_s, min_stumble_confidence
+    )
+    reworded = sorted(reworded + stumble)
 
     if not raw_cuts and not reworded:
         return [], candidates
@@ -412,6 +425,85 @@ def _detect_reworded_takes(
                 cuts.append((seg[0].start, nxt))
                 break
     return cuts
+
+
+def _detect_stumble_retakes(
+    words: list[WordTimestamp],
+    min_run: int,
+    max_gap_s: float,
+    take_boundary_s: float,
+    conf_floor: float,
+) -> list[tuple[float, float]]:
+    """Find flubbed takes that a stumble (not a reword) hid from both passes above.
+
+    A false start or self-correction ("So… No! …") makes the aligner emit sub-confidence
+    tokens for the garbled audio, and the one misheard word breaks the literal run the
+    positional pass needs while diluting the content overlap the reworded pass needs — so
+    each is exactly the slot that differs and neither pass fires. Two independent signals
+    still mark the take: (a) it carries a word below conf_floor, and (b) it still shares a
+    >= min_run literal run with the clean re-recording (the sentence template survives even
+    when one slot is mis-said/mis-heard).
+
+    For each min_run-gram that recurs, the final occurrence is the keeper. Its take start is
+    found by walking back to the nearest silence >= take_boundary_s. An earlier occurrence's
+    take start is found the same way, but a sentence-final word also bounds it ONLY when its
+    own confidence clears conf_floor — a stumble like "No!" ends in '!' yet is not a real
+    boundary, so it must not split the failed take. The failed take is cut whole (its start →
+    the keeper's start) when it holds a sub-confidence word and abuts the keeper within
+    max_gap_s. Overlapping/adjacent cuts are unioned by the caller.
+    """
+    n = len(words)
+    if n < min_run * 2:
+        return []
+    norm = [_normalize(w.word) for w in words]
+
+    index: dict[tuple[str, ...], list[int]] = {}
+    for k in range(n - min_run + 1):
+        ng = tuple(norm[k : k + min_run])
+        if all(ng):  # skip runs spanning punctuation-only tokens
+            index.setdefault(ng, []).append(k)
+
+    cuts: list[tuple[float, float]] = []
+    for starts in index.values():
+        if len(starts) < 2:
+            continue
+        j = starts[-1]  # final occurrence is always the keeper
+
+        # Keeper take start: walk back over continuous speech (no silence >= take_boundary_s).
+        ks = j
+        while ks > 0 and words[ks].start - words[ks - 1].end < take_boundary_s:
+            ks -= 1
+
+        for i in starts[:-1]:
+            if i >= ks:  # earlier occurrence must sit before the keeper's take
+                continue
+            # Failed take start: walk back over continuous speech, stopping also at a
+            # high-confidence sentence end (a stumble's terminal '!'/'.' does not bound).
+            fs = i
+            while fs > 0:
+                prev = words[fs - 1]
+                if words[fs].start - prev.end >= take_boundary_s:
+                    break
+                if _is_sentence_end(prev.word) and prev.confidence >= conf_floor:
+                    break
+                fs -= 1
+            if fs >= ks:
+                continue
+            if not any(w.confidence < conf_floor for w in words[fs:ks]):
+                continue
+            if words[ks].start - words[ks - 1].end > max_gap_s:
+                continue
+            cuts.append((words[fs].start, words[ks].start))
+            break
+
+    cuts.sort()
+    merged: list[tuple[float, float]] = []
+    for s, e in cuts:
+        if merged and s <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], e))
+        else:
+            merged.append((s, e))
+    return merged
 
 
 def _normalize(word: str) -> str:
