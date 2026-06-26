@@ -44,7 +44,6 @@ def transcribe(
     slug: str | None = typer.Option(None, "--slug", help="Video slug (overrides script-derived slug)."),
     footage: str | None = typer.Option(None, "--footage", help="Path to footage file or folder."),
     clips_folder: str | None = typer.Option(None, "--clips-folder", help="Folder of ordered clips to stitch into one captions doc."),
-    script: str | None = typer.Option(None, "--script", help="Path to the spoken script (.txt or .md) used to bias transcription. Defaults to assets/<slug>/script.txt."),
     verbose: bool = typer.Option(False, "--verbose", "-v"),
 ) -> None:
     """Phase 1: transcribe footage → .captions.json files ready for LLM editing."""
@@ -62,7 +61,6 @@ def transcribe(
     slug = _resolve_slug(cfg, slug)
     output_dir = _assets_or_ts_dir(cfg, slug)
     _clean_transcription_artifacts(output_dir, console)
-    hotwords = _load_script_hotwords(script, output_dir, console)
 
     if clips_folder:
         # Multi-clip mode: all clips → one captions doc
@@ -70,7 +68,7 @@ def transcribe(
         stem = slug or Path(clips[0]).stem
         captions_path = output_dir / f"{stem}.captions.json"
         console.rule(f"[bold]Multi-clip → {captions_path.name}[/bold]")
-        doc = _phase1(cfg, clips, output_dir, verbose, hotwords)
+        doc = _phase1(cfg, clips, output_dir, verbose)
         from .captions_doc import save_captions_doc
         save_captions_doc(doc, captions_path)
         _scaffold_headings(captions_path, cfg.headings.default_end_s)
@@ -90,7 +88,7 @@ def transcribe(
                 console.rule(f"[bold]{i}/{len(videos)}[/bold] {video.name}")
                 captions_path = output_dir / f"{video.stem}.captions.json"
                 try:
-                    doc = _phase1(cfg, [str(video)], output_dir, verbose, hotwords)
+                    doc = _phase1(cfg, [str(video)], output_dir, verbose)
                     from .captions_doc import save_captions_doc
                     save_captions_doc(doc, captions_path)
                     _scaffold_headings(captions_path, cfg.headings.default_end_s)
@@ -106,7 +104,7 @@ def transcribe(
             clips = [str(input_folder)]
             stem = slug or input_folder.stem
             captions_path = output_dir / f"{stem}.captions.json"
-            doc = _phase1(cfg, clips, output_dir, verbose, hotwords)
+            doc = _phase1(cfg, clips, output_dir, verbose)
             from .captions_doc import save_captions_doc
             save_captions_doc(doc, captions_path)
             _scaffold_headings(captions_path, cfg.headings.default_end_s)
@@ -319,7 +317,7 @@ def timeline(
 # Phase 1 — transcription core
 # ---------------------------------------------------------------------------
 
-def _phase1(cfg, clips: list[str], output_dir: Path, verbose: bool, hotwords: str | None = None):
+def _phase1(cfg, clips: list[str], output_dir: Path, verbose: bool):
     """Transcribe clips, build EDL, return CaptionsDoc. No rendering."""
     from .audio import extract_audio, normalize_audio
     from .captions_doc import CaptionWord, CaptionsDoc, EdlEntry
@@ -338,17 +336,8 @@ def _phase1(cfg, clips: list[str], output_dir: Path, verbose: bool, hotwords: st
     )
     base_prompt = cfg.whisper.initial_prompt or ""
     combined_prompt = f"{base_prompt}, {slug_text}" if base_prompt else slug_text
-    update = {"initial_prompt": combined_prompt}
-    # The script's spoken text biases EVERY window as hotwords (initial_prompt only
-    # conditions the first), so technical terms transcribe right throughout the clip —
-    # e.g. "lol" over the dictionary word "lull". faster-whisper truncates hotwords to
-    # ~223 tokens per window, so only the script's leading portion is used on long reads.
-    if hotwords:
-        update["hotwords"] = hotwords
-    whisper_cfg = cfg.whisper.model_copy(update=update)
+    whisper_cfg = cfg.whisper.model_copy(update={"initial_prompt": combined_prompt})
     console.print(f"  Whisper prompt: {combined_prompt!r}")
-    if hotwords:
-        console.print(f"  Whisper hotwords: script ({len(hotwords.split())} words)")
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
@@ -816,26 +805,6 @@ def _resolve_image_spec(spec, display_duration_s: float):
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-def _load_script_hotwords(script: str | None, output_dir: Path, console: Console) -> str | None:
-    """Resolve the spoken-script text used to bias transcription (Whisper hotwords).
-
-    Uses --script when given, else auto-detects assets/<slug>/script.txt (written by
-    /produce-script). A .md path is cleaned to spoken text on the fly; a .txt is read
-    as-is. Returns None when no script is available, leaving transcription unbiased.
-    """
-    from .script_text import extract_spoken_text
-    path = Path(script) if script else output_dir / "script.txt"
-    if not path.exists():
-        if script:
-            console.print(f"[yellow]Script not found, transcribing unbiased: {path}[/yellow]")
-        return None
-    text = path.read_text()
-    if path.suffix == ".md":
-        text = extract_spoken_text(text)
-    text = text.strip()
-    return text or None
-
 
 def _clean_transcription_artifacts(output_dir: Path, console: Console) -> None:
     import shutil
