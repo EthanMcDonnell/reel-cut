@@ -148,6 +148,9 @@ class WhisperConfig(BaseModel):
     language: str = "en"
     beam_size: int = 1  # 1 = greedy (fastest); 5 = default beam search (more accurate)
     initial_prompt: str | None = None
+    hotwords: str | None = None  # vocabulary bias applied to EVERY window (unlike initial_prompt,
+                                 # which only conditions the first). Set per-run from the script text
+                                 # so technical terms transcribe correctly throughout the clip.
     condition_on_previous_text: bool = False
     min_alignment_confidence: float = 0.1
     no_speech_threshold: float = 0.6

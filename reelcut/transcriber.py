@@ -60,6 +60,7 @@ def _transcribe_with_model(model, wav_path: Path, config: WhisperConfig) -> list
         word_timestamps=True,
         beam_size=config.beam_size,
         initial_prompt=config.initial_prompt,
+        hotwords=config.hotwords,
         condition_on_previous_text=config.condition_on_previous_text,
         no_speech_threshold=config.no_speech_threshold,
         compression_ratio_threshold=config.compression_ratio_threshold,
