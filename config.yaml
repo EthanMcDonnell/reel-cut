@@ -24,7 +24,7 @@ cuts:
                                    # Raise if trailing silence is being left in; lower if word ends are clipped.
 
   # --- Advanced ---
-  vad_threshold: 0.5               # Silero VAD sensitivity for hallucination filtering (0-1). Lower = more
+  vad_threshold: 0.4              # Silero VAD sensitivity for hallucination filtering (0-1). Lower = more
                                    # words kept; higher = more hallucinated words dropped.
   breath_amplitude_ratio: 0.15     # breath RMS must be below this fraction of track peak amplitude.
                                    # Prevents loud noise bursts being misclassified as breaths.
@@ -43,9 +43,13 @@ cuts:
                                    # .debug.1b.sentences.txt report (VIA=caps+pause column) to tune.
   repetition_detection: true       # detect and cut repeated takes (earlier occurrence cut, last take kept)
   min_retake_words: 3              # default: 4 | minimum consecutive words to qualify as a repeated take
-  max_retake_gap_s: 12             # default: 20 | max seconds between first and second occurrence to count
+  max_retake_gap_s: 12             # default: 20 | max seconds of silence BETWEEN consecutive takes to count
                                    # as a false start. Prevents common short phrases far apart in the video
-                                   # from being misidentified as retakes.
+                                   # from being misidentified as retakes. Bounds the inter-take gap only —
+                                   # NOT the take's own length (see max_retake_span_s).
+  max_retake_span_s: 60            # default: 60 | max duration of a single retake cut (the failed take's own
+                                   # length). Safety net against runaway merges; raise if long sentences are
+                                   # re-recorded and the whole failed take should be cut.
   min_match_ratio: 0.5             # default: 0.5 | greedy extended match length / cut length must meet this
                                    # threshold. Prevents short coincidental phrase overlaps from triggering
                                    # large cuts. Raise (e.g. 0.7) to be stricter; lower (e.g. 0.3) to cut more.
@@ -121,7 +125,7 @@ images:
   # people and screenshots are specified in the .captions.json images array (filled in by LLM between phases)
   position: center               # top | center | bottom  (top keeps logos clear of center captions)
   logo_overlay_size_pct: 40      # logo width as % of video width
-  overlay_size_pct: 50           # person/screenshot width as % of video width
+  overlay_size_pct: 50           # person/screenshot/concept width as % of video width
   display_duration_s: 1.0        # seconds to show logo after its keyword is first spoken
   fade_duration_s: 0             # fade in and out duration in seconds (0 to disable)
   margin_pct: 5                  # % of video height from the edge to the logo/image overlay.
