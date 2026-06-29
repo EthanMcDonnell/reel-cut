@@ -45,6 +45,18 @@ SNIPPET_PADDING = 80        # context (px) shown above and below the matched ele
 SNIPPET_CONCURRENCY = 3     # max pages capturing snippets in parallel
 
 
+def _parse_snippet_spec(s: str | dict) -> dict:
+    """Normalise a bare string or partial dict to a full four-field spec."""
+    if isinstance(s, dict):
+        return {
+            "article_snippet": s.get("article_snippet", ""),
+            "script_context": s.get("script_context", ""),
+            "trigger_show_word": s.get("trigger_show_word", ""),
+            "trigger_go_away_word": s.get("trigger_go_away_word", ""),
+        }
+    return {"article_snippet": s, "script_context": "", "trigger_show_word": "", "trigger_go_away_word": ""}
+
+
 def _url_prefix(url: str) -> str:
     """Derive a short, unique-ish filename prefix from a URL."""
     parsed = urlparse(url)
@@ -62,15 +74,23 @@ _KH = bytes([104, 101, 105, 103, 104, 116]).decode()
 
 # JS expressions built from bytes — immune to quote-mangling formatters
 _JS_ISNULL = bytes([101,32,61,62,32,33,101,32,124,124,32,33,101,46,116,97,103,78,97,109,101]).decode()
-# Bounding rect [x, y, width, height] of the highlighted region (Range or block) recorded by
-# _ss_highlight.js, measured after the post-scroll settle. Null if nothing was highlighted.
-_JS_REGION_RECT = (
-    "() => { const r = window.__ssRegion; if (!r) return null;"
-    " const b = r.getBoundingClientRect(); return [b.x, b.y, b.width, b.height]; }"
+# Scroll the tagged element to viewport centre and read its live bounding rect. Used instead
+# of the highlighter's Range rect (window.__ssRegion), which goes stale on pages that reflow
+# after scrolling — Reddit lazy-loads comments and collapses the post body, leaving the Range's
+# cached rect pointing at a viewport slot that now holds a different element (a comment / a
+# "Related posts" card). The live element rect, measured after a settle, stays correct.
+_JS_SCROLL_TARGET = "() => { const t = document.querySelector('[data-snippet-target]'); if (t) t.scrollIntoView({block: 'center'}); }"
+_JS_TARGET_RECT = (
+    "() => { const t = document.querySelector('[data-snippet-target]'); if (!t) return null;"
+    " const b = t.getBoundingClientRect(); return [b.x, b.y, b.width, b.height]; }"
 )
 
 # Per-snippet match metadata set on window by _ss_find.js (found / confidence / matchType).
 _JS_LASTMATCH = "() => window.__ssLastMatch || {found: false, confidence: 0, matchType: 'none'}"
+
+# Which highlight path won, set on window by _ss_highlight.js: a tight 'range' / 'fuzzy_range', or
+# the blunt 'whole_block' fallback that colours the entire paragraph.
+_JS_HIGHLIGHT = "() => window.__ssHighlight || 'none'"
 
 
 async def _dismiss_overlays(page) -> None:
@@ -104,6 +124,29 @@ async def _dismiss_overlays(page) -> None:
         document.body.style.setProperty('overflow', 'auto', 'important');
         document.documentElement.style.setProperty('overflow', 'auto', 'important');
     }""")
+
+
+async def _expand_truncations(page) -> None:
+    """Click "Read more"/"See more" expanders so collapsed bodies are fully rendered.
+
+    Long Reddit self-posts collapse behind a "Read more" fade; text below the fold renders
+    greyed-out and clipped, so a snippet that lands there screenshots as a washed-out highlight.
+    Clicking the expander first makes the whole body solid and measurable. Two passes catch
+    expanders that only appear once an outer one opens. Expand-only, so it can't re-collapse.
+    """
+    for _ in range(2):
+        clicked = await page.evaluate("""() => {
+            let n = 0;
+            for (const el of document.querySelectorAll('button, [role="button"], a, summary')) {
+                if (/^\\s*(read|see|show)\\s+more\\b/i.test(el.innerText || '')) {
+                    try { el.click(); n++; } catch (e) {}
+                }
+            }
+            return n;
+        }""")
+        if not clicked:
+            break
+        await page.wait_for_timeout(500)
 
 
 async def _find_title(page) -> object | None:
@@ -180,28 +223,48 @@ async def _prepare_page(ctx, url: str):
         await _dismiss_overlays(page)
     except Exception:
         pass
+    try:
+        await _expand_truncations(page)
+    except Exception:
+        pass
     return page
 
 
 async def _capture_snippet(
-    page, source_dir: Path, index: int, snippet: str, context: str,
+    page, source_dir: Path, index: int, spec: dict,
     js_find: str, js_highlight: str, js_unhighlight: str,
 ) -> dict:
     """Locate, highlight, and screenshot one snippet.
+
+    `spec` carries the snippet's metadata: `article_snippet` (verbatim source text to
+    locate), `script_context` (the script line it supports, used to disambiguate), and the
+    optional `trigger_show_word` / `trigger_go_away_word` anchors that produce-video uses to
+    bound the on-screen window. Only `article_snippet` and `script_context` drive capture;
+    the trigger words are passed straight through to the manifest.
 
     Always returns a status dict. On success it carries "found": True plus the written
     "fname"; on failure it carries "found": False and a "reason", so the caller can report
     which claims lost their on-screen evidence instead of dropping them silently.
     """
+    snippet = spec["article_snippet"]
+    context = spec["script_context"]
     raw = snippet.strip().lower()
     anchor = raw[:80]
     if len(raw) > 80 and ' ' in anchor:
         anchor = anchor[:anchor.rfind(' ')]
 
+    # Renamed/added metadata carried verbatim onto every status dict (hit or miss).
+    meta_fields = {
+        "article_snippet": snippet,
+        "script_context": context,
+        "trigger_show_word": spec.get("trigger_show_word", ""),
+        "trigger_go_away_word": spec.get("trigger_go_away_word", ""),
+    }
+
     def _miss(reason: str, meta: dict | None = None) -> dict:
         meta = meta or {}
         return {
-            "index": index, "found": False, "snippet": snippet, "context": context,
+            "index": index, "found": False, **meta_fields,
             "match_type": meta.get("matchType", "none"),
             "confidence": meta.get("confidence", 0.0), "reason": reason,
         }
@@ -216,12 +279,15 @@ async def _capture_snippet(
         if not el or await page.evaluate(_JS_ISNULL, el):
             return _miss("text not found on page", meta)
 
-        # Highlight first: this locates the snippet across inline tags, marks it, scrolls it
-        # to centre, and records the highlighted region on window for measurement below.
+        # Highlight first: this locates the snippet across inline tags and marks it. Then
+        # re-centre on the tagged *element* and measure its live rect, rather than trusting the
+        # highlighter's Range rect — on pages that reflow after scrolling (Reddit), the Range
+        # rect goes stale and the crop lands on the wrong element. See _JS_TARGET_RECT.
         await page.evaluate(js_highlight, {"anchor": anchor, "snippet": raw})
-        await page.wait_for_timeout(600)
+        await page.evaluate(_JS_SCROLL_TARGET)
+        await page.wait_for_timeout(700)
 
-        r = await page.evaluate(_JS_REGION_RECT)
+        r = await page.evaluate(_JS_TARGET_RECT)
         if not r or r[2] == 0:
             return _miss("matched element has no size", meta)
         vw, vh = 390, 844
@@ -231,14 +297,15 @@ async def _capture_snippet(
         y, crop_h = _crop_window(r[1], r[3], vh)
         clip = {_KX: 0, _KY: y, _KW: vw, _KH: crop_h}
 
+        highlight = await page.evaluate(_JS_HIGHLIGHT)
         fname = f"snippet-{index:02d}.png"
         await page.screenshot(path=str(source_dir / fname), clip=clip)
         await page.evaluate(js_unhighlight)
         return {
-            "index": index, "found": True, "fname": fname,
-            "snippet": snippet, "context": context,
+            "index": index, "found": True, "fname": fname, **meta_fields,
             "match_type": meta.get("matchType", "exact"),
             "confidence": meta.get("confidence", 1.0),
+            "highlight": highlight,
         }
     except Exception as exc:
         return _miss(f"capture error: {exc}")
@@ -273,38 +340,31 @@ async def capture(url: str, output_dir: Path, snippets: list[str | dict] | None 
             f.read_text() for f in sorted(_js_dir.glob(bytes([95, 115, 115, 95, 42, 46, 106, 115]).decode()))
         )
 
-        snippet_texts = []
-        snippet_contexts = []
-        for s in (snippets or []):
-            if isinstance(s, dict):
-                snippet_texts.append(s.get("text", ""))
-                snippet_contexts.append(s.get("context", ""))
-            else:
-                snippet_texts.append(s)
-                snippet_contexts.append("")
+        # Normalise each requested snippet to a spec dict.
+        specs: list[dict] = [_parse_snippet_spec(s) for s in (snippets or [])]
 
         # --- Capture snippets across a small pool of pages (bounded concurrency) ---
         statuses: list[dict] = []
-        if snippet_texts:
+        if specs:
             queue: asyncio.Queue = asyncio.Queue()
-            for i, (snippet, context) in enumerate(zip(snippet_texts, snippet_contexts), start=1):
-                queue.put_nowait((i, snippet, context))
+            for i, spec in enumerate(specs, start=1):
+                queue.put_nowait((i, spec))
 
             async def _worker(page):
                 while True:
                     try:
-                        i, snippet, context = queue.get_nowait()
+                        i, spec = queue.get_nowait()
                     except asyncio.QueueEmpty:
                         break
                     statuses.append(await _capture_snippet(
-                        page, source_dir, i, snippet, context,
+                        page, source_dir, i, spec,
                         _js_find, _js_highlight, _js_unhighlight,
                     ))
 
             # main_page is the first worker; spin up extra prepared pages for parallelism.
             # If an extra page fails to load, the remaining workers still drain the queue.
             worker_pages = [main_page]
-            for _ in range(min(SNIPPET_CONCURRENCY, len(snippet_texts)) - 1):
+            for _ in range(min(SNIPPET_CONCURRENCY, len(specs)) - 1):
                 try:
                     worker_pages.append(await _prepare_page(ctx, url))
                 except Exception:
@@ -322,17 +382,21 @@ async def capture(url: str, output_dir: Path, snippets: list[str | dict] | None 
     snippet_entries = [
         {
             "file": f"{subdir}/{h['fname']}",
-            "snippet": h["snippet"],
-            "context": h["context"],
+            "article_snippet": h["article_snippet"],
+            "script_context": h["script_context"],
+            "trigger_show_word": h["trigger_show_word"],
+            "trigger_go_away_word": h["trigger_go_away_word"],
             "match_type": h["match_type"],
             "confidence": round(h["confidence"], 2),
+            "highlight": h["highlight"],
         }
         for h in hits
     ]
     source_entry = {"url": url, "screenshots": snippet_entries}
     if misses:
         source_entry["missed"] = [
-            {"snippet": m["snippet"], "context": m["context"], "reason": m["reason"]}
+            {"article_snippet": m["article_snippet"], "script_context": m["script_context"],
+             "reason": m["reason"]}
             for m in misses
         ]
     _write_manifest(output_dir, url, source_entry)
@@ -345,9 +409,10 @@ async def capture(url: str, output_dir: Path, snippets: list[str | dict] | None 
             {
                 "index": s["index"],
                 "found": s["found"],
-                "snippet": s["snippet"],
+                "article_snippet": s["article_snippet"],
                 "match_type": s.get("match_type", "none"),
                 "confidence": round(s.get("confidence", 0.0), 2),
+                "highlight": s.get("highlight", "none"),
                 "reason": s.get("reason"),
             }
             for s in statuses
@@ -360,7 +425,10 @@ def main():
     parser.add_argument("--url", required=True, help="Article URL")
     parser.add_argument("--output-dir", required=True, help="Directory to save screenshots")
     parser.add_argument("--snippets", default=None,
-                        help='JSON array of text strings to locate and crop, e.g. \'["phrase one", "phrase two"]\'')
+                        help='JSON array of snippet specs to locate and crop. Each is an object '
+                             '{"article_snippet": "...", "script_context": "...", '
+                             '"trigger_show_word": "...", "trigger_go_away_word": "..."} '
+                             '(context/trigger fields optional), or a bare string for article_snippet only.')
     args = parser.parse_args()
 
     snippets = json.loads(args.snippets) if args.snippets else None

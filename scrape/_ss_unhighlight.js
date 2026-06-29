@@ -3,6 +3,7 @@
   const st = document.getElementById('ss-hl-style');
   if (st) st.remove();
   window.__ssRegion = null;
+  window.__ssHighlight = null;
   document.querySelectorAll('mark[data-snippet-highlight]').forEach(m => m.replaceWith(...m.childNodes));
   document.querySelectorAll('[data-snippet-highlight]').forEach(el => {
     el.removeAttribute('data-snippet-highlight');

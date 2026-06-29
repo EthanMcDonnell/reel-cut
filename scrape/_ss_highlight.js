@@ -51,19 +51,60 @@
     return { concat, map };
   }
 
+  // Build a Range from char offsets [lo, hi] (inclusive) into a buildIndex map. Null if either
+  // endpoint has no mapping.
+  function rangeFromOffsets(map, lo, hi) {
+    const start = map[lo];
+    const end = map[hi];
+    if (!start || !end) return null;
+    const r = document.createRange();
+    r.setStart(start.node, start.offset);
+    r.setEnd(end.node, end.offset + 1);
+    return r;
+  }
+
   // Build a Range covering `needle` within `block`, spanning inline tags. Null if not found.
   function rangeFor(block, needle) {
     if (!needle) return null;
     const { concat, map } = buildIndex(block);
     const idx = concat.indexOf(needle);
     if (idx === -1) return null;
-    const start = map[idx];
-    const end = map[idx + needle.length - 1];
-    if (!start || !end) return null;
-    const r = document.createRange();
-    r.setStart(start.node, start.offset);
-    r.setEnd(end.node, end.offset + 1);
-    return r;
+    return rangeFromOffsets(map, idx, idx + needle.length - 1);
+  }
+
+  // Fuzzy word-level Range: when an exact substring match fails (a stray char, a differently
+  // formatted number, normalization drift between scrape and live DOM), slide a word-window over
+  // the block and lock onto the span with the most needle words, then trim the window to its
+  // first/last actually-matching word so the highlight stays tight. Returns null below threshold.
+  function fuzzyRange(block, needle) {
+    if (!needle) return null;
+    const { concat, map } = buildIndex(block);
+    const words = [];
+    const re = /\S+/g;
+    let m;
+    while ((m = re.exec(concat))) words.push({ text: m[0], start: m.index, end: m.index + m[0].length - 1 });
+    const needleWords = needle.split(' ').filter(Boolean);
+    if (!needleWords.length || !words.length) return null;
+    const needleSet = new Set(needleWords);
+    const n = needleWords.length;
+
+    // Best window by fraction of needle words present, flexing size around the needle length so a
+    // slightly re-worded span still locks on (mirrors reconcile_manifest.py's _best_window).
+    let best = { score: 0, lo: 0, hi: 0 };
+    for (const size of new Set([Math.max(1, n - 1), n, n + 1, n + 2])) {
+      for (let i = 0; i + size <= words.length; i++) {
+        let hit = 0;
+        for (let j = i; j < i + size; j++) if (needleSet.has(words[j].text)) hit++;
+        const score = hit / Math.max(size, n);
+        if (score > best.score) best = { score, lo: i, hi: i + size - 1 };
+      }
+    }
+    if (best.score < 0.7) return null;
+
+    let lo = best.lo, hi = best.hi;
+    while (lo < hi && !needleSet.has(words[lo].text)) lo++;
+    while (hi > lo && !needleSet.has(words[hi].text)) hi--;
+    return rangeFromOffsets(map, words[lo].start, words[hi].end);
   }
 
   function ensureStyle() {
@@ -97,11 +138,26 @@
                  document.querySelector('main, article, [role="main"]') ||
                  document.body;
 
-  // Prefer the full snippet so the whole sentence is marked; fall back to the anchor, then
-  // to colouring the entire block.
-  const range = rangeFor(target, cleanNeedle(snippet)) || rangeFor(target, cleanNeedle(anchor));
-  const region = (range && highlightRange(range)) ? range : (highlightWhole(target), target);
+  // Prefer an exact range for the full snippet, then the anchor; then a fuzzy word-level range;
+  // and only as a last resort colour the entire block. `__ssHighlight` records which path won so
+  // the Python caller can flag blunt whole-block highlights for review.
+  const cleanSnippet = cleanNeedle(snippet);
+  let range = rangeFor(target, cleanSnippet) || rangeFor(target, cleanNeedle(anchor));
+  let precision = range ? 'range' : 'none';
+  if (!range) {
+    range = fuzzyRange(target, cleanSnippet);
+    if (range) precision = 'fuzzy_range';
+  }
+  let region;
+  if (range && highlightRange(range)) {
+    region = range;
+  } else {
+    highlightWhole(target);
+    region = target;
+    precision = 'whole_block';
+  }
   window.__ssRegion = region;
+  window.__ssHighlight = precision;
 
   // Find the nearest scrollable ancestor of `node`, up to and including body/documentElement.
   // SPAs (e.g. Grokipedia) scroll an inner overflow container rather than the window; the same
