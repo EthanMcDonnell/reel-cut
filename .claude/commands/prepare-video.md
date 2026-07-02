@@ -24,9 +24,26 @@ The user drops their footage into `assets/<video-slug>/` before running this com
 
 Output goes to `assets/<slug>/`, named after the footage stem (e.g. `Teleprompter-2026-01-06_20-59-13.captions.json`). The transcription step prints the actual path.
 
+## Step 2.5 — Reconcile screenshot manifest (only if one exists)
+
+If `assets/<video-slug>/manifest.json` is present (screenshots were produced by `/produce-script`), the script has almost certainly moved since the manifest was written, so its `script_context` lines — which `/produce-video` uses to place each screenshot — must be re-aligned to what was actually said:
+
+```bash
+.venv/bin/python scrape/reconcile_manifest.py --slug <video-slug>
+```
+
+This auto-rewrites each screenshot's `script_context` to the closest verbatim line in the new transcript and prints a JSON report with three buckets:
+
+- `context_fixed` — contexts that were re-aligned (applied automatically).
+- `orphaned` — screenshots whose supported line no longer exists in the script (left untouched). **Report each**: its claim has no on-screen evidence — either re-shoot against the new line or drop it from the manifest.
+- `unsupported_claims` — claim-bearing script sentences (numbers, %, $) that no screenshot covers. **Report each** as a candidate for a new screenshot.
+
+If no `manifest.json` exists, skip this step.
+
 ## Step 3 — Report
 
 Summarise:
+- Manifest reconciliation results (if run): contexts re-aligned, and any orphaned screenshots / unsupported claims for the user to action
 - Keep / cut duration after fixes
 - Anomalies found and recommended fix for each (for the user to apply)
 - Any remaining issues that need a human listen (ambiguous takes, uncertain boundaries)
