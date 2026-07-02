@@ -75,6 +75,53 @@ remap → captions → logos → overlays → composite → FFmpeg burn-in
 
 ---
 
+## Publishing (Step 7 — Tailscale + Telegram)
+
+After render, `/produce-video` publishes the finished `output/<slug>.mp4` and notifies you on
+Telegram. Delivery is **link-based**: the file is served over your private tailnet and only a
+URL is sent — so there's no file-size ceiling and the phone streams it (range requests
+supported for seek/scrub).
+
+```
+output/<slug>.mp4 ──(tailscale serve)──▶ https://<host>.ts.net/reels/<slug>.mp4
+                                                │
+                           POST /telegram/send  ▼  (broker resolves topic name → thread id)
+                                         Telegram "file-exchange" topic
+```
+
+**Dependencies**
+
+| Tool | Purpose |
+|:-----|:--------|
+| [Tailscale](https://tailscale.com) | Serves `output/` privately within your tailnet |
+| `jq`, `curl` | Build the JSON payload and POST it |
+| `ultimate-message-broker` | Local Telegram bot API on `http://localhost:8765`; resolves a **topic name** → Telegram thread id |
+
+**One-time setup**
+
+1. **Tailscale** — join the tailnet and serve the output dir (idempotent; re-run each render):
+   ```bash
+   tailscale up
+   tailscale set --operator=$USER    # lets `tailscale serve` run without sudo
+   tailscale serve --bg --set-path /reels "$PWD/output"
+   ```
+   > The folder must live **outside** `~/Documents` (macOS TCC blocks Tailscale from reading it there).
+
+2. **Broker** — run `ultimate-message-broker` (`main.py --platform telegram`) and register a
+   video topic in its `config.yaml` under `projects:`. Notification-only topics need just four
+   fields — **no `path`, no `allowed_tools`**:
+   ```yaml
+   - name: file-exchange
+     platforms: [telegram]
+     telegram_topic_id: <telegram thread id>
+     claude_enabled: false
+   ```
+   The broker requires a `path` **only** when `claude_enabled: true` (the path is where Claude
+   runs); notification topics omit it. `topic` in the send payload is this **name** — a raw
+   numeric id fails with `unknown topic name`.
+
+---
+
 ## Architecture
 
 ```
