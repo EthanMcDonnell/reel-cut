@@ -8,6 +8,7 @@ description: >
 # Scripts
 
 ## Voice & Tone
+- **Match the creator's real delivery voice.** If `.claude/voice/voice-profile.md` exists, read it first — it is mined from the user's actual top-performing transcripts (openers like "So …", the "literally" disbelief intensifier, signature reframe-closers, real vocabulary, ~3.1 words/sec pacing). It is the cross-series delivery layer; the per-series file sets register on top of it. Refresh it with `/voice-profile`.
 - Conversational, confident, opinionated — write like a friend explaining a topic in casual, flowing, everyday English. Open with natural connectors, not formal declarative statements.
 - Write to the **stop-slop** skill's rules as you draft.
 - **Creator presence:** write as a person talking to the viewer, not a narrator. Use "I" deliberately — one personal touch per script ("I looked this up and it's kind of wild", "this one surprised me").
@@ -16,16 +17,7 @@ description: >
 - **Tangible over abstract:** concrete verbs and nouns ("ship hard drives", "deleted it"), not abstractions ("paradigm shift", "embracing chaos"). Punchy, not philosophical.
 
 ## Series Voice Profiles
-The default voice above is the polished explainer. When writing for a series, modulate register, length, and CTA to fit its audience — the channel's top performer (`ai-concepts`) won by sounding casual and native, not polished. If no series is given, use the default voice.
-
-| Series | Register | Target length | CTA |
-|--------|----------|---------------|-----|
-| tbbt | Polished explainer; precise, confident | 130–190 | Optional follow ("Follow for how big tech really works") |
-| updates | Casual, native, timely; sound like you just read the news | 100–150 | Comment-bait fits well |
-| ai-concepts | Casual, native dev voice; loose grammar and lowercase are fine when they land | 100–150 | Comment-bait encouraged ("Comment X and I'll send you …") |
-| breath | Brisk, no fluff; one tool, 60 seconds | under 120 | Optional |
-| intrigue | Story-driven, a little mysterious; build the reveal | 120–175 | Optional follow ("Follow for tech you won't believe exists") |
-| ai-fundamentals | Clear first-principles; slightly more teacherly | 130–190 | Optional |
+The default voice above is the polished explainer. When writing for a series, **read that series' file under `series/<slug>.md`** (indexed in `SERIES.md`) and apply its voice profile — register, target length, and CTA. That file is the source of truth; do not rely on a copy here. The channel's top performer (the `ai-fundamentals` "Claude usage limits" video) won by sounding casual and native, not polished, so honour each series' register rather than defaulting to polished. If no series is given (or `series` is `misc`), use the default voice above.
 
 **CTA (optional):** when it fits the series, close with one native line — comment-bait ("Comment X and I'll send you …") or a follow that ties to the topic. Keep it conversational, never salesy. It folds into the end of the CONCLUSION; it is not a new header.
 

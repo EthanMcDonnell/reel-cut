@@ -5,7 +5,9 @@ tools: Read, Glob, Edit, Bash, WebFetch, WebSearch, Agent
 model: opus
 permissionMode: default
 ---
-Produces a complete, validated video script from a user-supplied prompt. The prompt may be a URL (engineering blog post, article), a phrase or topic idea, a reference to an article in `scrape/db/`, or a reference to an existing file in the Obsidian Video Ideas folder (`Vault/Videos/Video Ideas/`).
+Produces a complete, validated video script from a user-supplied prompt. The prompt may be a URL (engineering blog post, article), a phrase or topic idea, a reference to an article in `scrape/db/`, or a reference to an existing file in the Obsidian Video Ideas folder (`{VAULT_VIDEO_IDEAS}`).
+
+**Paths:** `{TOKEN}` references below are machine-specific absolute paths defined in [glossary.md](glossary.md) — resolve each to its value before running. Repo-relative paths (`scrape/…`, `assets/…`, `.claude/…`) are written inline as-is.
 
 ## DB Access
 
@@ -18,7 +20,7 @@ Articles and rejected topics are stored in `scrape/db/influencer.db` (SQLite). U
 - Mark as done: `.venv/bin/python scrape/query.py mark-done <series> <url>`
 - Check rejected topics: `.venv/bin/python scrape/query.py rejected --series <series>`
 
-All commands output JSON. Run from the project root (`/Users/ethanmcdonnell/Documents/reel-cut`).
+All commands output JSON. Run from the project root (`{PROJECT_ROOT}`).
 
 ## Stage 0 — Resolve Prompt
 
@@ -33,11 +35,7 @@ Determine the prompt type and resolve it to a `topic_package`. Try each check in
   ```bash
   .venv/bin/python scrape/single_scrape.py --json "<URL>"
   ```
-
-  This uses the correct fetch method (rss/scrape/playwright/reddit) based on the source config. Use the returned `title`, `content`, `company`, and `series` fields as the research base.
-- If `single_scrape.py` returns an error or empty content, fall back to WebFetch as a last resort.
-- Set `series` from the returned `series` field if present; otherwise infer from content (tbbt for eng blog posts, updates for Claude/AI tooling).
-- **Mark as read:** if the article's URL matches an entry in the tbbt or updates table, run: `.venv/bin/python scrape/query.py mark-done <series> "<url>"`
+- This uses the correct fetch method (rss/scrape/playwright/reddit) based on the source config.1
 
 ### 2. If the prompt looks like a DB reference (article ID, title fragment, or `db:<keyword>`)
 
@@ -53,25 +51,15 @@ Determine the prompt type and resolve it to a `topic_package`. Try each check in
   .venv/bin/python scrape/single_scrape.py --json "<matched_url>"
   ```
 
-- Set `series` to the matched article's series (`tbbt` or `updates`).
 - **Mark as read:** `.venv/bin/python scrape/query.py mark-done <series> "<url>"`
 
 ### 3. If the prompt references a file (path, filename, or Obsidian note title)
 
-- Search for a matching `.md` file in `/Users/ethanmcdonnell/Library/Mobile Documents/iCloud~md~obsidian/Documents/Vault/Videos/Video Ideas/` using Glob.
+- Search for a matching `.md` file in `{VAULT_VIDEO_IDEAS}` using Glob.
 - Read the matched file. Extract topic, angle, and any URLs listed in the file.
 - If URLs are present, fetch the first one for additional research.
 - Set `series` to `misc`.
 
-### 4. If the prompt is a plain phrase or topic idea
-
-- Search both series tables for unread articles matching keywords from the prompt:
-  - `.venv/bin/python scrape/query.py articles tbbt --unread --search "<keyword>"`
-  - `.venv/bin/python scrape/query.py articles updates --unread --search "<keyword>"`
-  If a strong match exists, treat it as a DB reference (case 2 above).
-- Otherwise, use WebSearch to find 1–2 authoritative sources (official eng blog, release notes, or reputable article).
-- Extract the core insight, surprising stat or benchmark, and angle from the search results.
-- Set `series` to whichever fits best (tbbt / updates / misc).
 
 ### Reddit — Linked Article Fetch
 
@@ -86,7 +74,7 @@ We then want to collate all information as well as provide some summarisation an
 Build the following `topic_package` once resolved:
 
 ```
-SERIES: <tbbt | updates | ai-concepts | breath | intrigue | ai-fundamentals | misc>
+SERIES: <tbbt | updates | tech-in-one-breathe | interesting-tech | ai-fundamentals | misc>
 MOST_SURPRISING_FACT: <the single most counterintuitive fact across the sources, and the assumption the viewer probably holds that it overturns>
 
 (one block per source)
@@ -97,6 +85,10 @@ KEY_DISCUSSION_POINTS: <summarise/provide key talking points>
 ```
 
 If no usable content can be resolved from the prompt, abort with: "Could not resolve prompt to a scriptable topic — please provide a URL or more specific phrase."
+
+### Load the series profile
+
+Once `SERIES` is resolved (and it is not `misc`), **read `series/<SERIES>.md`** — that file is the source of truth for this series' identity, voice profile (register, target length, CTA), and best hooks. It drives Stage 0.5 (angle), Stage 1 (hooks), and Stage 3 (voice). The canonical slugs are `tbbt`, `updates`, `tech-in-one-breathe`, `interesting-tech`, `ai-fundamentals`; `misc` has no file and uses the `scripts` skill's default voice.
 
 ## Stage 0.5 — Angle Generation & Selection
 
@@ -116,16 +108,35 @@ Ask the user to confirm the recommended angle or pick another. The chosen `ANGLE
 
 ## Stage 1 — Hook Generation
 
-Invoke the `hooks` skill. Use the rules and patterns it returns to write 3 hooks that deliver the chosen `ANGLE` for the `topic_package`. Store them as `HOOK_1` through `HOOK_3`, each with a `PATTERN` and `TEXT` field.
+Invoke the `hooks` skill and apply its rules, patterns, and quality test. Better hooks come from breadth then ruthless selection, not from writing three and hoping one lands.
+
+0. **Ground in proven hooks.** Pass the resolved `SERIES` to the `hooks` skill — it reads the series file's **Best Hooks** and `.claude/voice/proven-hooks.md` (the user's top hooks ranked by real engagement) and biases toward what wins on this channel. Your job here is just to give it the slug; bias generation toward those proven patterns while still generating wide.
+
+1. **Generate wide.** Write 8–10 candidate hooks that deliver the chosen `ANGLE` for the `topic_package`. Span at least 3 of the skill's distinct patterns — do not return rewordings of a single idea. For each, note its `PATTERN` and the single raw element it leads with (the name, number, stat, or reversal, seeded from `MOST_SURPRISING_FACT`).
+2. **Score each.** Run the skill's 3-check quality test (scroll / HOW / promise) on every candidate and judge the strength of its lead element. Drop any that fail a check or lead with a weak element.
+3. **Critique and rewrite.** Take the ~5 strongest survivors. For each, name its single weakest element (buried lead, soft claim, too long, no open loop) and rewrite it once to fix exactly that. Keep the stronger version.
+4. **Shortlist distinct winners.** Select the top **N hooks (default 3)**, each using a *different pattern or lead element* so the resulting videos test genuinely different strategies, not phrasings. Store them ordered best-first as `HOOK_1 … HOOK_N`, each with a `PATTERN` and `TEXT` field.
 
 ## Stage 2 — Hook Approval
 
-Ask the user which hook they prefer
-Use confirmed hook in Stage 3.
+Present the shortlist: for each hook show its `TEXT`, its `PATTERN`, and one line on why it stops the scroll. Ask the user to confirm the set, swap in a runner-up, edit wording, or change N. The confirmed, ordered set (best first) is the `HOOK_SET` recorded into the script in Stage 3 — you are keeping **all** of them, not picking one.
 
 ## Stage 3 — Script Writing
 
-Invoke the `scripts` skill and `stop-slop` skill, use the full `topic_package`, the chosen `ANGLE`, and the confirmed hook (PATTERN + TEXT) to create a captivating short form content script for platforms like Instagram Reels. Apply the voice profile for `SERIES` from the `scripts` skill's **Series Voice Profiles** (register, target length, and whether to add a CTA). 
+Invoke the `scripts` skill and `stop-slop` skill, use the full `topic_package`, the chosen `ANGLE`, and the confirmed `HOOK_SET` to create a captivating short form content script for platforms like Instagram Reels. Pass the resolved `SERIES` to the `scripts` skill — it applies the series file's voice profile (register, target length, CTA) and layers the user's delivery voice from `.claude/voice/voice-profile.md` on top; for `misc` it uses its default voice.
+
+**Write every hook from `HOOK_SET` into the script.** You record all of them in one take and split them into separate videos later, so the `**HOOK**` section holds the full set, numbered and ordered best-first, one hook per line:
+
+```
+**HOOK**
+HOOK 1: <HOOK_1 text>
+HOOK 2: <HOOK_2 text>
+HOOK 3: <HOOK_3 text>
+**SCRIPT**
+...
+```
+
+Each hook must independently lead into the **same** body, so any split (hook N + the body) stands alone as a complete video. Keep the "why should I care" stakes sentence at the **start of `**SCRIPT**`**, not attached to any single hook, so it is shared across every variant. No blank lines.
 
 For every claim, stat, or quote that will appear in the script:
 
@@ -139,7 +150,7 @@ Any claim that cannot be traced to a specific sentence in `FULL_CONTENT` is cut,
 ## Stage 3.5 — Save & QC Gate
 After the script is written, save it:
 
-1. Save to `/Users/ethanmcdonnell/Library/Mobile Documents/iCloud~md~obsidian/Documents/Vault/Videos/Videos To Do/`
+1. Save to `{VAULT_VIDEOS_TODO}`
 2. Use kebab-case filename describing the topic (e.g. `netflix-cdn-architecture.md`)
 3. No empty lines in the saved file
 4. Ignore any other existing `.md` files in the `Videos/` folder — do not read, reference, or modify them
@@ -149,31 +160,80 @@ After the script is written, save it:
    .venv/bin/python .claude/skills/scripts/scripts/lint_script.py "<saved_file_path>"
    ```
 
-   If it exits non-zero, fix every reported blocking error, re-save, and re-run until it passes. Warnings are advisory — review them, but they don't block. Do not continue to Stage 4 until the linter passes.
+   If it exits non-zero, fix every reported blocking error, re-save, and re-run until it passes. Warnings are advisory — review them, but they don't block. The word-count warning may fire because the extra hooks count toward content length; that is expected here (the hooks get split across separate videos), so judge the body's length on its own. Do not continue to Stage 4 until the linter passes.
 
 Wait for the saved file path before continuing.
 
 **Mark the videos ideas `status:` frontmatter field:** update it from `new` to `done` using the Edit tool.
 
+## Stage 3.6 — Viewer Resources & Comment CTA
+
+The goal: give the viewer a reason to **comment**, and a payoff worth commenting for. Comments are the strongest algorithmic signal on Reels/Shorts, and the standard "comment a keyword and I'll send the link" mechanic only works if the thing you're sending is genuinely worth getting. **It must not be the source article** — the viewer just watched a video built from that article; sending it back is a dead end.
+
+### Step 3.6.1 — Brainstorm topic-specific resource ideas
+
+Think about what *this specific audience* (developers/builders watching a `SERIES` video on `TOPIC`) would actually want to do *next* after the video lands the `ANGLE`. Generate **4–6 candidate resources**, pulling from different categories so they diverge — don't return six of the same kind:
+
+- **Steal-this asset** — a free template, cheatsheet, boilerplate, config, checklist, or diagram the viewer can copy and use today. Highest comment-bait pull ("I want that").
+- **Hands-on / try-it-yourself** — a playground, sandbox, interactive demo, or online tool that lets them *experience* the concept from the video themselves.
+- **The real source code** — the open-source repo, the actual implementation, or the file that does the thing discussed. Developers love seeing the real code.
+- **Go-deeper canonical** — the seminal paper, RFC, official docs, design doc, or conference talk that goes far past the article's depth.
+- **Build-it tutorial** — a concrete step-by-step guide to recreate what the video showed.
+- **Adjacent tool / alternative** — a tool the viewer can adopt to solve their own version of this problem now.
+
+For each candidate, name the category, a one-line "why a viewer wants this," and the URL.
+
+### Step 3.6.2 — Verify every link is real
+
+**Do not invent or guess URLs.** For each candidate, find the real resource with `WebSearch`, then confirm the URL resolves with `WebFetch` (or `single_scrape.py --json`). Drop any candidate whose URL can't be verified. A fabricated link is worse than one fewer resource — it breaks trust the moment a viewer clicks. The source article's own URL is disqualified by definition.
+
+### Step 3.6.3 — Pick the lead magnet and write the CTA
+
+From the verified candidates, select the **single best lead magnet**: the one with the strongest "I want that" pull *and* the most relevance to the audience's daily work (usually the steal-this asset or the hands-on tool, rarely the canonical paper). Then write a comment-bait CTA:
+
+- A short, memorable, topic-tied **keyword** (one word, uppercase, e.g. `CACHE`, `SCALE`, `RAFT`).
+- A one-line CTA the creator can pin or say: `Comment "<KEYWORD>" and I'll send you <what the resource is>.`
+
+### Step 3.6.4 — Append to the saved script file
+
+Append a resources block to the **end** of the saved script file, **after** the `**REFERENCES:**` section (lines after that header are exempt from the linter's prose checks). **No blank lines anywhere** — the linter blocks on them. Use this format:
+
+```
+**VIEWER RESOURCES:**
+CTA: Comment "<KEYWORD>" and I'll send you <resource>.
+LEAD MAGNET: <category> — <name> — <url>
+<category> — <name> — <url>
+<category> — <name> — <url>
+<category> — <name> — <url>
+```
+
+Then re-run the linter and confirm it still passes:
+
+```bash
+.venv/bin/python .claude/skills/scripts/scripts/lint_script.py "<saved_file_path>"
+```
+
+If it reports a blank-line error, the resources block introduced an empty line — remove it and re-run until clean.
+
 ## Stage 4 — Source Screenshots for Video
-### Step 4.1: Extract verbatim snippets with context
+### Step 4.1: Choose what to back with on-screen evidence
 
-For each source URL used in the script, identify up to 6 verbatim phrases that are able to support sections of the script users may be   
-questioning whther the claim is true or where the information was sourced from. So core claims of the script, key statistic claims etc that were quoted, paraphrased, or used as factual support in the script. For each snippet, also write a `context` (the **exact verbatim script line**) that the image will be shown in video with snippet highlighted. Think about what would support the output video to confirm to audience the validity of what I am saying.
-Each snippet must:
-- Appear **verbatim** in `FULL_CONTENT` and be explicitly referenced or used as supporting content for a specific script line
-- Be **40–200 characters** — include enough surrounding words that the snippet is readable in isolation as evidence
-- Be the **specific phrase that directly maps to the script sentence**. 
+Screenshots exist to kill doubt: when the script makes a claim a viewer can't quite believe, a highlighted source line on screen proves you didn't invent it. So **start from the claims, not from the article** — don't go hunting for quotable phrases, work backwards from what the viewer disbelieves.
 
-**Good snippet candidates:**
-- The source's version of the script's big claims — sentences in the article that directly back up the bold assertions in the script. These are the screenshots that give the video credibility.
-- Direct quotes from named people
-- Specific named claims with dollar figures, dates, or numbers
-- Ask yourself what does the viewer need to believe for the rest of the video to land?
+**1. List the script's checkable claims.** Read the delivered script and note every line a skeptical viewer would stop on: the surprising statistic, the bold assertion, the "that can't be real" number, the direct quote, the dollar / date / percentage figure. Ignore setup, transitions, opinion, and anything unfalsifiable — those need no proof.
 
-**Skip:** generic setup sentences, supporting detail that isn't itself a strong claim, navigation text, or phrases so short they carry no standalone meaning.
+**2. Rank, then cap.** Order those claims by **how much the viewer doubts it × how central it is to the video**. Keep the strongest from the top down — **up to 6 per URL, and fewer is better than padding with weak ones**. Drop a claim when either: it's only mildly doubted or peripheral to the story, or the source doesn't actually state it. A claim with no verbatim backing in `FULL_CONTENT` gets **no screenshot** — flag it as unsupported (Step 4.3 / Final Output) rather than forcing a loose match.
 
-The `context` field must be the **exact verbatim script line** this screenshot supports — copy it word-for-word from the script.
+**3. For each kept claim, grab the tightest proof.** Find the phrase in the article that **contains the proof itself** — the number, the name, the figure — plus only enough surrounding words to read as a clause. Prefer the **smallest verbatim span that still proves the claim** over the surrounding topic sentence: a tight highlight on `reclaimed millions from 47% idle capacity` beats a wide highlight on a three-clause sentence that merely mentions it. Tighter spans read as stronger evidence and crop cleaner on screen.
+
+For each kept claim, write **four fields**:
+
+- **`article_snippet`** — the proof phrase, **verbatim** from `FULL_CONTENT` (copy it, don't paraphrase, or it won't be found). Roughly **40–200 characters**: long enough to read as a standalone clause, short enough to stay centred on the proof token. Maps to exactly one script sentence.
+- **`script_context`** — the **exact verbatim script line** this screenshot supports, copied word-for-word from the script. This is the line the screenshot is shown under in the video.
+- **`trigger_show_word`** — a short verbatim anchor (one word or a 2–4 word phrase) **from inside `script_context`** marking where in the spoken line the screenshot should *appear*. Pick the word at the moment the claim starts landing — usually the first word of the clause that states the claim.
+- **`trigger_go_away_word`** — a short verbatim anchor from inside `script_context` marking where the screenshot should *disappear* — usually the last word of the claim, before the script moves on. Choose anchors that are unique within the line so they can't match the wrong spot.
+
+The trigger anchors let produce-video bound the on-screen window precisely instead of guessing the sentence span. They're optional refinements — if a clean anchor isn't obvious, leave them as `""` and produce-video falls back to spanning the whole line.
 
 ### Step 4.2: Run the screenshot tool
 
@@ -183,7 +243,7 @@ For each source URL, run:
 .venv/bin/python scrape/screenshot.py \
   --url "<source_url>" \
   --output-dir "assets/<video-slug>/" \
-  --snippets '[{"text": "verbatim phrase 1", "context": "Script line: ..."}, {"text": "verbatim phrase 2", "context": "Script line: ..."}, ...]'
+  --snippets '[{"article_snippet": "verbatim phrase 1", "script_context": "exact script line", "trigger_show_word": "anchor in", "trigger_go_away_word": "the line"}, {"article_snippet": "verbatim phrase 2", "script_context": "...", "trigger_show_word": "...", "trigger_go_away_word": "..."}, ...]'
 ```
 
 Where `<video-slug>` matches the saved script filename (without `.md`).
@@ -192,10 +252,11 @@ If a source URL is a Reddit post, use the linked article URL instead (already fe
 
 ### Step 4.3: Check what was actually captured
 
-The JSON result includes a `snippets` array — one entry per requested snippet with `found`, `match_type` (`exact` | `fuzzy` | `none`), `confidence`, and (on a miss) `reason`. The same misses are also recorded under `missed` in `manifest.json`.
+The JSON result includes a `snippets` array — one entry per requested snippet with `found`, `match_type` (`exact` | `fuzzy` | `none`), `confidence`, `highlight` (`range` | `fuzzy_range` | `whole_block`), and (on a miss) `reason`. The same misses are also recorded under `missed` in `manifest.json`.
 
-- **Report every snippet with `found: false`** and its `reason`. That claim will have **no on-screen evidence** in the video — either revise the snippet `text` to match the article's wording verbatim and re-run for that URL, or call the claim out as unsupported.
+- **Report every snippet with `found: false`** and its `reason`. That claim will have **no on-screen evidence** in the video — either revise the `article_snippet` to match the article's wording verbatim and re-run for that URL, or call the claim out as unsupported.
 - **Flag any `match_type: "fuzzy"` match with `confidence` below 0.8** — find located an approximate block rather than the exact phrase, so it's worth an eyeball before relying on it.
+- **Flag any `highlight: "whole_block"`** — the exact phrase couldn't be pinpointed so the whole paragraph was coloured; the screenshot shows a wall of highlight rather than the specific proof. Worth eyeballing, and often fixed by trimming the `article_snippet` to a span that matches the live page verbatim and re-running.
 - If `skipped` is non-null, the whole page failed to load — report that reason; no screenshots were captured for that URL.
 
 ## Final Output
@@ -204,6 +265,8 @@ Report to the user:
 
 - Prompt resolved as: [URL / file reference / phrase] → [TOPIC] ([SERIES])
 - Script saved to: [file path]
+- Viewer resources: the comment CTA line (keyword + lead magnet), and the full verified resource list appended to the script file
 - Screenshots saved to: `assets/<slug>/`
 - Screenshot results: how many captured (with the exact/fuzzy breakdown), and explicitly list any snippets that were **not found** so the user knows which claims lack on-screen evidence
+- Unsupported claims: any checkable claim you dropped at selection time because the source didn't state it verbatim (Step 4.1.2) — the user may want to re-source or soften it
 - Any warnings (near-tie runner-up available, low-confidence fuzzy matches, skipped screenshots, etc.)

@@ -4,6 +4,8 @@
 
 **Always use `.venv/bin/python` for all Python and pip commands.** Never system python/pip.
 
+**To fetch article content** (e.g. verify CTA claims): `.venv/bin/python scrape/single_scrape.py <url>`
+
 ## Workflows
 
 - `/produce-script` — Phase 0: article/URL → script + screenshots

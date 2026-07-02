@@ -36,6 +36,10 @@ A surprising fact stops the scroll. An unresolved implication or personal threat
 ## Proven Hook Patterns
 Use only if it fits the topic and the content of the video. Don't force a pattern if it doesn't fit.
 
+**Series-specific best hooks:** when a `SERIES` is known, read `series/<slug>.md` (indexed in `SERIES.md`) first — it records which patterns win for that audience and the hooks that have actually shipped or hit ~100k views. Slugs: `tbbt`, `updates`, `tech-in-one-breathe`, `interesting-tech`, `ai-fundamentals`.
+
+**Proven hooks (real analytics):** also read `.claude/voice/proven-hooks.md` if it exists — the user's own shipped hooks ranked by *real* engagement across all series, with the dominant winning patterns distilled (named tech in the first ~4 words; a specific number or second-person threat; the repeatable `"What is X and why was it so dangerous?"` and `"So [Company] literally [absurd action]"` templates; and comment-bait CTA as the biggest engagement lever). Refresh it with `/voice-profile`.
+
 ### Recent Update
 **Format:** "[Large Company/Researcher/Person] just [did X]."
 **Best for:** news, tech updates, security disclosures.
