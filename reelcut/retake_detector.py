@@ -415,8 +415,16 @@ def _detect_reworded_takes(
 
 
 def _normalize(word: str) -> str:
-    """Lowercase and strip all non-alphabetic characters."""
-    return re.sub(r"[^a-z]", "", word.lower())
+    """Lowercase and strip everything except letters and digits.
+
+    Digits are KEPT so a number spoken identically across two takes matches: both
+    "500"s normalize to "500", not to "". Erasing digits would both bar any n-gram
+    spanning the number from seeding (skipped by the `all(ngram)` empty-token guard)
+    and halt the backward extension the instant it reached the empty token — stranding
+    "Reddit moved 500 Kafka brokers to …" as an uncut stutter because the only usable
+    seed sat after the number. Punctuation-only tokens (e.g. "…") still normalize to "".
+    """
+    return re.sub(r"[^a-z0-9]", "", word.lower())
 
 
 def _swap_variants(ngram: tuple[str, ...]):

@@ -470,3 +470,41 @@ def test_reworded_pass_preserves_unique_sentence_between_take_and_reprise():
     assert ranges[0][1] == pytest.approx(3.0)   # ends at the unique sentence's first word
     # no cut overlaps the unique sentence "Birds fly high above." (3.0s–4.9s)
     assert not any(s < 4.9 and e > 3.0 for s, e in ranges)
+
+
+def test_number_split_retake_is_cut():
+    """A false start and its clean retake sharing a spoken number must be cut.
+
+    Regression: _normalize used to erase digits, so "500" → "". That barred every
+    n-gram spanning the number from seeding and halted the backward extension the
+    instant it hit the empty token. The only seedable phrase ("kafka brokers to") then
+    sat *after* the number and matched just 3 of 7 words (0.43 < 0.5 threshold),
+    leaving the false start "Reddit moved 500 Kafka brokers to re…" uncut. Keeping the
+    digits lets "reddit moved 500 …" match the keeper end-to-end (6/7 = 0.86)."""
+    words = [
+        # false start, cut off at "to re..."
+        _w("Reddit", 16.9, 17.1), _w("moved", 17.2, 17.4), _w("500", 17.5, 18.0),
+        _w("Kafka", 18.0, 18.4), _w("brokers", 18.4, 18.8), _w("to", 18.9, 19.0),
+        _w("re...", 19.1, 19.4),
+        # clean retake (kept), begins after a ~5.5s pause
+        _w("Reddit", 24.9, 25.2), _w("moved", 25.2, 25.4), _w("500", 25.5, 26.0),
+        _w("Kafka", 26.0, 26.3), _w("brokers", 26.3, 26.6), _w("to", 26.7, 26.8),
+        _w("Kubernetes", 26.8, 27.4), _w("without", 27.4, 27.7), _w("a", 27.7, 27.75),
+        _w("single", 27.8, 28.2), _w("user", 28.5, 28.8), _w("noticing.", 28.9, 29.1),
+    ]
+    ranges, _ = detect_retakes(words, min_retake_words=3, max_retake_gap_s=12.0, min_match_ratio=0.5)
+    assert len(ranges) == 1
+    assert ranges[0][0] == pytest.approx(16.9)   # cut begins at the false start
+    assert ranges[0][1] == pytest.approx(24.9)   # …and ends at the keeper's first word
+
+
+def test_different_numbers_not_treated_as_same_word():
+    """Digits are kept for matching but distinct numbers must not falsely match: two
+    unrelated sentences that differ only in their numbers share no repeated content and
+    stay uncut (guards against a naive number→placeholder normalization)."""
+    words = [
+        _w("We", 0.0, 0.2), _w("scaled", 0.3, 0.7), _w("to", 0.8, 0.9), _w("500", 1.0, 1.4), _w("nodes.", 1.5, 2.0),
+        _w("They", 3.0, 3.2), _w("dropped", 3.3, 3.7), _w("to", 3.8, 3.9), _w("250", 4.0, 4.4), _w("cores.", 4.5, 5.0),
+    ]
+    ranges, _ = detect_retakes(words, min_retake_words=3, max_retake_gap_s=12.0, min_match_ratio=0.5)
+    assert ranges == []
