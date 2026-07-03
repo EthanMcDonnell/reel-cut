@@ -60,7 +60,7 @@ Then scan the `words` array for person names (consecutive capitalised words that
 
 Build the complete images list — one entry per screenshot, plus any person entries, plus an optional concept image (Step 3b).
 
-## Step 3b — Concept image (optional, one per video)
+## Step 3b — Concept image (optional, at most three per video)
 
 A few quirky Wikipedia image can add a fun extra dimension — drop a literal photo of an unexpected *thing* onto a punchline. The gag lands when an abstract phrase is rendered as the real object behind it: "spaghetti code" → a bowl of spaghetti, "rubber-duck debugging" → a rubber duck, "the cops showed up" → a police car. Resolved exactly like a `person`, but the **name** is any Wikipedia subject, not a person.
 

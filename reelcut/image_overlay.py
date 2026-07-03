@@ -1,6 +1,7 @@
 """Image overlay renderer — composites logo PNGs over video frames with fade in/out."""
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 from PIL import Image
@@ -9,8 +10,10 @@ from .caption import CaptionFrame
 from .config import ImagesConfig
 from .image_finder import ImageCue
 
-# Center is the prime slot. When images overlap in time, the highest-priority
-# one keeps the center and the rest are displaced to the corners in this order.
+# Center is the prime slot. When images of *different* types overlap in time, the
+# highest-priority one keeps the center and the rest are displaced to the corners
+# in this order. Two logos are the exception: the later one replaces the earlier
+# one in the center rather than displacing it (see _resolve_logo_swaps).
 _SLOTS = ("center", "top_left", "top_right")
 
 # Lower number = higher priority for the center slot: screenshot > person > concept > logo.
@@ -20,9 +23,11 @@ _TYPE_PRIORITY = {"screenshot": 0, "person": 1, "concept": 2, "logo": 3}
 def _assign_slots(cues: list[ImageCue]) -> list[str]:
     """Assign each cue a display slot, avoiding center-stacking of overlapping images.
 
-    Higher-priority cues (text > wikipedia > logo) claim the center first; any cue
-    that overlaps an already-claimed slot in time is bumped to the next free slot
-    (center → top_left → top_right). Returns slots parallel to `cues`.
+    Higher-priority cues (screenshot > person > concept > logo) claim the center
+    first; any cue that overlaps an already-claimed slot in time is bumped to the
+    next free slot (center → top_left → top_right). Returns slots parallel to
+    `cues`. Callers pass the swap-adjusted ends from `_resolve_logo_swaps`, so a
+    replaced logo no longer overlaps its successor and both keep the center.
     """
     order = sorted(
         range(len(cues)),
@@ -40,6 +45,37 @@ def _assign_slots(cues: list[ImageCue]) -> list[str]:
         else:
             slots[i] = _SLOTS[-1]  # >3 concurrent: stack on top_right
     return slots
+
+
+def _resolve_logo_swaps(
+    cues: list[ImageCue],
+) -> tuple[list[float], list[bool], list[bool]]:
+    """Make an overlapping logo *replace* the one before it in the center.
+
+    When a logo fires while an earlier logo is still on screen, we clamp the
+    earlier logo's end down to the later logo's start — so it vanishes exactly as
+    the new one appears — instead of bumping it to a corner. The swap is a hard
+    cut: the outgoing logo doesn't fade out and the incoming one doesn't fade in
+    at the seam (their outer fade-in / fade-out edges are untouched).
+
+    Returns three lists parallel to `cues`: the (possibly clamped) end time, and
+    whether each cue should suppress its fade-in / fade-out because it sits at a
+    swap seam. Non-logo cues are never touched.
+    """
+    ends = [c.end for c in cues]
+    suppress_in = [False] * len(cues)
+    suppress_out = [False] * len(cues)
+
+    logo_idx = sorted(
+        (i for i, c in enumerate(cues) if c.type == "logo"),
+        key=lambda i: cues[i].start,
+    )
+    for a, b in zip(logo_idx, logo_idx[1:]):
+        if cues[b].start < ends[a]:  # b lands while a is still showing
+            ends[a] = cues[b].start
+            suppress_out[a] = True   # a is cut off, not faded out
+            suppress_in[b] = True    # b cuts in, not faded in
+    return ends, suppress_in, suppress_out
 
 
 def render_image_frames(
@@ -65,10 +101,11 @@ def render_image_frames(
     # Drop the corner (displaced) slots a little below the top edge.
     corner_y = margin_px + int(h * config.corner_drop_pct / 100)
 
-    slots = _assign_slots(cues)
+    ends, suppress_in, suppress_out = _resolve_logo_swaps(cues)
+    slots = _assign_slots([replace(c, end=e) for c, e in zip(cues, ends)])
 
     prepared: list[dict] = []
-    for cue, slot in zip(cues, slots):
+    for i, (cue, slot) in enumerate(zip(cues, slots)):
         try:
             logo = Image.open(cue.image_path).convert("RGBA")
         except Exception:
@@ -98,16 +135,18 @@ def render_image_frames(
 
         delay_frames = int(config.start_delay_s * fps)
         start_frame = max(int(cue.start * fps), delay_frames)
-        end_frame = int(cue.end * fps)
+        end_frame = int(ends[i] * fps)
         total = end_frame - start_frame
         if total <= 0:
             continue
 
-        # Clamp fade so it doesn't exceed half the display window
+        # Clamp fade so it doesn't exceed half the display window. A logo at a
+        # swap seam suppresses that edge's fade for a hard cut.
         effective_fade = min(fade_frames, total // 2)
         prepared.append(
-            {"logo": logo, "x": x, "y": y, "start": start_frame,
-             "total": total, "fade": effective_fade}
+            {"logo": logo, "x": x, "y": y, "start": start_frame, "total": total,
+             "fade_in": 0 if suppress_in[i] else effective_fade,
+             "fade_out": 0 if suppress_out[i] else effective_fade}
         )
 
     if not prepared:
@@ -125,11 +164,11 @@ def render_image_frames(
             i = frame_num - p["start"]
             if i < 0 or i >= p["total"]:
                 continue
-            fade, total = p["fade"], p["total"]
-            if fade > 0 and i < fade:
-                alpha = i / fade
-            elif fade > 0 and i >= total - fade:
-                alpha = (total - i) / fade
+            fin, fout, total = p["fade_in"], p["fade_out"], p["total"]
+            if fin > 0 and i < fin:
+                alpha = i / fin
+            elif fout > 0 and i >= total - fout:
+                alpha = (total - i) / fout
             else:
                 alpha = 1.0
             if alpha > 0:
