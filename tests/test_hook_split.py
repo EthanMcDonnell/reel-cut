@@ -57,6 +57,18 @@ class TestBuildHookEdl:
         build_hook_edl(FULL_EDL, HOOK_WINDOWS, target_idx=2)
         assert all(e.keep for e in FULL_EDL)  # originals untouched
 
+    def test_splits_a_keep_entry_that_straddles_hook_boundaries(self):
+        # One continuous keep entry [0,9) covers all three hooks (hooks aren't
+        # separated by EDL cuts), then a body entry [9,30).
+        straddle = [_keep(0, 9), _keep(9, 30)]
+        new_edl, hook_dur, drop = build_hook_edl(straddle, HOOK_WINDOWS, target_idx=1)
+
+        # Hook 1's slice [3,6) + body [9,30) survive; the entry is split, not
+        # swallowed whole into hook 0.
+        assert [(e.start, e.end) for e in new_edl if e.keep] == [(3, 6), (9, 30)]
+        assert hook_dur == 3.0
+        assert drop == {"c.mp4": [(0, 3), (6, 9)]}
+
 
 class TestDropCovered:
     def test_drops_words_inside_dropped_hooks_only(self):
