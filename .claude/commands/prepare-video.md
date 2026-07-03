@@ -24,6 +24,8 @@ The user drops their footage into `assets/<video-slug>/` before running this com
 
 Output goes to `assets/<slug>/`, named after the footage stem (e.g. `Teleprompter-2026-01-06_20-59-13.captions.json`). The transcription step prints the actual path.
 
+**This is a full reset.** Transcription first wipes everything derived from any prior run — the old `captions.json`, debug reports, and the overlay files `images.json` / `headings.json` / `audio.json` — then re-scaffolds them as fresh stubs. So re-running this command on a slug that already went through `/produce-video` discards those image timings and title cards (they'd otherwise drift against the new transcript). Source inputs are untouched: the footage, `manifest.json`, and the produce-script screenshots all carry over.
+
 ## Step 2.5 — Reconcile screenshot manifest (only if one exists)
 
 If `assets/<video-slug>/manifest.json` is present (screenshots were produced by `/produce-script`), the script has almost certainly moved since the manifest was written, so its `script_context` lines — which `/produce-video` uses to place each screenshot — must be re-aligned to what was actually said:

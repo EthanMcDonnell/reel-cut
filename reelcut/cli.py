@@ -806,6 +806,14 @@ def _resolve_image_spec(spec, display_duration_s: float):
 # ---------------------------------------------------------------------------
 
 def _clean_transcription_artifacts(output_dir: Path, console: Console) -> None:
+    """Wipe everything derived from a prior transcribe so a re-run is a clean slate.
+
+    This includes the overlay files (images.json / headings.json / audio.json):
+    they are keyed to the old transcript and would otherwise silently survive
+    (the scaffolders never clobber) and drift out of alignment. They are
+    re-scaffolded as fresh stubs immediately after transcription. Source inputs —
+    footage and the produce-script manifest.json + screenshots — are left alone.
+    """
     import shutil
     cleaned = []
     for p in output_dir.glob("*.captions.json"):
@@ -814,6 +822,11 @@ def _clean_transcription_artifacts(output_dir: Path, console: Console) -> None:
     for p in output_dir.glob("*.debug.*.txt"):
         p.unlink()
         cleaned.append(p.name)
+    for name in ("images.json", "headings.json", "audio.json"):
+        p = output_dir / name
+        if p.exists():
+            p.unlink()
+            cleaned.append(name)
     clips_dir = output_dir / "retranscribe-clips"
     if clips_dir.exists():
         shutil.rmtree(clips_dir)
