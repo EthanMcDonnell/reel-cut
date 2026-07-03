@@ -832,6 +832,7 @@ def _audio_library(cfg) -> dict:
         if name in lib:
             lib[name].source_start = t.source_start
             lib[name].gain_db = t.gain_db
+            lib[name].slow_pct = t.slow_pct
             if t.path:
                 lib[name].path = t.path
         elif t.path:
@@ -867,9 +868,9 @@ def _resolve_audio_tracks(cfg, edl, audio_path: Path | None, warnings: list[str]
                 console.print(f"  [yellow]Unknown audio track: '{spec.track}' (no such file in assets/audio/)[/yellow]")
                 warnings.append(f"Unknown audio track: '{spec.track}'")
                 continue
-            path, source_start, base_gain = lib.path, lib.source_start, lib.gain_db
+            path, source_start, base_gain, slow_pct = lib.path, lib.source_start, lib.gain_db, lib.slow_pct
         else:
-            path, source_start, base_gain = spec.path, spec.source_start, 0.0
+            path, source_start, base_gain, slow_pct = spec.path, spec.source_start, 0.0, spec.slow_pct
         if not path:
             continue
         p = Path(path)
@@ -884,6 +885,7 @@ def _resolve_audio_tracks(cfg, edl, audio_path: Path | None, warnings: list[str]
             "start": spec.start,
             "end": end,
             "gain_db": base_gain + spec.gain_db,
+            "slow_pct": slow_pct,
         })
 
     if tracks:

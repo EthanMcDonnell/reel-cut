@@ -28,6 +28,8 @@ class AudioSpec:
     start:        output-timeline second the track begins (default 0 = start of video)
     end:          output-timeline second the track ends; -1 = until the end of the video
     gain_db:      manual trim in dB on top of the auto-level (added to a library track's own gain_db)
+    slow_pct:     slow the track by this % (10 = 10% slower); only used with a raw `path`
+                  (a library `track` carries its own slow_pct)
     """
     track: str = ""
     path: str = ""
@@ -35,6 +37,7 @@ class AudioSpec:
     start: float = 0.0
     end: float = -1.0
     gain_db: float = 0.0
+    slow_pct: float = 0.0
 
 
 def load_audio(path: Path) -> list[AudioSpec]:
@@ -53,6 +56,7 @@ def load_audio(path: Path) -> list[AudioSpec]:
             start=float(a.get("start", 0.0)),
             end=float(a.get("end", -1.0)),
             gain_db=float(a.get("gain_db", 0.0)),
+            slow_pct=float(a.get("slow_pct", 0.0)),
         )
         for a in raw
     ]

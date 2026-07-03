@@ -368,10 +368,16 @@ def _mix_audio_tracks(voice, audio_tracks: list[dict] | None):
         bg = ffmpeg.input(t["path"]).audio
         length = max(0.0, t["end"] - t["start"])
         src_start = t.get("source_start", 0.0)
+        # Slowing (atempo < 1) stretches the audio, so pull `length * tempo` source
+        # seconds — after the stretch that exactly fills the [start, end] window.
+        tempo = 1.0 - t.get("slow_pct", 0.0) / 100.0
+        src_len = length * tempo
         if src_start > 0:
-            bg = bg.filter("atrim", start=src_start, duration=length)
+            bg = bg.filter("atrim", start=src_start, duration=src_len)
         else:
-            bg = bg.filter("atrim", duration=length)
+            bg = bg.filter("atrim", duration=src_len)
+        if tempo != 1.0:
+            bg = bg.filter("atempo", tempo)
         bg = bg.filter("asetpts", "PTS-STARTPTS")
         gain_db = t.get("_gain_db", 0.0)
         if abs(gain_db) > 0.01:

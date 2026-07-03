@@ -189,6 +189,8 @@ class AudioTrack(BaseModel):
     path: str = ""              # audio file; omit to auto-discover from assets/audio/<name>.*
     source_start: float = 0.0   # seconds into the source file to begin playback (skip an intro)
     gain_db: float = 0.0        # baseline manual trim on top of auto-leveling (0 = none)
+    slow_pct: float = 0.0       # slow the track down by this % (10 = 10% slower). 0 = original
+                                # speed. Pitch drops with the tempo. Max ~50 (atempo floor).
 
 
 class AudioConfig(BaseModel):
