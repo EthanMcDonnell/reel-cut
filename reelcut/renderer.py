@@ -367,7 +367,12 @@ def _mix_audio_tracks(voice, audio_tracks: list[dict] | None):
     for t in audio_tracks:
         bg = ffmpeg.input(t["path"]).audio
         length = max(0.0, t["end"] - t["start"])
-        bg = bg.filter("atrim", duration=length).filter("asetpts", "PTS-STARTPTS")
+        src_start = t.get("source_start", 0.0)
+        if src_start > 0:
+            bg = bg.filter("atrim", start=src_start, duration=length)
+        else:
+            bg = bg.filter("atrim", duration=length)
+        bg = bg.filter("asetpts", "PTS-STARTPTS")
         gain_db = t.get("_gain_db", 0.0)
         if abs(gain_db) > 0.01:
             bg = bg.filter("volume", f"{gain_db:.2f}dB")

@@ -184,12 +184,25 @@ class AssetsConfig(BaseModel):
     location: str = "./assets"
 
 
+class AudioTrack(BaseModel):
+    """One entry in the audio library — describes a source file, not its use in any one video."""
+    path: str                   # audio file (e.g. assets/audio/upbeat.mp3)
+    source_start: float = 0.0   # seconds into the source file to begin playback (skip an intro)
+    gain_db: float = 0.0        # baseline manual trim on top of auto-leveling (0 = none)
+
+
 class AudioConfig(BaseModel):
     enabled: bool = True
-    default_path: str = ""    # background music mixed under every video (full length, trimmed to
-                              # video duration) unless overridden in assets/<slug>/audio.json
+    default: str = ""         # library key mixed under every video unless overridden in
+                              # assets/<slug>/audio.json. "" = no music by default.
+    library: dict[str, AudioTrack] = Field(default_factory=dict)  # all available tracks, keyed by name
     ducking_lufs: float = 18.0  # how far (LUFS) music sits below the measured voice loudness.
                                 # Higher = quieter music. ~18 keeps speech clearly dominant.
+
+    @field_validator("library", mode="before")
+    @classmethod
+    def _empty_library(cls, v):
+        return v or {}  # `library:` with only commented-out entries parses to None
 
 
 class ReelCutConfig(BaseModel):

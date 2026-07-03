@@ -713,9 +713,11 @@ def _heading_reset_boundaries(heading_specs: list, total_output_s: float) -> lis
 def _resolve_audio_tracks(cfg, edl, audio_path: Path | None, warnings: list[str]) -> list[dict]:
     """Resolve audio.json (+ config default) to renderer-ready background track dicts.
 
-    With no audio.json (or an empty one), a single full-length track is created from
-    cfg.audio.default_path. `end = -1` is resolved to the total output duration so the
-    track spans the whole video; anything past the end is cut by the mixer.
+    Each audio.json entry either names a `track` from cfg.audio.library (which supplies the
+    file path, source_start, and baseline gain) or overrides with a raw `path`. With no
+    audio.json (or an empty one), a single full-length track is created from cfg.audio.default
+    (the library key applied to every video). `end = -1` is resolved to the total output
+    duration so the track spans the whole video; anything past the end is cut by the mixer.
     """
     if not cfg.audio.enabled:
         return []
@@ -723,13 +725,21 @@ def _resolve_audio_tracks(cfg, edl, audio_path: Path | None, warnings: list[str]
     from .audio_spec import AudioSpec, load_audio
 
     specs = load_audio(audio_path) if audio_path else []
-    if not specs and cfg.audio.default_path:
-        specs = [AudioSpec()]  # one default full-length track from config
+    if not specs and cfg.audio.default:
+        specs = [AudioSpec(track=cfg.audio.default)]  # library default applied to every video
 
     total_output_s = sum(e.end - e.start for e in edl if e.keep)
     tracks: list[dict] = []
     for spec in specs:
-        path = spec.path or cfg.audio.default_path
+        if spec.track:
+            lib = cfg.audio.library.get(spec.track)
+            if lib is None:
+                console.print(f"  [yellow]Unknown audio track: '{spec.track}' (not in config audio.library)[/yellow]")
+                warnings.append(f"Unknown audio track: '{spec.track}'")
+                continue
+            path, source_start, base_gain = lib.path, lib.source_start, lib.gain_db
+        else:
+            path, source_start, base_gain = spec.path, spec.source_start, 0.0
         if not path:
             continue
         p = Path(path)
@@ -738,7 +748,13 @@ def _resolve_audio_tracks(cfg, edl, audio_path: Path | None, warnings: list[str]
             warnings.append(f"Audio file not found: {path}")
             continue
         end = spec.end if spec.end >= 0 else total_output_s
-        tracks.append({"path": str(p), "start": spec.start, "end": end, "gain_db": spec.gain_db})
+        tracks.append({
+            "path": str(p),
+            "source_start": source_start,
+            "start": spec.start,
+            "end": end,
+            "gain_db": base_gain + spec.gain_db,
+        })
 
     if tracks:
         console.print(f"  Background audio: {[Path(t['path']).name for t in tracks]}")
@@ -866,13 +882,13 @@ def _scaffold_images(captions_path: Path) -> None:
 
 def _scaffold_audio(captions_path: Path) -> None:
     """Drop an editable audio.json stub (empty list) next to the captions file, never
-    clobbering an existing one. Empty list falls back to config audio.default_path (one
-    full-length track); add entries to override the path/timing/volume per video."""
+    clobbering an existing one. Empty list falls back to config audio.default (one full-length
+    track from the library); add entries like {"track": "upbeat"} to override per video."""
     ap = captions_path.parent / "audio.json"
     if ap.exists():
         return
     ap.write_text("[]\n")
-    console.print(f"[green]Audio stub →[/green] {ap} [dim](add background music tracks, or leave empty for the config default)[/dim]")
+    console.print(f"[green]Audio stub →[/green] {ap} [dim](add tracks e.g. {{\"track\": \"upbeat\"}}, or leave empty for the config default)[/dim]")
 
 
 def _assets_or_ts_dir(cfg, slug: str | None) -> Path:
