@@ -42,9 +42,12 @@ If no `manifest.json` exists, skip this step.
 
 ## Step 3 — Report
 
+**Hook takes are intentional.** The user deliberately records several alternate openers back-to-back at the top of the clip (often fully reworded, e.g. "Reddit moved a petabyte…" then "Reddit swapped Kafka onto Kubernetes…"). The retake detector won't cut these because they share little verbatim wording. Do **not** flag them as anomalies or bad cuts — just list the alternate hooks as a quick "pick one" so the user can flip the others to `keep: false`. Only a *truncated false start* (a cut-off opener like "…brokers to re…" immediately followed by its clean completion) is a real anomaly worth flagging as such.
+
 Summarise:
 - Manifest reconciliation results (if run): contexts re-aligned, and any orphaned screenshots / unsupported claims for the user to action
 - Keep / cut duration after fixes
+- Alternate hook takes at the cold open — list them for the user to pick one (not an anomaly)
 - Anomalies found and recommended fix for each (for the user to apply)
 - Any remaining issues that need a human listen (ambiguous takes, uncertain boundaries)
 - `headings.json` and `images.json` stubs were auto-created in the slug folder — optionally add a title card / image overlays later by filling them in (covered in `/produce-video`)
