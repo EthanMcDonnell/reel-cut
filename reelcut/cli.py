@@ -155,6 +155,103 @@ def render(
 
 
 # ---------------------------------------------------------------------------
+# reelcut render-hooks  (Phase 2 — one video per hook)
+# ---------------------------------------------------------------------------
+
+@app.command(name="render-hooks")
+def render_hooks(
+    config_path: str = typer.Argument("config.yaml", help="Path to config.yaml"),
+    captions_path: str = typer.Argument(..., help="Path to .captions.json from transcribe step"),
+    slug: str | None = typer.Option(None, "--slug", help="Video slug (overrides script-derived slug)."),
+    verbose: bool = typer.Option(False, "--verbose", "-v"),
+) -> None:
+    """Phase 2 (per-hook): render one video per hook — each is hook_i + the shared body.
+
+    The titled cards in headings.json are the hook definition (one card per hook, as
+    produced by /produce-video). Each render is a normal full render with the *other*
+    hooks flipped to cuts, so music/captions/scaling all behave as usual — no concat.
+    Outputs output/<slug>-hook{i}.mp4.
+    """
+    import json
+
+    from .captions_doc import CaptionsDoc, load_captions_doc
+    from .config import load_config
+    from .heading import load_headings
+    from .hook_split import build_hook_edl, drop_covered
+    from .image_spec import load_images, save_images
+
+    try:
+        cfg = load_config(config_path)
+    except (FileNotFoundError, ValueError) as exc:
+        err_console.print(f"[red]Config error:[/red] {exc}")
+        raise typer.Exit(1)
+
+    cap_path = Path(captions_path)
+    if not cap_path.exists():
+        err_console.print(f"[red]Error:[/red] captions file not found: {cap_path}")
+        raise typer.Exit(1)
+
+    doc = load_captions_doc(cap_path)
+    slug = _resolve_slug(cfg, slug) or cap_path.parent.name
+    assets_dir = cap_path.parent
+
+    headings_path = assets_dir / "headings.json"
+    cards = [h for h in load_headings(headings_path) if h.title] if headings_path.exists() else []
+    if not cards:
+        err_console.print(
+            "[red]Error:[/red] headings.json has no titled hook cards — fill it in first "
+            "(/produce-video Step 4b)."
+        )
+        raise typer.Exit(1)
+    hook_windows = [(h.start, h.end) for h in cards]
+
+    out_dir = Path(cfg.output.location)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    images = load_images(assets_dir / "images.json")
+    audio_path = assets_dir / "audio.json"
+
+    n = len(hook_windows)
+    console.print(f"[bold]{n} hook video(s) to render[/bold]\n")
+    all_warnings: list[str] = []
+    for i in range(n):
+        card = cards[i]
+        output_path = out_dir / f"{slug}-hook{i + 1}.mp4"
+        console.rule(f"[bold]Hook {i + 1}/{n}[/bold] → {output_path.name}")
+
+        new_edl, hook_dur, drop_intervals = build_hook_edl(doc.edl, hook_windows, i)
+        new_doc = CaptionsDoc(
+            source_clips=doc.source_clips,
+            edl=new_edl,
+            words=drop_covered(doc.words, drop_intervals),
+        )
+
+        # Per-hook overlay stubs written into the assets dir so heading's {n:<series>}
+        # episode-token resolution still finds the slug + series_index.json. Cleaned up
+        # after each render.
+        tmp_headings = assets_dir / f".render-hook{i + 1}.headings.json"
+        tmp_headings.write_text(json.dumps([{
+            "title": card.title,
+            "subtitle": card.subtitle,
+            "start": 0.0,
+            "end": hook_dur,
+            "scrim": card.scrim,
+        }], indent=2))
+        tmp_images = assets_dir / f".render-hook{i + 1}.images.json"
+        save_images(drop_covered(images, drop_intervals), tmp_images)
+
+        try:
+            all_warnings.extend(_phase2(
+                cfg, new_doc, output_path, verbose,
+                headings_path=tmp_headings, images_path=tmp_images, audio_path=audio_path,
+            ))
+        finally:
+            tmp_headings.unlink(missing_ok=True)
+            tmp_images.unlink(missing_ok=True)
+
+    _exit_with_warnings(all_warnings)
+
+
+# ---------------------------------------------------------------------------
 # reelcut run  (end-to-end convenience)
 # ---------------------------------------------------------------------------
 

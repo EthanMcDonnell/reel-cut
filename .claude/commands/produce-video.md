@@ -1,11 +1,11 @@
 ---
 name: produce-video
-description: Assign screenshot and person image timings to images.json, then render the final video via reelcut.
+description: Assign screenshot and person image timings to images.json, then render one video per hook via reelcut.
 tools: Read, Edit, Bash
 permissionMode: default
 ---
 
-Populates image overlays in images.json and renders the final video.
+Populates image overlays in images.json and renders one video per hook (each hook + the shared body).
 
 **Paths:** `{TOKEN}` references below are machine-specific absolute paths/endpoints defined in [glossary.md](glossary.md) — resolve each to its value before running. Repo-relative paths (`assets/…`, `output/…`, `config.yaml`, `tests/…`) are written inline as-is.
 
@@ -150,15 +150,21 @@ Field reference:
 
 **Logo resets:** each card's start/end is a logo-reset boundary. A brand re-mentioned after any card edge re-fires its logo in that section — no extra configuration needed.
 
-## Step 5 — Render
+## Step 5 — Render (one video per hook)
 
 ```bash
-.venv/bin/reelcut render config.yaml "assets/<video-slug>/<actual-captions-filename>.captions.json"
+.venv/bin/reelcut render-hooks config.yaml "assets/<video-slug>/<actual-captions-filename>.captions.json"
 ```
 
-The final video is written to `output/<video-slug>.mp4`.
+`render-hooks` reads the hook cards in `headings.json` (one per hook, from Step 4b) and
+renders **one video per hook** — each is `hook_i + body`, with the other hooks cut out. The
+outputs are `output/<video-slug>-hook1.mp4`, `-hook2.mp4`, … (one per hook). Music, captions,
+and the title card behave exactly as in a normal render; there is no concatenation.
 
-Report the output path when done.
+Report all output paths when done.
+
+*(To render the old single combined video instead — all hooks in sequence — use
+`reelcut render config.yaml <captions.json>`, which writes `output/<video-slug>.mp4`.)*
 
 ## Step 6 — Lock in a regression fixture
 
@@ -185,8 +191,8 @@ Commit the fixture alongside the video's other artifacts.
 
 ## Step 7 — Publish to Tailscale & notify Telegram
 
-Make the rendered `output/<video-slug>.mp4` reachable over Tailscale, then post its link to
-the Telegram `file-exchange` topic.
+Make every rendered `output/<video-slug>-hook{i}.mp4` reachable over Tailscale, then post
+their links to the Telegram `file-exchange` topic.
 
 **Prerequisites** (set up once, outside this workflow):
 - Tailscale installed and this machine joined to the tailnet (`tailscale up`).
@@ -197,13 +203,15 @@ the Telegram `file-exchange` topic.
 # 1. Serve the output directory over Tailscale (idempotent — safe to re-run every render)
 tailscale serve --bg --set-path /reels "{PROJECT_ROOT}/output"
 
-# 2. Build this video's tailnet URL
+# 2. Base tailnet URL
 TS_HOST=$(tailscale status --json | jq -r '.Self.DNSName' | sed 's/\.$//')
-VIDEO_URL="https://${TS_HOST}/reels/<video-slug>.mp4"
 
-# 3. Post the link to the local Telegram bot API — the file-exchange topic
-PAYLOAD=$(jq -n --arg c "🎬 <video-slug> is ready: ${VIDEO_URL}" '{content: $c, topic: "file-exchange"}')
-curl -s {TELEGRAM_API}/telegram/send -H 'Content-Type: application/json' -d "$PAYLOAD"
+# 3. Post one link per hook video to the local Telegram bot API — the file-exchange topic
+for f in "{PROJECT_ROOT}"/output/<video-slug>-hook*.mp4; do
+  name=$(basename "$f")
+  PAYLOAD=$(jq -n --arg c "🎬 ${name} is ready: https://${TS_HOST}/reels/${name}" '{content: $c, topic: "file-exchange"}')
+  curl -s {TELEGRAM_API}/telegram/send -H 'Content-Type: application/json' -d "$PAYLOAD"
+done
 ```
 
 Notes:
