@@ -185,18 +185,26 @@ class AssetsConfig(BaseModel):
 
 
 class AudioTrack(BaseModel):
-    """One discovered background track — describes a source file, not its use in any one video."""
-    path: str                   # audio file (e.g. assets/audio/upbeat.mp3)
+    """A background track — a source file plus its playback tuning, not its use in any one video."""
+    path: str = ""              # audio file; omit to auto-discover from assets/audio/<name>.*
     source_start: float = 0.0   # seconds into the source file to begin playback (skip an intro)
     gain_db: float = 0.0        # baseline manual trim on top of auto-leveling (0 = none)
 
 
 class AudioConfig(BaseModel):
     enabled: bool = True
-    default: str = ""         # track name (a file stem under assets/audio/) mixed under every
-                              # video unless overridden in assets/<slug>/audio.json. "" = no music.
+    default: str = ""         # track name mixed under every video unless overridden in
+                              # assets/<slug>/audio.json. "" = no music.
+    tracks: dict[str, AudioTrack] = Field(default_factory=dict)  # per-track tuning, keyed by name;
+                              # files are auto-discovered from assets/audio/ (stem = name), so add
+                              # an entry only to set source_start/gain_db (or an explicit path).
     ducking_lufs: float = 18.0  # how far (LUFS) music sits below the measured voice loudness.
                                 # Higher = quieter music. ~18 keeps speech clearly dominant.
+
+    @field_validator("tracks", mode="before")
+    @classmethod
+    def _empty_tracks(cls, v):
+        return v or {}  # `tracks:` with only commented-out entries parses to None
 
 
 class ReelCutConfig(BaseModel):

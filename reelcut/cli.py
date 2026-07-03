@@ -714,31 +714,31 @@ _AUDIO_EXTS = {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".opus"}
 
 
 def _audio_library(cfg) -> dict:
-    """Discover background tracks from assets/audio/ (untracked by git), keyed by file stem.
+    """Build the background-track library: files auto-discovered from assets/audio/ (untracked by
+    git), keyed by file stem, with per-track source_start/gain_db overlaid from config audio.tracks.
 
-    Any audio file dropped in that directory becomes a usable track — no config to maintain.
-    Optional per-track source_start/gain_db live in assets/audio/library.yaml (also untracked),
-    a mapping of {stem: {source_start, gain_db}} that only needs entries for tracks that differ
-    from the defaults.
+    Any audio file dropped in assets/audio/ becomes a usable track — no config to maintain. Add a
+    config audio.tracks entry only to set a start time or volume trim (or to point at an explicit
+    path outside assets/audio/).
     """
     from .config import AudioTrack
 
     audio_dir = Path(cfg.assets.location) / "audio"
-    if not audio_dir.is_dir():
-        return {}
-    lib = {
-        p.stem: AudioTrack(path=str(p))
-        for p in sorted(audio_dir.iterdir())
-        if p.suffix.lower() in _AUDIO_EXTS
-    }
-    sidecar = audio_dir / "library.yaml"
-    if sidecar.exists():
-        import yaml
-        overrides = yaml.safe_load(sidecar.read_text()) or {}
-        for name, o in overrides.items():
-            if name in lib and isinstance(o, dict):
-                lib[name].source_start = float(o.get("source_start", 0.0))
-                lib[name].gain_db = float(o.get("gain_db", 0.0))
+    lib: dict[str, AudioTrack] = {}
+    if audio_dir.is_dir():
+        lib = {
+            p.stem: AudioTrack(path=str(p))
+            for p in sorted(audio_dir.iterdir())
+            if p.suffix.lower() in _AUDIO_EXTS
+        }
+    for name, t in cfg.audio.tracks.items():
+        if name in lib:
+            lib[name].source_start = t.source_start
+            lib[name].gain_db = t.gain_db
+            if t.path:
+                lib[name].path = t.path
+        elif t.path:
+            lib[name] = t  # a track defined entirely in config (no file in assets/audio/)
     return lib
 
 
