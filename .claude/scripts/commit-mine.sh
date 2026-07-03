@@ -26,7 +26,7 @@ DEBUG_LOG="/tmp/commit-mine.log"
 echo "$(date '+%F %T') fired  arg='${1:-}'  cwd='$PWD'  CLAUDE_PROJECT_DIR='${CLAUDE_PROJECT_DIR:-}'" >> "$DEBUG_LOG"
 # -------------------------------------------------------------------------
 
-TARGETS=(reelcut tests scrape .claude)
+TARGETS=(reelcut tests scrape .claude config.yaml)
 FALLBACK_SUBJECT="chore: auto-commit claude changes"   # safety-net only (re-wake ignored)
 
 ARG_SUBJECT="${1:-}"
@@ -122,6 +122,6 @@ fi
 
 # First stop with pending changes: re-wake the session to author the message in context.
 FILES="$(printf '%s\n%s\n' "$CHANGED" "$NEW" | grep -v '^[[:space:]]*$' | sort -u | tr '\n' ' ')"
-REASON="You changed tracked files under one of the auto-commit dirs (reelcut/ tests/ scrape/ .claude/) this turn ($FILES) but haven't committed it. Review your own diff for those files and commit JUST your changes (not the user's pre-existing edits) with a context-aware conventional-commits subject you write from this session — run: bash .claude/scripts/commit-mine.sh \"<subject>\". Do not describe changes you didn't make."
+REASON="You changed tracked files under one of the auto-commit dirs (reelcut/ tests/ scrape/ .claude/ config.yaml) this turn ($FILES) but haven't committed it. Review your own diff for those files and commit JUST your changes (not the user's pre-existing edits) with a context-aware conventional-commits subject you write from this session — run: bash .claude/scripts/commit-mine.sh \"<subject>\". Do not describe changes you didn't make."
 printf '{"decision":"block","reason":%s}\n' "$(printf '%s' "$REASON" | json_escape)"
 exit 0
