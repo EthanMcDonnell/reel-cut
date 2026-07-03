@@ -498,6 +498,41 @@ def test_number_split_retake_is_cut():
     assert ranges[0][1] == pytest.approx(24.9)   # …and ends at the keeper's first word
 
 
+def test_mid_sentence_restart_keeps_unique_lead_in():
+    """A retake that restarts MID-sentence must cut only the flubbed tail, not the
+    unique clause before it.
+
+    "…turning an impossible refactor into a simple code" → "into a simple config
+    change": the matcher correctly anchors "into a simple" and cuts just the flubbed
+    tail. But the START snap used to pull the cut back to the sentence's first word
+    ("Now" — a take boundary after the previous sentence's period + silence), swallowing
+    the unique lead-in and stranding the keeper as a subjectless "into a simple config
+    change". The preamble (the whole sentence body) is far longer than the keeper
+    fragment, so the snap must bail and leave the lead-in kept."""
+    words = [
+        # prior kept sentence: its period + the >2s gap makes "Now" a take boundary
+        _w("They", 0.0, 0.3), _w("fixed", 0.4, 0.8), _w("the", 0.9, 1.0), _w("names.", 1.1, 1.6),
+        # unique kept lead-in (one sentence, no internal sentence-end)
+        _w("Now", 4.0, 4.2), _w("Reddit", 4.3, 4.6), _w("owned", 4.7, 5.0), _w("the", 5.1, 5.2),
+        _w("names,", 5.3, 5.7), _w("turning", 5.8, 6.2), _w("an", 6.3, 6.4),
+        _w("impossible", 6.5, 7.1), _w("refactor", 7.2, 7.8),
+        # flubbed tail (to be cut)
+        _w("into", 7.9, 8.1), _w("a", 8.2, 8.3), _w("simple", 8.4, 8.8), _w("code.", 8.9, 9.3),
+        # mid-sentence restart / keeper — begins right after the flub's sentence-end
+        _w("into", 9.6, 9.8), _w("a", 9.9, 10.0), _w("simple", 10.1, 10.5),
+        _w("config", 10.6, 11.0), _w("change.", 11.1, 11.6),
+        # next sentence (a take boundary via the sentence-end above)
+        _w("Then", 12.0, 12.3), _w("the", 12.4, 12.5), _w("best", 12.6, 12.9), _w("part.", 13.0, 13.4),
+    ]
+    ranges, _ = detect_retakes(words, min_retake_words=3, max_retake_gap_s=12.0, min_match_ratio=0.5)
+    assert len(ranges) == 1
+    cut_start, cut_end = ranges[0]
+    assert cut_start == pytest.approx(7.9)   # cut begins at the flubbed "into", NOT "Now"
+    assert cut_end == pytest.approx(9.6)     # …and ends at the keeper's first word
+    # the unique lead-in "Now Reddit owned the names, turning an impossible refactor" survives
+    assert not any(s < 7.8 and e > 4.0 for s, e in ranges)
+
+
 def test_different_numbers_not_treated_as_same_word():
     """Digits are kept for matching but distinct numbers must not falsely match: two
     unrelated sentences that differ only in their numbers share no repeated content and

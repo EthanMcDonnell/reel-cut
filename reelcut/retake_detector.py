@@ -311,12 +311,27 @@ def _snap_to_take_boundaries(
         ci = next((k for k in range(n) if words[k].start >= t_start - 1e-6), n)
         cj = next((k for k in range(n) if words[k].start >= t_end - 1e-6), n)
 
-        # START: cut opens mid-take → pull back to that take's first word.
+        # START: cut opens mid-take → pull back to that take's first word, but only when
+        # the words being absorbed are a short divergent head of a *failed take*, not a
+        # unique lead-in the retake never reproduced. A genuine failed take is a whole
+        # re-attempt of the keeper, so its unanchored leading words are few. When the
+        # retake instead restarted MID-SENTENCE (only a tail fragment re-said, e.g.
+        # "…refactor into a simple code" → "into a simple config change"), the span from
+        # the take boundary to the cut start is the sentence's unique body — longer than
+        # the whole keeper take. Snapping back would swallow that kept lead-in, stranding
+        # the keeper as a subjectless fragment. So bail when the preamble being absorbed
+        # spans more words than the keeper itself.
         if ci < n and not boundary[ci]:
             k = ci
             while k > 0 and not boundary[k]:
                 k -= 1
-            if boundary[k] and t_start - words[k].start <= max_reach_s:
+            ke = cj + 1
+            while ke < n and not boundary[ke]:
+                ke += 1
+            preamble_words = ci - k        # boundary → cut start (failed take's head)
+            keeper_words = ke - cj         # keeper's first word → its take boundary
+            if (boundary[k] and t_start - words[k].start <= max_reach_s
+                    and preamble_words <= keeper_words):
                 t_start = words[k].start
 
         # END: cut closes mid-take → push forward to the next take's first word
