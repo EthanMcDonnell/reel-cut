@@ -84,12 +84,18 @@ output:
 
 audio:
   enabled: true
-  default_path: ""                  # background music mixed under the voice. Applied full-length
-                                    # to every video and trimmed to the video duration unless
-                                    # overridden in assets/<slug>/audio.json. Empty = no music.
+  default: chill-draw-interest      # track name mixed under EVERY video, full-length, unless
+                                    # overridden in assets/<slug>/audio.json. "" = no music.
+                                    # Tracks are auto-discovered from assets/audio/ (untracked by
+                                    # git) — the name is the file's stem, e.g. "upbeat" for
+                                    # assets/audio/upbeat.mp3. Just drop files in; nothing to list.
   ducking_lufs: 18                  # music is auto-leveled to sit this many LUFS below the measured
                                     # voice loudness (so the source file's level doesn't matter).
                                     # Higher = quieter music. Per-track gain_db trims on top.
+  tracks:                           # optional per-track tuning, keyed by track name. Add an entry
+                                    # only to set a start time or volume trim.
+    chill-draw-interest:
+      source_start: 4               # begin 4s into the file
 
 captions:
   enabled: true
