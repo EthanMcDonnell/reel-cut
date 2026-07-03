@@ -710,14 +710,46 @@ def _heading_reset_boundaries(heading_specs: list, total_output_s: float) -> lis
     return sorted(b for b in bounds if b > 0)
 
 
+_AUDIO_EXTS = {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".opus"}
+
+
+def _audio_library(cfg) -> dict:
+    """Discover background tracks from assets/audio/ (untracked by git), keyed by file stem.
+
+    Any audio file dropped in that directory becomes a usable track — no config to maintain.
+    Optional per-track source_start/gain_db live in assets/audio/library.yaml (also untracked),
+    a mapping of {stem: {source_start, gain_db}} that only needs entries for tracks that differ
+    from the defaults.
+    """
+    from .config import AudioTrack
+
+    audio_dir = Path(cfg.assets.location) / "audio"
+    if not audio_dir.is_dir():
+        return {}
+    lib = {
+        p.stem: AudioTrack(path=str(p))
+        for p in sorted(audio_dir.iterdir())
+        if p.suffix.lower() in _AUDIO_EXTS
+    }
+    sidecar = audio_dir / "library.yaml"
+    if sidecar.exists():
+        import yaml
+        overrides = yaml.safe_load(sidecar.read_text()) or {}
+        for name, o in overrides.items():
+            if name in lib and isinstance(o, dict):
+                lib[name].source_start = float(o.get("source_start", 0.0))
+                lib[name].gain_db = float(o.get("gain_db", 0.0))
+    return lib
+
+
 def _resolve_audio_tracks(cfg, edl, audio_path: Path | None, warnings: list[str]) -> list[dict]:
     """Resolve audio.json (+ config default) to renderer-ready background track dicts.
 
-    Each audio.json entry either names a `track` from cfg.audio.library (which supplies the
-    file path, source_start, and baseline gain) or overrides with a raw `path`. With no
+    Each audio.json entry either names a `track` (a file discovered under assets/audio/, which
+    supplies the path, source_start, and baseline gain) or overrides with a raw `path`. With no
     audio.json (or an empty one), a single full-length track is created from cfg.audio.default
-    (the library key applied to every video). `end = -1` is resolved to the total output
-    duration so the track spans the whole video; anything past the end is cut by the mixer.
+    (the track applied to every video). `end = -1` is resolved to the total output duration so
+    the track spans the whole video; anything past the end is cut by the mixer.
     """
     if not cfg.audio.enabled:
         return []
@@ -726,15 +758,16 @@ def _resolve_audio_tracks(cfg, edl, audio_path: Path | None, warnings: list[str]
 
     specs = load_audio(audio_path) if audio_path else []
     if not specs and cfg.audio.default:
-        specs = [AudioSpec(track=cfg.audio.default)]  # library default applied to every video
+        specs = [AudioSpec(track=cfg.audio.default)]  # default track applied to every video
 
+    library = _audio_library(cfg)
     total_output_s = sum(e.end - e.start for e in edl if e.keep)
     tracks: list[dict] = []
     for spec in specs:
         if spec.track:
-            lib = cfg.audio.library.get(spec.track)
+            lib = library.get(spec.track)
             if lib is None:
-                console.print(f"  [yellow]Unknown audio track: '{spec.track}' (not in config audio.library)[/yellow]")
+                console.print(f"  [yellow]Unknown audio track: '{spec.track}' (no such file in assets/audio/)[/yellow]")
                 warnings.append(f"Unknown audio track: '{spec.track}'")
                 continue
             path, source_start, base_gain = lib.path, lib.source_start, lib.gain_db
