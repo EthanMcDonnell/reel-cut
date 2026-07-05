@@ -243,6 +243,7 @@ def render_hooks(
             all_warnings.extend(_phase2(
                 cfg, new_doc, output_path, verbose,
                 headings_path=tmp_headings, images_path=tmp_images, audio_path=audio_path,
+                reset_logos_per_section=False,
             ))
         finally:
             tmp_headings.unlink(missing_ok=True)
@@ -661,8 +662,15 @@ def _phase1(cfg, clips: list[str], output_dir: Path, verbose: bool):
 # ---------------------------------------------------------------------------
 
 def _phase2(cfg, doc, output_path: Path, verbose: bool, headings_path: Path | None = None,
-            images_path: Path | None = None, audio_path: Path | None = None) -> list[str]:
-    """Render final video from a CaptionsDoc. Returns warnings."""
+            images_path: Path | None = None, audio_path: Path | None = None,
+            reset_logos_per_section: bool = True) -> list[str]:
+    """Render final video from a CaptionsDoc. Returns warnings.
+
+    `reset_logos_per_section` clears logo dedup at each heading-card edge so a brand
+    re-mentioned in a later section re-fires its logo. render-hooks passes False: a
+    per-hook video is one hook + the shared body, and a company named in both should
+    pop its logo only once, on first mention.
+    """
     from .caption import render_caption_frames
     from .image_spec import load_images
     from .edl import EDLEntry
@@ -716,7 +724,10 @@ def _phase2(cfg, doc, output_path: Path, verbose: bool, headings_path: Path | No
         if cfg.headings.enabled and headings_path and headings_path.exists():
             from .heading import load_headings
             heading_specs = load_headings(headings_path)
-        logo_reset_boundaries = _heading_reset_boundaries(heading_specs, total_output_s)
+        logo_reset_boundaries = (
+            _heading_reset_boundaries(heading_specs, total_output_s)
+            if reset_logos_per_section else []
+        )
 
         # Image cues: logos (auto-detected from words) + people/screenshots (from images.json)
         all_image_cues: list[ImageCue] = []
