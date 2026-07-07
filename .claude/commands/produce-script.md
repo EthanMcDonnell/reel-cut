@@ -69,13 +69,20 @@ After fetching a Reddit article, scan `content` and `description` for external U
 
 If the primary source returned an error or empty content, stop: "⚠️ Couldn't fetch `<url>` directly — research is from search snippets only. Paste the article text to continue, or type 'proceed' to write from secondary sources."
 
-We then want to collate all information as well as provide some summarisation and insight for future steps what are key points across sources that could be used. While collating, also mine the single most surprising or counterintuitive fact across the sources, and name the assumption a viewer probably holds that this fact overturns — this is the raw material the angle stage needs.
+We then want to collate all information as well as provide some summarisation and insight for future steps: what are the key points across sources that could be used. Mine two kinds of raw material, because a video needs both a reason to stop and a reason to stay:
+
+- **Problem side** — the single most surprising or counterintuitive fact across the sources, and the assumption a viewer probably holds that this fact overturns.
+- **Solution side** — *how* it was actually done: the specific methods, the core mechanism, the tradeoff, and any reversal or irony in the approach (e.g. the fix reused the very thing that caused the problem). This is what the video pays off with, and it is what the spine stage below draws its payoff from. Do not stop at the surprising fact; the interesting part is usually in the solution.
+
+**Story gate.** Before continuing, judge whether the sources actually contain a video-worthy story: a non-obvious mechanism, a surprising cause or reversal, and a concrete outcome. If the material is thin (an announcement, or a plain "we improved X by N%" with no mechanism or twist), say so plainly and record `STORY_STRENGTH: thin` with the reason — do not manufacture drama the sources don't support. A thin gate isn't an automatic stop: surface it and let the user decide whether to proceed, pick a different source, or reframe.
 
 Build the following `topic_package` once resolved:
 
 ```
 SERIES: <tbbt | updates | tech-in-one-breathe | interesting-tech | ai-fundamentals | misc>
 MOST_SURPRISING_FACT: <the single most counterintuitive fact across the sources, and the assumption the viewer probably holds that it overturns>
+HOW_IT_WAS_SOLVED: <the solution-side material — the methods, the core mechanism, the tradeoff, and any reversal/irony in how it was done>
+STORY_STRENGTH: <strong | thin — the story-gate judgement in one line, and why>
 
 (one block per source)
 TOPIC: <concise topic title>
@@ -88,23 +95,20 @@ If no usable content can be resolved from the prompt, abort with: "Could not res
 
 ### Load the series profile
 
-Once `SERIES` is resolved (and it is not `misc`), **read `series/<SERIES>.md`** — that file is the source of truth for this series' identity, voice profile (register, target length, CTA), and best hooks. It drives Stage 0.5 (angle), Stage 1 (hooks), and Stage 3 (voice). The canonical slugs are `tbbt`, `updates`, `tech-in-one-breathe`, `interesting-tech`, `ai-fundamentals`; `misc` has no file and uses the `scripts` skill's default voice.
+Once `SERIES` is resolved (and it is not `misc`), **read `series/<SERIES>.md`** — that file is the source of truth for this series' identity, voice profile (register, target length, CTA), and best hooks. It drives Stage 0.5 (spine), Stage 1 (hooks), and Stage 3 (voice). The canonical slugs are `tbbt`, `updates`, `tech-in-one-breathe`, `interesting-tech`, `ai-fundamentals`; `misc` has no file and uses the `scripts` skill's default voice.
 
-## Stage 0.5 — Angle Generation & Selection
+## Stage 0.5 — Script Spine
 
-The angle (the framing/lens on the topic) is the single biggest driver of whether a short-form video lands - two angles on the same facts can be 10x apart in performance. Manufacture it with breadth and selection, the same way the hook stage does.
+The **spine** is what the video is actually about: the crux mechanism it explains and the reframe it lands at the end. It is the single biggest driver of whether the video works, because it decides what the viewer *stays* for. It is not the hook and not a framing — it is the story the body tells. Build it from the `topic_package`, drawing the payoff from `HOW_IT_WAS_SOLVED`, not just the surprising fact.
 
-Generate **3–5 genuinely distinct angles** on the `topic_package`. An angle is the framing, not the hook wording: the lens that decides what the video is *about*. Make them diverge — pull from different framings:
+1. **Find the strongest spine.** Identify the best video the sources support, as three parts:
+   - **Crux** — the one mechanism worth explaining.
+   - **Payoff** — how it actually works: the methods, the tradeoff, the *how they solved it*. Ground this in `HOW_IT_WAS_SOLVED` so the body has a real payoff, not a problem-then-fix summary.
+   - **Turn** — the reframe that recasts the whole thing at the end.
+2. **Only fork when the story genuinely diverges.** Most articles have one clearly-best spine — when they do, proceed with it and just tell the user what it is; do not force a choice. Generate alternate spines **only** where the sources support genuinely distinct videos: a different crux, a different payoff, and a different turn — not reworded framings of the same story.
+3. **Select only when real forks exist.** If two or more genuinely distinct spines exist, present them and ask the user to choose; each option states its crux, payoff, and turn (the flow of the video) so the choice is made on the story, not a label. If one spine dominates, skip the question and continue.
 
-- **Counterintuitive reframe** — "they did the opposite of what you'd expect" (e.g. "they migrated none of them").
-- **Personal threat** — what this costs *the viewer* specifically.
-- **Mystery / "what is this"** — a real artifact that sounds impossible before you explain it.
-- **Hidden knowledge** — "everyone does X but no one tells you Y."
-- **Shocking number** — anchor on a specific, jaw-drop stat.
-
-Lean into what wins on this channel: shocking/specific numbers, developer-frustration points hit daily but not understood, mystery artifacts that look impossible, and timely news with a jaw-drop stat. Use `MOST_SURPRISING_FACT` as the seed.
-
-Ask the user to confirm the recommended angle or pick another. The chosen `ANGLE` drives Stage 1 (hooks) and Stage 3 (script).
+The chosen `SPINE` drives Stage 1 (hooks) and Stage 3 (script). If the story gate recorded `STORY_STRENGTH: thin`, restate that here — the spine can only be as strong as the sources allow, so flag the weakness rather than overselling it.
 
 ## Stage 1 — Hook Generation
 
@@ -112,7 +116,7 @@ Invoke the `hooks` skill and apply its rules, patterns, and quality test. Better
 
 0. **Ground in proven hooks.** Pass the resolved `SERIES` to the `hooks` skill — it reads the series file's **Best Hooks** and `.claude/voice/proven-hooks.md` (the user's top hooks ranked by real engagement) and biases toward what wins on this channel. Your job here is just to give it the slug; bias generation toward those proven patterns while still generating wide.
 
-1. **Generate wide.** Write 8–10 candidate hooks that deliver the chosen `ANGLE` for the `topic_package`. Span at least 3 of the skill's distinct patterns — do not return rewordings of a single idea. For each, note its `PATTERN` and the single raw element it leads with (the name, number, stat, or reversal, seeded from `MOST_SURPRISING_FACT`).
+1. **Generate wide.** Write 8–10 candidate hooks that captivate and funnel into the crux of the chosen `SPINE`. The hook is the on-ramp, not the definition of the video: it grabs attention and links into the story the body pays off, so it does not have to carry the whole video by itself. Span at least 3 of the skill's distinct patterns — do not return rewordings of a single idea. For each, note its `PATTERN` and the single raw element it leads with (the name, number, stat, or reversal, seeded from `MOST_SURPRISING_FACT`).
 2. **Score each.** Run the skill's 3-check quality test (scroll / HOW / promise) on every candidate and judge the strength of its lead element. Drop any that fail a check or lead with a weak element.
 3. **Critique and rewrite.** Take the ~5 strongest survivors. For each, name its single weakest element (buried lead, soft claim, too long, no open loop) and rewrite it once to fix exactly that. Keep the stronger version.
 4. **Shortlist distinct winners.** Select the top **N hooks (default 3)**, each using a *different pattern or lead element* so the resulting videos test genuinely different strategies, not phrasings. Store them ordered best-first as `HOOK_1 … HOOK_N`, each with a `PATTERN` and `TEXT` field.
@@ -123,7 +127,7 @@ Present the shortlist: for each hook show its `TEXT`, its `PATTERN`, and one lin
 
 ## Stage 3 — Script Writing
 
-Invoke the `scripts` skill and `stop-slop` skill, use the full `topic_package`, the chosen `ANGLE`, and the confirmed `HOOK_SET` to create a captivating short form content script for platforms like Instagram Reels. Pass the resolved `SERIES` to the `scripts` skill — it applies the series file's voice profile (register, target length, CTA) and layers the user's delivery voice from `.claude/voice/voice-profile.md` on top; for `misc` it uses its default voice.
+Invoke the `scripts` skill and `stop-slop` skill, use the full `topic_package`, the chosen `SPINE`, and the confirmed `HOOK_SET` to create a captivating short form content script for platforms like Instagram Reels. Write the body to the `SPINE`: explain its crux, deliver the payoff (the *how*, drawn from `HOW_IT_WAS_SOLVED`), and land its turn. A body that only states the problem and names the fix has failed the spine — the payoff is the video. Pass the resolved `SERIES` to the `scripts` skill — it applies the series file's voice profile (register, target length, CTA) and layers the user's delivery voice from `.claude/voice/voice-profile.md` on top; for `misc` it uses its default voice.
 
 **Write every hook from `HOOK_SET` into the script.** You record all of them in one take and split them into separate videos later, so the `**HOOK**` section holds the full set, numbered and ordered best-first, one hook per line:
 
@@ -172,7 +176,7 @@ The goal: give the viewer a reason to **comment**, and a payoff worth commenting
 
 ### Step 3.6.1 — Brainstorm topic-specific resource ideas
 
-Think about what *this specific audience* (developers/builders watching a `SERIES` video on `TOPIC`) would actually want to do *next* after the video lands the `ANGLE`. **Anchor on what the article itself names** — the specific technology, system, or company it's about, the source's own deeper write-ups, talks, or repos, or the source article itself. Reach for a generic third-party tool only when nothing article-specific fits; a random tool with no direct tie to what the video explained is the weakest option. Generate **4–6 candidate resources**, pulling from different categories so they diverge — don't return six of the same kind:
+Think about what *this specific audience* (developers/builders watching a `SERIES` video on `TOPIC`) would actually want to do *next* after the video lands the `SPINE`. **Anchor on what the article itself names** — the specific technology, system, or company it's about, the source's own deeper write-ups, talks, or repos, or the source article itself. Reach for a generic third-party tool only when nothing article-specific fits; a random tool with no direct tie to what the video explained is the weakest option. Generate **4–6 candidate resources**, pulling from different categories so they diverge — don't return six of the same kind:
 
 - **Steal-this asset** — a free template, cheatsheet, boilerplate, config, checklist, or diagram the viewer can copy and use today. Highest comment-bait pull ("I want that").
 - **Hands-on / try-it-yourself** — a playground, sandbox, interactive demo, or online tool that lets them *experience* the concept from the video themselves.
