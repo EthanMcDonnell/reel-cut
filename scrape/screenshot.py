@@ -79,7 +79,7 @@ _JS_ISNULL = bytes([101,32,61,62,32,33,101,32,124,124,32,33,101,46,116,97,103,78
 # after scrolling — Reddit lazy-loads comments and collapses the post body, leaving the Range's
 # cached rect pointing at a viewport slot that now holds a different element (a comment / a
 # "Related posts" card). The live element rect, measured after a settle, stays correct.
-_JS_SCROLL_TARGET = "() => { const t = document.querySelector('[data-snippet-target]'); if (t) t.scrollIntoView({block: 'center'}); }"
+_JS_SCROLL_TARGET = "() => { const t = document.querySelector('[data-snippet-target]'); if (t) t.scrollIntoView({block: 'center', behavior: 'instant'}); }"
 _JS_TARGET_RECT = (
     "() => { const t = document.querySelector('[data-snippet-target]'); if (!t) return null;"
     " const b = t.getBoundingClientRect(); return [b.x, b.y, b.width, b.height]; }"
