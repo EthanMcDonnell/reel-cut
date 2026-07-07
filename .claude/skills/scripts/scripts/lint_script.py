@@ -106,17 +106,30 @@ def lint(lines):
             opener = "So" if low.lstrip().startswith("so") else "Look"
             warns.append((i, "opener", f'line opens with "{opener}"; start with the content'))
 
-    # Content word count (excludes headers and reference URLs).
-    words, in_refs = 0, False
+    # Body word count for the cap. The HOOK block holds every hook variant
+    # (recorded once, then split into separate videos), so hooks are excluded
+    # from the cap entirely — only SCRIPT + CONCLUSION, the shared body, counts.
+    # Also excludes headers and reference URLs.
+    words, n_hooks = 0, 0
+    section, in_refs = None, False
     for s in stripped:
         if s == "**REFERENCES:**":
             in_refs = True
             continue
-        if in_refs or s in REQUIRED_HEADERS or not s:
+        if in_refs:
+            continue
+        if s in REQUIRED_HEADERS:
+            section = s
+            continue
+        if not s:
+            continue
+        if section == "**HOOK**":
+            n_hooks += 1
             continue
         words += len(s.split())
     if words > 190:
-        warns.append((0, "word-count", f"{words} words of content (hard cap 190)"))
+        note = f"body only, {n_hooks} hooks excluded" if n_hooks else "body only"
+        warns.append((0, "word-count", f"{words} words of content ({note}; hard cap 190)"))
 
     return errors, warns
 
