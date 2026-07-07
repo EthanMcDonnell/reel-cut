@@ -138,9 +138,12 @@ async def _expand_truncations(page) -> None:
         clicked = await page.evaluate("""() => {
             let n = 0;
             for (const el of document.querySelectorAll('button, [role="button"], a, summary')) {
-                if (/^\\s*(read|see|show)\\s+more\\b/i.test(el.innerText || '')) {
-                    try { el.click(); n++; } catch (e) {}
+                if (!/^\\s*(read|see|show)\\s+more\\b/i.test(el.innerText || '')) continue;
+                if (el.tagName === 'A') {
+                    const href = el.getAttribute('href') || '';
+                    if (href && !href.startsWith('#') && !href.startsWith('javascript:')) continue;  // navigational link, not an in-page expander
                 }
+                try { el.click(); n++; } catch (e) {}
             }
             return n;
         }""")
