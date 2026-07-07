@@ -19,7 +19,7 @@ description: >
 ## Series Voice Profiles
 The default voice above is the polished explainer. When writing for a series, **read that series' file under `series/<slug>.md`** (indexed in `SERIES.md`) and apply its voice profile — register, target length, and CTA. That file is the source of truth; do not rely on a copy here. The channel's top performer (the `ai-fundamentals` "Claude usage limits" video) won by sounding casual and native, not polished, so honour each series' register rather than defaulting to polished. If no series is given (or `series` is `misc`), use the default voice above.
 
-**CTA (optional):** when it fits the series, close with one native line — comment-bait ("Comment X and I'll send you …") or a follow that ties to the topic. Keep it conversational, never salesy. It folds into the end of the CONCLUSION; it is not a new header.
+**CTA (optional):** when it fits the series, close with one native line — comment-bait ("Comment X and I'll send you …") or a follow that ties to the topic. Keep it conversational, never salesy. Put it under its own **CTA** heading immediately after the **CONCLUSION** section (not folded into CONCLUSION), before **REFERENCES**.
 
 ## Audience & Scope
 - **Audience:** tech-curious viewers swiping through social media. Step through concepts clearly; assume no prior knowledge.
@@ -80,7 +80,7 @@ Take the viewer on a journey of discovery, not a lecture — they should feel li
 **REFERENCES** — URLs for any statistics or data used.
 
 ## Exact Output Format
-The script and the saved file must both use this exact format — bold headers, no blank lines between sections, no deviations. SETUP, EXTRA, and PAYOFF fold into the single **SCRIPT** block:
+The script and the saved file must both use this exact format — bold headers, no blank lines between sections, no deviations. SETUP, EXTRA, and PAYOFF fold into the single **SCRIPT** block. `**CTA**` is optional; include it only when there is a CTA, and always between **CONCLUSION** and **REFERENCES**:
 ```
 **HOOK**
 [CONTENT]
@@ -88,6 +88,8 @@ The script and the saved file must both use this exact format — bold headers, 
 [CONTENT (SETUP, EXTRA, PAYOFF)]
 **CONCLUSION**
 [CONTENT]
+**CTA**
+[one CTA line — omit this header entirely if there is no CTA]
 **REFERENCES:** 
 [URLs]
 ```

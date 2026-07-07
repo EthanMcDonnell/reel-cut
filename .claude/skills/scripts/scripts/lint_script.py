@@ -17,6 +17,13 @@ import re
 import sys
 
 REQUIRED_HEADERS = ["**HOOK**", "**SCRIPT**", "**CONCLUSION**", "**REFERENCES:**"]
+# Optional headers, allowed but not required. **CTA**, when present, holds the
+# spoken comment-bait line and sits between CONCLUSION and REFERENCES.
+OPTIONAL_HEADERS = ["**CTA**"]
+ALL_HEADERS = REQUIRED_HEADERS + OPTIONAL_HEADERS
+# Sections whose content is excluded from the body word-count cap: every hook
+# variant (split into separate videos) and the appended CTA tag.
+NON_BODY_SECTIONS = {"**HOOK**", "**CTA**"}
 
 # Throat-clearing openers (banned). Deliberately narrow so it never catches the
 # skill-endorsed open-loop phrase "But here's the part nobody talks about".
@@ -106,10 +113,19 @@ def lint(lines):
             opener = "So" if low.lstrip().startswith("so") else "Look"
             warns.append((i, "opener", f'line opens with "{opener}"; start with the content'))
 
+    # Optional **CTA**, if present, must sit between CONCLUSION and REFERENCES.
+    if "**CTA**" in stripped:
+        pos = {h: stripped.index(h) for h in ("**CONCLUSION**", "**CTA**", "**REFERENCES:**") if h in stripped}
+        cta = pos["**CTA**"]
+        if "**CONCLUSION**" in pos and cta < pos["**CONCLUSION**"]:
+            errors.append((cta + 1, "cta-order", "**CTA** must come after **CONCLUSION**"))
+        if "**REFERENCES:**" in pos and cta > pos["**REFERENCES:**"]:
+            errors.append((cta + 1, "cta-order", "**CTA** must come before **REFERENCES:**"))
+
     # Body word count for the cap. The HOOK block holds every hook variant
-    # (recorded once, then split into separate videos), so hooks are excluded
-    # from the cap entirely — only SCRIPT + CONCLUSION, the shared body, counts.
-    # Also excludes headers and reference URLs.
+    # (recorded once, then split into separate videos) and the CTA is an appended
+    # tag, so both are excluded from the cap — only SCRIPT + CONCLUSION, the
+    # shared body, counts. Also excludes headers and reference URLs.
     words, n_hooks = 0, 0
     section, in_refs = None, False
     for s in stripped:
@@ -118,13 +134,14 @@ def lint(lines):
             continue
         if in_refs:
             continue
-        if s in REQUIRED_HEADERS:
+        if s in ALL_HEADERS:
             section = s
             continue
         if not s:
             continue
-        if section == "**HOOK**":
-            n_hooks += 1
+        if section in NON_BODY_SECTIONS:
+            if section == "**HOOK**":
+                n_hooks += 1
             continue
         words += len(s.split())
     if words > 190:

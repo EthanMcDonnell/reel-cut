@@ -200,11 +200,19 @@ From the verified candidates, select the **single best lead magnet**: the one wi
 
 ### Step 3.6.4 — Append to the saved script file
 
-Append a resources block to the **end** of the saved script file, **after** the `**REFERENCES:**` section (lines after that header are exempt from the linter's prose checks). **No blank lines anywhere** — the linter blocks on them. Use this format:
+Write the CTA and the resources in **two** places, **no blank lines anywhere** (the linter blocks on them):
+
+1. Insert a `**CTA**` heading and the CTA line immediately **after** the `**CONCLUSION**` section and **before** `**REFERENCES:**`. This line is spoken, so it is prose-checked — keep it free of em dashes:
+
+```
+**CTA**
+Comment "<KEYWORD>" and I'll send you <resource>.
+```
+
+2. Append the resources block to the **end** of the file, **after** the `**REFERENCES:**` section (lines after that header are exempt from the linter's prose checks, so the ` — ` separators are fine there):
 
 ```
 **VIEWER RESOURCES:**
-CTA: Comment "<KEYWORD>" and I'll send you <resource>.
 LEAD MAGNET: <category> — <name> — <url>
 <category> — <name> — <url>
 <category> — <name> — <url>
