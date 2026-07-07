@@ -168,28 +168,28 @@ Wait for the saved file path before continuing.
 
 ## Stage 3.6 — Viewer Resources & Comment CTA
 
-The goal: give the viewer a reason to **comment**, and a payoff worth commenting for. Comments are the strongest algorithmic signal on Reels/Shorts, and the standard "comment a keyword and I'll send the link" mechanic only works if the thing you're sending is genuinely worth getting. **It must not be the source article** — the viewer just watched a video built from that article; sending it back is a dead end.
+The goal: give the viewer a reason to **comment**, and a payoff worth commenting for. Comments are the strongest algorithmic signal on Reels/Shorts, and the standard "comment a keyword and I'll send the link" mechanic only works if the thing you're sending is genuinely worth getting.
 
 ### Step 3.6.1 — Brainstorm topic-specific resource ideas
 
-Think about what *this specific audience* (developers/builders watching a `SERIES` video on `TOPIC`) would actually want to do *next* after the video lands the `ANGLE`. Generate **4–6 candidate resources**, pulling from different categories so they diverge — don't return six of the same kind:
+Think about what *this specific audience* (developers/builders watching a `SERIES` video on `TOPIC`) would actually want to do *next* after the video lands the `ANGLE`. **Anchor on what the article itself names** — the specific technology, system, or company it's about, the source's own deeper write-ups, talks, or repos, or the source article itself. Reach for a generic third-party tool only when nothing article-specific fits; a random tool with no direct tie to what the video explained is the weakest option. Generate **4–6 candidate resources**, pulling from different categories so they diverge — don't return six of the same kind:
 
 - **Steal-this asset** — a free template, cheatsheet, boilerplate, config, checklist, or diagram the viewer can copy and use today. Highest comment-bait pull ("I want that").
 - **Hands-on / try-it-yourself** — a playground, sandbox, interactive demo, or online tool that lets them *experience* the concept from the video themselves.
 - **The real source code** — the open-source repo, the actual implementation, or the file that does the thing discussed. Developers love seeing the real code.
 - **Go-deeper canonical** — the seminal paper, RFC, official docs, design doc, or conference talk that goes far past the article's depth.
 - **Build-it tutorial** — a concrete step-by-step guide to recreate what the video showed.
-- **Adjacent tool / alternative** — a tool the viewer can adopt to solve their own version of this problem now.
+- **Adjacent tool / alternative** — a tool the viewer can adopt to solve their own version of this problem now. Use sparingly, and only when it's tied to the article's topic.
 
 For each candidate, name the category, a one-line "why a viewer wants this," and the URL.
 
 ### Step 3.6.2 — Verify every link is real
 
-**Do not invent or guess URLs.** For each candidate, find the real resource with `WebSearch`, then confirm the URL resolves with `WebFetch` (or `single_scrape.py --json`). Drop any candidate whose URL can't be verified. A fabricated link is worse than one fewer resource — it breaks trust the moment a viewer clicks. The source article's own URL is disqualified by definition.
+**Do not invent or guess URLs.** For each candidate, find the real resource with `WebSearch`, then confirm the URL resolves with `WebFetch` (or `single_scrape.py --json`). Drop any candidate whose URL can't be verified. A fabricated link is worse than one fewer resource — it breaks trust the moment a viewer clicks.
 
 ### Step 3.6.3 — Pick the lead magnet and write the CTA
 
-From the verified candidates, select the **single best lead magnet**: the one with the strongest "I want that" pull *and* the most relevance to the audience's daily work (usually the steal-this asset or the hands-on tool, rarely the canonical paper). Then write a comment-bait CTA:
+From the verified candidates, select the **single best lead magnet**: the one with the strongest "I want that" pull *and* the tightest tie to the article's actual topic (a steal-this asset, the source's own deeper material, or the article itself). Then write a comment-bait CTA:
 
 - A short, memorable, topic-tied **keyword** (one word, uppercase, e.g. `CACHE`, `SCALE`, `RAFT`).
 - A one-line CTA the creator can pin or say: `Comment "<KEYWORD>" and I'll send you <what the resource is>.`
