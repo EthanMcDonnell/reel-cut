@@ -19,13 +19,16 @@ class ImageSpec:
     type: "screenshot" — path points to a local image file
     type: "concept"    — name is a Wikipedia subject (an object/thing/place, e.g. "Rubber duck
                          debugging"); image fetched automatically, same as person
+    type: "figure"     — path points to a local image harvested from the source article
+                         (chart/diagram); rendered on a padded card. `kind` tags which.
     """
-    type: str               # "person" | "screenshot" | "concept"
+    type: str               # "person" | "screenshot" | "concept" | "figure"
     start: float            # source-clip seconds (same timeline as words/edl)
     end: float              # source-clip seconds (remapped to output-timeline at render time)
     source_clip: str = ""   # path to source clip — copy from the words the image is anchored to
     name: str = ""          # Wikipedia subject (type=person: a person; type=concept: a thing)
-    path: str = ""          # absolute path to screenshot PNG/JPG
+    path: str = ""          # absolute path to screenshot/figure PNG/JPG
+    kind: str = ""          # type=figure only: "chart" | "diagram"
 
 
 def load_images(path: Path) -> list[ImageSpec]:
@@ -44,6 +47,7 @@ def load_images(path: Path) -> list[ImageSpec]:
             source_clip=i.get("source_clip", ""),
             name=i.get("name", ""),
             path=i.get("path", ""),
+            kind=i.get("kind", ""),
         )
         for i in raw
     ]

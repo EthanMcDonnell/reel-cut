@@ -25,11 +25,11 @@ Use this to understand what is spoken when in the final video. **Do not use thes
 
 ## Step 2 — Check for manifest
 
-Check whether `assets/<video-slug>/manifest.json` exists (it is only present when screenshots were produced by `/produce-script`).
+Check whether `assets/<video-slug>/manifest.json` exists (it is only present when screenshots were produced by `/produce-script`). Also check whether `assets/<video-slug>/figures.json` exists (present when charts/diagrams were selected by `/produce-script` Stage 4b) — if so, handle it in **Step 3d**.
 
-**If no manifest exists → skip Steps 3 and 4. Go straight to Step 5 (render).**
+**If neither `manifest.json` nor `figures.json` exists → skip Steps 3 and 4. Go straight to Step 5 (render).**
 
-If it does exist, read both:
+If `manifest.json` exists, read both:
 
 1. **Screenshot manifest**: `assets/<video-slug>/manifest.json`
 2. **captions.json**: `assets/<video-slug>/<actual-captions-filename>.captions.json` (the file found in Step 1)
@@ -74,6 +74,31 @@ A few quirky Wikipedia image can add a fun extra dimension — drop a literal ph
 - Place it on the *meaning*, even when the exact word isn't spoken. Anchor to the words in captions.json: `start` = the anchor word's `start`, `end` = the `end` of the line it punctuates, `source_clip` from the anchor word.
 - Add `{ "type": "concept", "name": "<Wikipedia subject>", "start": ..., "end": ..., "source_clip": "...", "path": "" }`.
 
+## Step 3d — Assign figure timings (from figures.json)
+
+If `assets/<video-slug>/figures.json` exists, add one `type:"figure"` entry to the images list
+for each figure in it (charts/diagrams harvested from the article). Timing works exactly like
+screenshots:
+
+1. Use the figure's `script_context` to find the moment it supports in the `words` array.
+2. **Bound the on-screen window** with `trigger_show_word` / `trigger_go_away_word` (search within
+   the `script_context` span so they can't match a duplicate elsewhere): `start` = the matched
+   `trigger_show_word`'s `start`, `end` = the matched `trigger_go_away_word`'s `end`. If a trigger
+   is empty or not found, span the full matched sentence; if even that fails, use ~5s centred on
+   the anchor moment. **Skip any figure whose `script_context` can't be matched — don't invent a
+   placement.**
+3. Emit `type: "figure"`, `kind` copied from the figures.json entry, `source_clip` from the anchor
+   words, `name: ""`, and `path` = the absolute path `{PROJECT_ROOT}/assets/<video-slug>/<file>`
+   where `<file>` is the entry's `file` (e.g. `figures/figure-01.png`).
+
+Figures render on a padded card sized by `figure_overlay_size_pct`; give them a little more room
+than a text pop — they take longer to read.
+
+Example entry (added to the same images list written in Step 4):
+```json
+{ "type": "figure", "kind": "diagram", "start": 21.4, "end": 26.8, "source_clip": "assets/slug/clip.MP4", "name": "", "path": "{PROJECT_ROOT}/assets/slug/figures/figure-01.png" }
+```
+
 ## Step 3c — Detect hook count and output-timeline boundaries
 
 **Purpose:** establish how many heading cards Step 4b should generate and what output-timeline windows they occupy.
@@ -104,7 +129,8 @@ Example `images.json`:
 [
   { "type": "screenshot", "start": 12.935, "end": 16.402, "source_clip": "assets/slug/clip.MP4", "name": "", "path": "{PROJECT_ROOT}/assets/slug/snippet-01.png" },
   { "type": "person", "start": 4.205, "end": 7.444, "source_clip": "assets/slug/clip.MP4", "name": "Reed Hastings", "path": "" },
-  { "type": "concept", "start": 31.2, "end": 34.1, "source_clip": "assets/slug/clip.MP4", "name": "Rubber duck debugging", "path": "" }
+  { "type": "concept", "start": 31.2, "end": 34.1, "source_clip": "assets/slug/clip.MP4", "name": "Rubber duck debugging", "path": "" },
+  { "type": "figure", "kind": "diagram", "start": 21.4, "end": 26.8, "source_clip": "assets/slug/clip.MP4", "name": "", "path": "{PROJECT_ROOT}/assets/slug/figures/figure-01.png" }
 ]
 ```
 

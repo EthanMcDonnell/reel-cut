@@ -751,6 +751,7 @@ def _phase2(cfg, doc, output_path: Path, verbose: bool, headings_path: Path | No
                     source_clip=clip,
                     name=spec.name,
                     path=spec.path,
+                    kind=spec.kind,
                 )
                 cue = _resolve_image_spec(remapped_spec, cfg.images.display_duration_s)
                 if cue:
@@ -937,6 +938,22 @@ def _resolve_image_spec(spec, display_duration_s: float):
             end=spec.end,
             image_path=str(p),
             type="screenshot",
+        )
+
+    elif spec.type == "figure":
+        if not spec.path:
+            return None
+        p = Path(spec.path)
+        if not p.exists():
+            console.print(f"  [yellow]Figure not found: {spec.path}[/yellow]")
+            return None
+        return ImageCue(
+            keyword=f"{p.parent.name}_{p.stem}",
+            start=spec.start,
+            end=spec.end,
+            image_path=str(p),
+            type="figure",
+            kind=spec.kind,
         )
 
     elif spec.type == "concept":

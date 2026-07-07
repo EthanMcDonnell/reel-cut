@@ -259,6 +259,77 @@ The JSON result includes a `snippets` array — one entry per requested snippet 
 - **Flag any `highlight: "whole_block"`** — the exact phrase couldn't be pinpointed so the whole paragraph was coloured; the screenshot shows a wall of highlight rather than the specific proof. Worth eyeballing, and often fixed by trimming the `article_snippet` to a span that matches the live page verbatim and re-running.
 - If `skipped` is non-null, the whole page failed to load — report that reason; no screenshots were captured for that URL.
 
+## Stage 4b — Source Figures (article charts & diagrams)
+
+Separate from text screenshots (which crop article *prose* to prove a claim), figures are
+explanatory images the article already contains — **charts** and **diagrams** — reused as
+on-screen overlays. A chart is the visual proof of a shocking number; a diagram shows how a
+system works. This stage is deterministic-harvest-then-you-look: `figure_finder.py` finds and
+filters candidates; **you** read the images and pick the good ones.
+
+### Step 4b.1: Harvest candidates
+
+For each source URL, run:
+
+```bash
+.venv/bin/python scrape/figure_finder.py --url "<source_url>" --output-dir "assets/<video-slug>/"
+```
+
+It writes candidate images to `assets/<video-slug>/figures/` and metadata to
+`assets/<video-slug>/figure_candidates.json` (each entry: `file`, `figcaption`, `alt`,
+`heading`, `surrounding_text`, `format`, `width`/`height`, `score`). The deterministic prefilter
+has already dropped icons/avatars/logos/ads/banners/hero images; what remains is worth a look.
+If `candidates` is empty, there were no usable figures — skip to Final Output.
+
+### Step 4b.2: Look at each candidate and judge it
+
+**Use the Read tool on each `figures/figure-NN.*` image** and judge it, grounded by its
+`figcaption`/`alt`/`surrounding_text` from the candidates JSON:
+
+- **`is_usable`** — an informative chart or diagram, not a photo/headshot/decorative/logo. Drop
+  anything that isn't.
+- **`kind`** — `chart` (bars/curves/comparisons of numbers) or `diagram` (architecture / flow /
+  sequence / how-it-works). v1 uses only these two; drop tables, UI screenshots, and photos.
+- **`legibility`** — **would it read on a 9:16 phone screen?** A dense diagram with tiny text or
+  a busy multi-panel chart is a drop — an unreadable figure hurts more than none.
+
+### Step 4b.3: Match to a script beat and select
+
+Keep the ones that support a specific beat, matched by kind:
+
+- **`chart` → the stat beat** whose exact number the chart visualises (highest priority — it
+  proves the "shocking number" a hook makes).
+- **`diagram` → the "here's how it works" line** describing that system/flow.
+
+**Cap at ≤3 figures per video**, and drop redundant ones (two figures of the same system → keep
+the more legible / higher-resolution). Figures hold longer and take more screen space than a
+text pop, so fewer-and-stronger wins.
+
+### Step 4b.4: Write `figures.json`
+
+Write the selected figures to `assets/<video-slug>/figures.json` (a JSON list). This is the
+figure equivalent of the screenshot manifest — it records the *selection* and *anchors*;
+`produce-video` computes the actual timings later. Each entry:
+
+```json
+[
+  {
+    "file": "figures/figure-01.png",
+    "kind": "diagram",
+    "caption": "one line: what the figure shows",
+    "script_context": "the exact verbatim script line this figure is shown under",
+    "trigger_show_word": "anchor word in that line where it appears",
+    "trigger_go_away_word": "anchor word where it disappears",
+    "source_url": "<source_url>"
+  }
+]
+```
+
+- `script_context` — copy the supported script line **verbatim** from the script.
+- `trigger_show_word` / `trigger_go_away_word` — short verbatim anchors from **inside**
+  `script_context`, marking where the figure appears and disappears. Same rules as screenshot
+  triggers; leave `""` if no clean anchor and produce-video spans the whole line.
+
 ## Final Output
 
 Report to the user:
@@ -268,5 +339,6 @@ Report to the user:
 - Viewer resources: the comment CTA line (keyword + lead magnet), and the full verified resource list appended to the script file
 - Screenshots saved to: `assets/<slug>/`
 - Screenshot results: how many captured (with the exact/fuzzy breakdown), and explicitly list any snippets that were **not found** so the user knows which claims lack on-screen evidence
+- Figures: how many charts/diagrams were selected (with `kind` and the beat each supports), the count of candidates harvested vs. kept, and where they were saved (`assets/<slug>/figures/`, `figures.json`)
 - Unsupported claims: any checkable claim you dropped at selection time because the source didn't state it verbatim (Step 4.1.2) — the user may want to re-source or soften it
 - Any warnings (near-tie runner-up available, low-confidence fuzzy matches, skipped screenshots, etc.)

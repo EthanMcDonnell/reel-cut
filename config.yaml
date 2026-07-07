@@ -134,6 +134,7 @@ images:
   position: center               # top | center | bottom  (top keeps logos clear of center captions)
   logo_overlay_size_pct: 40      # logo width as % of video width
   overlay_size_pct: 50           # person/screenshot/concept width as % of video width
+  figure_overlay_size_pct: 66    # figure (article chart/diagram) card width as % of video width
   display_duration_s: 1.0        # seconds to show logo after its keyword is first spoken
   fade_duration_s: 0             # fade in and out duration in seconds (0 to disable)
   margin_pct: 5                  # % of video height from the edge to the logo/image overlay.

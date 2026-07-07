@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import replace
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from .caption import CaptionFrame
 from .config import ImagesConfig
@@ -16,8 +16,8 @@ from .image_finder import ImageCue
 # one in the center rather than displacing it (see _resolve_logo_swaps).
 _SLOTS = ("center", "top_left", "top_right")
 
-# Lower number = higher priority for the center slot: screenshot > person > concept > logo.
-_TYPE_PRIORITY = {"screenshot": 0, "person": 1, "concept": 2, "logo": 3}
+# Lower number = higher priority for the center slot: figure > screenshot > person > concept > logo.
+_TYPE_PRIORITY = {"figure": 0, "screenshot": 1, "person": 2, "concept": 3, "logo": 4}
 
 
 def _assign_slots(cues: list[ImageCue]) -> list[str]:
@@ -111,12 +111,23 @@ def render_image_frames(
         except Exception:
             continue
 
-        size_pct = config.logo_overlay_size_pct if cue.type == "logo" else config.overlay_size_pct
+        if cue.type == "logo":
+            size_pct = config.logo_overlay_size_pct
+        elif cue.type == "figure":
+            size_pct = config.figure_overlay_size_pct
+        else:
+            size_pct = config.overlay_size_pct
         target_w = int(w * size_pct / 100)
 
-        # Resize maintaining aspect ratio
-        logo_h = int(target_w * logo.height / logo.width)
-        logo = logo.resize((target_w, logo_h), Image.LANCZOS)
+        # Figures (article charts/diagrams) sit on an opaque padded card so transparent
+        # or wide images read against the footage; the card's total width is target_w.
+        if cue.type == "figure":
+            logo = _figure_card(logo, target_w)
+            logo_h = logo.height
+        else:
+            # Resize maintaining aspect ratio
+            logo_h = int(target_w * logo.height / logo.width)
+            logo = logo.resize((target_w, logo_h), Image.LANCZOS)
 
         # Position. Displaced (overlapping) images sit in a top corner, dropped
         # slightly below the edge; the center slot uses the configured base position.
@@ -249,6 +260,28 @@ def merge_with_caption_frames(
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+def _figure_card(img: Image.Image, card_w: int) -> Image.Image:
+    """Place a figure image on an opaque white rounded card of total width `card_w`.
+
+    The image is padded inside the card so transparent/wide article charts and diagrams
+    read against the video footage instead of floating as bare fragments. Card height
+    grows to fit the image at its aspect ratio.
+    """
+    pad = max(1, int(card_w * 0.045))
+    radius = max(1, int(card_w * 0.04))
+    inner_w = max(1, card_w - 2 * pad)
+    inner_h = max(1, int(inner_w * img.height / img.width))
+    img = img.resize((inner_w, inner_h), Image.LANCZOS)
+
+    card_h = inner_h + 2 * pad
+    card = Image.new("RGBA", (card_w, card_h), (0, 0, 0, 0))
+    mask = Image.new("L", (card_w, card_h), 0)
+    ImageDraw.Draw(mask).rounded_rectangle([0, 0, card_w - 1, card_h - 1], radius=radius, fill=255)
+    card.paste((255, 255, 255, 255), (0, 0), mask)
+    card.alpha_composite(img, (pad, pad))
+    return card
+
 
 def _composite_logo(
     canvas: Image.Image,
