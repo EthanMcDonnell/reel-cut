@@ -217,9 +217,11 @@ Commit the fixture alongside the video's other artifacts.
 
 ## Step 7 — Publish to Tailscale & notify Telegram
 
-Make every rendered `output/*-hook{i}.mp4` reachable over Tailscale, then post a link for
-each **not-yet-notified** hook video to the Telegram `file-exchange` topic. A `.notified`
-log dedupes across renders, so re-running only posts newly rendered hooks.
+Make every rendered `output/<video-slug>-hook{i}.mp4` reachable over Tailscale, then post a
+link for each **not-yet-notified** hook video **of this slug** to the Telegram `file-exchange`
+topic. The loop is scoped to the current slug so other videos' hooks are never touched; a
+`.notified` log additionally dedupes across renders, so re-running only posts newly rendered
+hooks.
 
 **Prerequisites** (set up once, outside this workflow):
 - Tailscale installed and this machine joined to the tailnet (`tailscale up`).
@@ -234,11 +236,11 @@ tailscale serve --bg --set-path /reels "{PROJECT_ROOT}/output"
 TS_HOST=$(tailscale status --json | jq -r '.Self.DNSName' | sed 's/\.$//')
 
 # 3. Post one link per hook video to the local Telegram bot API — the file-exchange topic.
-#    Globs ALL hook videos in output/ (every slug, every hook), but the .notified log
-#    means only ones never sent before get posted, so re-runs don't spam duplicates.
+#    Scoped to THIS video's slug only (every hook of it), never other slugs' videos.
+#    The .notified log additionally guards against re-sending on repeat renders.
 SENT_LOG="{PROJECT_ROOT}/output/.notified"
 touch "$SENT_LOG"
-for f in "{PROJECT_ROOT}"/output/*-hook*.mp4; do
+for f in "{PROJECT_ROOT}"/output/<video-slug>-hook*.mp4; do
   name=$(basename "$f")
   grep -qxF "$name" "$SENT_LOG" && continue   # already notified — skip
   PAYLOAD=$(jq -n --arg c "🎬 ${name} is ready: https://${TS_HOST}/reels/${name}" '{content: $c, topic: "file-exchange"}')
