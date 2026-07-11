@@ -204,6 +204,7 @@ def write_debug_report(
            f"  max_retake_gap_s={c.cuts.max_retake_gap_s}"
            f"  min_match_ratio={c.cuts.min_match_ratio}"
            f"  min_reword_overlap={c.cuts.min_reword_overlap}"
+           f"  aborted_restarts={'on' if c.cuts.detect_aborted_restarts else 'off'}"
            if c.cuts.repetition_detection else "OFF")
     _s(f"  retakes : {rep}")
     _s("")

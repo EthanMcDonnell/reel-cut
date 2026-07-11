@@ -30,6 +30,7 @@ def detect_retakes(
     max_retake_span_s: float = 60.0,
     min_reword_overlap: float = 0.6,
     min_reword_content_words: int = 3,
+    detect_aborted: bool = True,
 ) -> tuple[list[tuple[float, float]], list[RetakeCandidate]]:
     """Detect repeated phrases (retakes) in a word list.
 
@@ -193,7 +194,16 @@ def detect_retakes(
         words, min_reword_overlap, min_reword_content_words, max_retake_gap_s
     )
 
-    if not raw_cuts and not reworded:
+    # Third, independent pass: catch SHORT aborted restarts both passes above miss. A
+    # 1-2 word opener that trails off and is immediately re-said ("It's called Amazon…
+    # It's called Magic Pocket…") shares too short a run to seed the positional matcher,
+    # and the abort lands on the first content word so the reworded overlap is near zero.
+    aborted = (
+        _detect_aborted_restarts(words, max_retake_gap_s, min_retake_words, take_boundary_s)
+        if detect_aborted else []
+    )
+
+    if not raw_cuts and not reworded and not aborted:
         return [], candidates
 
     # Convert word-index pairs → time ranges, then merge overlapping ones.
@@ -256,6 +266,20 @@ def detect_retakes(
             rebridged.append((t_start, t_end))
 
     snapped = _snap_to_take_boundaries(rebridged, words, take_boundary_s, max_retake_span_s)
+
+    # Aborted-restart cuts are already exactly bounded (failed head's take start →
+    # keeper start), so they bypass snapping: the failed head trails off with only a
+    # breath before the keeper — a sub-take-boundary gap that _snap_to_take_boundaries
+    # would misread as interior and walk forward across the keeper, swallowing it.
+    # Union them in and merge any overlap with the snapped cuts.
+    if aborted:
+        allcuts = sorted(snapped + aborted)
+        snapped = [allcuts[0]]
+        for s, e in allcuts[1:]:
+            if s <= snapped[-1][1]:
+                snapped[-1] = (snapped[-1][0], max(snapped[-1][1], e))
+            else:
+                snapped.append((s, e))
     return snapped, candidates
 
 
@@ -426,6 +450,70 @@ def _detect_reworded_takes(
                 nxt = sentences[i + 1][0].start if i + 1 < len(sentences) else seg[-1].end
                 cuts.append((seg[0].start, nxt))
                 break
+    return cuts
+
+
+def _is_trail_off(word: str) -> bool:
+    """True when a word trails off mid-thought — ends in an ellipsis ('...' or '…').
+
+    Whisper marks a speaker cutting themselves off with a trailing ellipsis; this is
+    the anchor for aborted-restart detection (distinct from _is_sentence_end, which
+    excludes the ellipsis precisely because it is NOT a completed sentence)."""
+    return word.endswith("...") or word.endswith("…")
+
+
+def _detect_aborted_restarts(
+    words: list[WordTimestamp],
+    max_gap_s: float,
+    min_retake_words: int,
+    take_boundary_s: float,
+) -> list[tuple[float, float]]:
+    """Find SHORT aborted restarts the positional and reworded passes both miss.
+
+    A speaker opens a sentence, trails off after a word or two (Whisper marks the
+    trail-off with an ellipsis), then restarts the SAME sentence from the top:
+    "It's called Amazon… It's called Magic Pocket and it holds…". The shared run is
+    too short to seed the positional matcher (< min_retake_words), and the abort lands
+    on the first content word so the reworded pass sees almost no content overlap —
+    both miss it and the failed opener survives as a stutter.
+
+    Anchored on the ellipsis (the trail-off) plus an immediate re-say of the same
+    opening prefix. That pairing is what separates a genuine abort from emphasis
+    ("I love it. I love this whole thing." — no trail-off) or a dramatic pause (the
+    next sentence doesn't repeat the opening). Each cut spans the failed head, from its
+    take start to the restart; the caller unions these with the other passes' cuts.
+    """
+    normalized = [_normalize(w.word) for w in words]
+    n = len(words)
+    cuts: list[tuple[float, float]] = []
+    for e in range(n - 1):
+        if not _is_trail_off(words[e].word):
+            continue
+        r = e + 1  # the restart begins at the word right after the trail-off
+        if words[r].start - words[e].end > max_gap_s:
+            continue
+        # Walk back to the aborted take's first word: the first word after a sentence
+        # end, a take-length silence, or the clip start.
+        s = e
+        while s > 0 and not (
+            _is_sentence_end(words[s - 1].word)
+            or words[s].start - words[s - 1].end >= take_boundary_s
+        ):
+            s -= 1
+        head_len = e - s + 1
+        # Shared leading prefix between the aborted head and the restart, capped at the
+        # head length so the scan never runs past the head into the keeper's body.
+        p = 0
+        while (p < head_len and r + p < n
+               and normalized[s + p]
+               and normalized[s + p] == normalized[r + p]):
+            p += 1
+        # Fire only for the short case the other passes miss: a >= 2-word shared opening,
+        # the head is all prefix except (at most) its final abort word, and the shared
+        # run is below the positional seed length (a >= min_retake_words run is that
+        # pass's job). p >= head_len-1 with p < min_retake_words bounds the head short.
+        if p >= 2 and p >= head_len - 1 and p < min_retake_words:
+            cuts.append((words[s].start, words[r].start))
     return cuts
 
 

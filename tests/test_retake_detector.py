@@ -79,6 +79,98 @@ def test_no_retake_below_min_words():
     assert ranges == []
 
 
+# ---------------------------------------------------------------------------
+# Aborted restarts — a short opener that trails off ('...') and is immediately
+# re-said from the same prefix. Too short to seed the positional matcher, too
+# little content overlap for the reworded pass; caught by _detect_aborted_restarts.
+# ---------------------------------------------------------------------------
+
+def test_aborted_restart_two_word_prefix():
+    """Real 'It's called Amazon… It's called Magic Pocket…' abort (dropbox clip).
+
+    Shares only 'It's called' (2 words) before diverging on the first content word,
+    so neither the n-gram nor the reworded pass sees it. The failed opener must be cut
+    from its take start (62.322) to the restart (64.763), leaving the keeper intact.
+    """
+    words = [
+        _w("boring.",    61.538, 61.840),   # kept lead-in sentence, ends the prior take
+        _w("It's",       62.322, 62.444),   # ── aborted head ──
+        _w("called",     62.464, 62.648),
+        _w("Amazon...",  62.729, 63.054),   # trail-off
+        _w("It's",       64.763, 64.883),   # ── restart / keeper ──
+        _w("called",     64.903, 65.104),
+        _w("Magic",      65.145, 65.386),
+        _w("Pocket",     65.446, 65.748),
+        _w("and",        65.828, 65.909),
+        _w("it",         65.949, 65.989),
+        _w("holds",      66.050, 66.231),
+        _w("multiple",   66.331, 66.733),
+        _w("exabytes",   66.935, 67.478),
+        _w("data.",      67.659, 67.920),
+    ]
+    ranges, _ = detect_retakes(words, min_retake_words=3)
+    assert len(ranges) == 1
+    cut_start, cut_end = ranges[0]
+    assert cut_start == pytest.approx(62.322)
+    assert cut_end == pytest.approx(64.763)
+
+
+def test_aborted_restart_disabled():
+    """detect_aborted=False leaves the short abort uncut (the other passes still miss it)."""
+    words = [
+        _w("boring.",    61.538, 61.840),
+        _w("It's",       62.322, 62.444),
+        _w("called",     62.464, 62.648),
+        _w("Amazon...",  62.729, 63.054),
+        _w("It's",       64.763, 64.883),
+        _w("called",     64.903, 65.104),
+        _w("Magic",      65.145, 65.386),
+        _w("Pocket",     65.446, 65.748),
+        _w("data.",      67.659, 67.920),
+    ]
+    ranges, _ = detect_retakes(words, min_retake_words=3, detect_aborted=False)
+    assert ranges == []
+
+
+def test_emphasis_not_aborted_restart():
+    """A completed short sentence re-said for emphasis (no trail-off) is NOT a retake.
+
+    'I love it.' ends with a period, not an ellipsis — the speaker finished the thought.
+    Without the trail-off anchor, sharing a 2-word prefix with the next sentence is not
+    enough to cut it."""
+    words = [
+        _w("I",     0.0, 0.2),
+        _w("love",  0.3, 0.5),
+        _w("it.",   0.6, 0.9),
+        _w("I",     1.2, 1.4),
+        _w("love",  1.5, 1.7),
+        _w("this",  1.8, 2.0),
+        _w("whole", 2.1, 2.3),
+        _w("thing.", 2.4, 2.7),
+    ]
+    ranges, _ = detect_retakes(words, min_retake_words=3)
+    assert ranges == []
+
+
+def test_trail_off_continuation_not_aborted_restart():
+    """A trail-off that CONTINUES the thought (no re-say of the opening) is not a retake.
+
+    'The files sit on ordinary spinning… hard drives…' trails off then keeps going;
+    the words after the ellipsis don't repeat the take's opening, so nothing is cut."""
+    words = [
+        _w("The",       0.0, 0.2),
+        _w("files",     0.3, 0.5),
+        _w("sit",       0.6, 0.8),
+        _w("on",        0.9, 1.0),
+        _w("ordinary",  1.1, 1.4),
+        _w("spinning...", 1.5, 1.9),
+        _w("hard",      2.1, 2.3),
+        _w("drives.",   2.4, 2.7),
+    ]
+    ranges, _ = detect_retakes(words, min_retake_words=3)
+    assert ranges == []
+
+
 def test_gap_beyond_max_retake_gap_not_detected():
     """A repeated phrase beyond max_retake_gap_s is not a retake."""
     words = [

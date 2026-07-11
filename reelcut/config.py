@@ -40,6 +40,11 @@ class CutsConfig(BaseModel):
     min_reword_content_words: int = 3  # min stopword-filtered content words a sentence needs
                                        # before the overlap pass will consider it (guards short
                                        # sentences whose few common words overlap coincidentally)
+    detect_aborted_restarts: bool = True  # third retake pass: cut a short opener that trails off
+                                          # ('...') and is immediately re-said from the same prefix
+                                          # ("It's called Amazon… It's called Magic Pocket…") — too
+                                          # short to seed the n-gram pass, too little content overlap
+                                          # for the reworded pass
     mid_sentence_cut_floor_ms: int = 3000
     sentence_pause_s: float = 0.4           # sentence-boundary recovery: when Whisper omits a full
                                             # stop, a capitalised next word preceded by a pause >= this
