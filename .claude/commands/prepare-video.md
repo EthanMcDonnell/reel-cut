@@ -53,5 +53,42 @@ Summarise:
 - Anomalies found and recommended fix for each (for the user to apply)
 - Any remaining issues that need a human listen (ambiguous takes, uncertain boundaries)
 - `headings.json` and `images.json` stubs were auto-created in the slug folder — optionally add a title card / image overlays later by filling them in (covered in `/produce-video`)
+
+## Step 4 — Auto-fix the certain anomalies, then log
+
+Take the Step 3 anomalies and split them into **CERTAIN-FIX** vs **REPORT-ONLY**. Only the certain ones get applied here; everything else stays reported for the human.
+
+**The only file you edit to apply a fix is `captions.json`, and only its `edl` array.** The `edl` is a flat list of contiguous `{source_clip, start, end, keep, reason}` spans. A fix is a **surgical in-place edit to one span** — flip its `keep` flag. Leave every other span, and `words` / `source_clips`, byte-for-byte untouched. Never alter the `start`/`end` of a kept-speech span. Do **not** re-run `transcribe` to "refresh" anything — that recomputes the whole `edl` and discards these fixes.
+
+Auto-fix **only** these (if a fix needs guessing which take the user wants, or a boundary you can't read straight off word timings, do **not** touch it):
+
+| Anomaly | Fix |
+|---|---|
+| Truncated false-start opener (a cut-off opener immediately followed by its clean completion) | flip the truncated span → `keep: false` |
+| Clear over-cut: a `keep: false` span (`reason` silence/noise) that actually contains real words present in `words` | flip → `keep: true` |
+| Micro keep-segment that is a bare fragment (no full word) | flip → `keep: false` |
+| Missed cut sitting *inside* a keep span, where the digest names the exact dead words | split that one span into three at the surrounding word boundaries (from `words`), middle sub-span → `keep: false` |
+
+**Never auto-fix** (report only): alternate hook takes (user picks one), low-confidence survivors that are the *correct* word, large kept gaps / ambiguous boundaries that need a human listen, and hard-cap hits.
+
+After editing, recompute keep/cut totals from the edited `edl`, then write the fix log to `assets/<slug>/<clip-stem>.debug.7.fixlog.txt` (same `<clip-stem>` as the other `.debug.*` files; `7` sorts it last). Format:
+
+```
+FIX LOG — <slug>
+run: <ISO timestamp>   clip: <stem>
+keep/cut duration:  before <k>s / <c>s  →  after <k>s / <c>s   (Δ <±>s kept)
+
+FIXES APPLIED (n)
+  [1] <mm:ss>  <category>   edl[<i>] keep <old>→<new>
+      <one-line reason>. (digest line <n>)
+
+LEFT FOR HUMAN (n)
+  - <mm:ss>  <category> — <why not auto-fixed>
+```
+
+If there were no certain fixes, write the file with `FIXES APPLIED (0)` and change nothing in `edl`.
+
+In the chat summary, state: N auto-fixed + N left for human, and that `.debug.7.fixlog.txt` holds the record (each applied line carries `edl[i]` before→after so it's trivial to revert by flipping back).
+
 - Next step: `/produce-video <slug>`
 

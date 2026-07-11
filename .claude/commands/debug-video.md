@@ -22,7 +22,9 @@ Then read `.debug.6.summary.txt` for the full config + EDL detail behind a flagg
 
 ## Step 2 — Pull additional files only if needed
 
-Pipeline order: 0.review → 1.raw → 1b.sentences → 2.post-retrans → 3.post-align → 4.post-vad → 5.timeline → 6.summary
+Pipeline order: 0.review → 1.raw → 1b.sentences → 2.post-retrans → 3.post-align → 4.post-vad → 5.timeline → 6.summary → 7.fixlog
+
+- **`*.debug.7.fixlog.txt`** — what the last `/prepare-video` auto-changed in the EDL and what it deliberately left for a human. Read first when the output differs from a raw transcribe; absent if that run made no certain fixes.
 
 - **`*.debug.4.post-vad.txt`** — read when hallucinations were dropped or retake boundaries look wrong. Shows every word after VAD filtering (final word list) with confidence scores, `[OUTTAKE]` flags, and `──── CUT ────` rules interleaved at each EDL cut boundary.
 - **`*.debug.3.post-align.txt`** — read when a word is missing and you want to know if VAD dropped it. Shows words after WhisperX alignment, before VAD.
