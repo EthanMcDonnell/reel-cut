@@ -198,7 +198,7 @@ Read `assets/<video-slug>/title.json`. If the first entry has a non-empty `title
 - **no em dashes.** `->`, `w/`, `&`, `/` are fine — that quirky shorthand register is the point
 - **quirky and scroll-stopping over informative.** Lead with attitude, understatement, meme energy, or a sneaky reframe — a title that makes someone stop mid-scroll beats one that neatly summarises. It does **not** have to explain (or even literally describe) the video; intrigue is the job. Avoid the flat "how X did Y" / "why X did Y" template unless it's carrying a genuine twist.
 
-Examples of the register: `the cloud? never heard of it` · `dropbox unsubscribed from amazon 🚪` · `big tech hates this one weird trick: owning your servers 🤫` · `turns out the cloud was just amazon's computers ☁️`
+Examples of the register: `the cloud? never heard of it` · `dropbox unsubscribed from amazon` · `big tech hates this one weird trick: owning your servers 🤫` · `turns out the cloud was just amazon's computers ☁️`
 
 **Use AskUserQuestion** to present the full set of proposed per-hook titles (one option to accept all, plus "Enter my own"). Once approved, write `title.json` with **one entry per hook** (same order as the hook windows / `headings.json` cards):
 
