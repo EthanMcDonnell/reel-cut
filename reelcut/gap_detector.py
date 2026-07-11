@@ -235,36 +235,54 @@ def _find_trailing_speech_end(
     word_end: float,
     gap_end: float,
     config: CutsConfig,
-    max_extend_ms: float = 400.0,
+    max_extend_ms: float = 800.0,
+    max_closure_ms: float = 90.0,
 ) -> float:
     """Scan forward from word_end to find where the word's trailing speech ends.
 
     WhisperX often truncates a word's end timestamp before quiet trailing consonants
     finish (sibilants/liquids: "MySQL"→/l/, "SSDs"→/z/). Because edl.py starts its cut
-    at the word end, those tails get clipped. This walks forward and stops at the first
-    silent frame, so the cut can start after the real speech end.
+    at the word end, those tails get clipped. This walks forward past the truncated
+    tail so the cut can start after the real speech end.
 
-    A truncated consonant is *contiguous* with the word, so the first silence marks its
-    end — stopping there avoids jumping across the gap to grab a later breath or click.
-    Returns a time in [word_end, min(gap_end, word_end + max_extend)]. Returns word_end
-    unchanged when audio is already silent there (accurate alignment — the common case).
+    A word can carry a whole trailing syllable past a *stop-closure* — the brief
+    silence of a /d/,/t/,/k/… before a final sibilant (e.g. "SS-Dee-z"). WhisperX
+    may cut the word at the closure, leaving the last syllable stranded in the gap.
+    So we bridge silences up to `max_closure_ms` when speech resumes, and stop at the
+    first silence longer than that (a real pause — beyond it lies a breath or the next
+    word, not this word). Returns a time in [word_end, min(gap_end, word_end +
+    max_extend)]. Returns word_end unchanged when audio is already silent there
+    (accurate alignment — the common case), so the change is inert for aligned words.
     """
     frame_size = max(64, int(0.010 * sr))  # 10 ms frames
     silence_thresh = float(10 ** (config.silence_threshold_db / 20))
+    closure_samples = max_closure_ms / 1000.0 * sr
 
     start_sample = int(word_end * sr)
     limit = min(gap_end, word_end + max_extend_ms / 1000.0)
     end_sample = int(limit * sr)
 
+    last_speech_end = float(word_end)  # end of the most recent speech frame
+    saw_speech = False                 # has any speech appeared since word_end?
+    silence_run = 0                    # consecutive silent samples since last speech
+
     for pos in range(start_sample, end_sample, frame_size):
         frame = audio[pos : pos + frame_size]
         if len(frame) < 64:
             break
-        if float(np.mean(np.abs(frame) > silence_thresh)) < config.failure_tolerance_ratio:
-            return pos / sr  # first silent frame — speech ended here
+        is_speech = float(np.mean(np.abs(frame) > silence_thresh)) >= config.failure_tolerance_ratio
+        if is_speech:
+            saw_speech = True
+            silence_run = 0
+            last_speech_end = (pos + frame_size) / sr
+        else:
+            if not saw_speech:
+                return word_end  # silent right away — word end was accurate
+            silence_run += frame_size
+            if silence_run > closure_samples:
+                break  # real pause — the trailing syllable ended at last_speech_end
 
-    # No silence inside the window — keep the whole tail up to the limit.
-    return limit
+    return min(last_speech_end, limit)
 
 
 _LONG_WORD_DUR_S = 1.5  # words longer than this are suspect for alignment errors
