@@ -10,19 +10,21 @@ Debug a reelcut pipeline run for a video slug.
 
 Arguments: `$ARGUMENTS` — expected format: `<video-slug>`
 
-## Step 1 — Always read the summary file first
+## Step 1 — Always read the review file first
 
 ```bash
 ls assets/<slug>/
 ```
 
-Read `assets/<slug>/<clip-name>.debug.6.summary.txt` in full. This covers config, pipeline summary, retranscription windows, retake detection, image overlays, and EDL — enough to diagnose most issues.
+Read `assets/<slug>/<clip-name>.debug.0.review.txt` in full. It opens with **⚠ CHECK THESE** — a ranked digest of likely defects (hard caps, skipped retakes, duplicate sentence openers, low-conf survivors, micro keep-segments, large kept gaps, VAD drops) each with a timestamp — followed by the **FINAL TRANSCRIPT** rendered as prose with `⟨cuts⟩` inline and `‹low-conf›?` words flagged. This alone triages most issues: each digest line points you to the section/file below.
+
+Then read `.debug.6.summary.txt` for the full config + EDL detail behind a flagged line.
 
 ## Step 2 — Pull additional files only if needed
 
-Pipeline order: 1.raw → 1b.sentences → 2.post-retrans → 3.post-align → 4.post-vad → 5.timeline → 6.summary
+Pipeline order: 0.review → 1.raw → 1b.sentences → 2.post-retrans → 3.post-align → 4.post-vad → 5.timeline → 6.summary
 
-- **`*.debug.4.post-vad.txt`** — read when hallucinations were dropped or retake boundaries look wrong. Shows every word after VAD filtering (final word list) with confidence scores and `[OUTTAKE]` flags.
+- **`*.debug.4.post-vad.txt`** — read when hallucinations were dropped or retake boundaries look wrong. Shows every word after VAD filtering (final word list) with confidence scores, `[OUTTAKE]` flags, and `──── CUT ────` rules interleaved at each EDL cut boundary.
 - **`*.debug.3.post-align.txt`** — read when a word is missing and you want to know if VAD dropped it. Shows words after WhisperX alignment, before VAD.
 - **`*.debug.2.post-retrans.txt`** — read when a word is missing and you want to know if alignment dropped it. Shows words after retranscription, before alignment.
 - **`*.debug.5.timeline.txt`** — read when there's a specific bad moment ("why didn't this gap get cut?"). Shows words and gaps interleaved with KEEP/CUT decisions and skip reasons.

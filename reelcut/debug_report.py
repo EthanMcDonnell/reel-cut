@@ -1,6 +1,7 @@
 """Debug report — split .debug.* files written after each pipeline run."""
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -41,6 +42,132 @@ def write_debug_report(
         f"Generated : {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
         f"Clips     : {', '.join(Path(c).name for c in clip_paths)}\n"
     )
+
+    # -------------------------------------------------------------------------
+    # review — human-first entry point: anomaly digest + final transcript.
+    #          Written as .debug.0.review.txt so it sorts ahead of the
+    #          per-stage LLM dumps. Everything here is derived from data already
+    #          passed in; no upstream plumbing.
+    # -------------------------------------------------------------------------
+    from .transcriber import is_sentence_boundary
+
+    LOW_CONF = 0.55
+    rv: list[str] = [header]
+    _rv = rv.append
+
+    kept_words = [w for w in aligned_words if w.keep]
+
+    # --- anomaly digest: (priority, timestamp, message), most-likely-defect first
+    flags: list[tuple[int, float, str]] = []
+
+    for e in (retrans_log or []):
+        if e.get("hard_capped"):
+            flags.append((0, e["win_start"],
+                          f"HARD CAP — sentence > 20s truncated (trigger={e['label']})"))
+
+    if config.cuts.repetition_detection and retake_candidates:
+        for cands in retake_candidates.values():
+            for c in cands:
+                if not c.kept:
+                    phrase = " ".join(c.ngram)
+                    why = f" ({c.skip_reason})" if c.skip_reason else ""
+                    flags.append((1, c.cut_start_s,
+                                  f'retake SKIPPED — "{phrase}" ratio={c.ratio:.2f}{why}'))
+
+    for clip_path in clip_paths:
+        cw = sorted((w for w in kept_words if w.clip_path == str(clip_path)),
+                    key=lambda w: w.start)
+        sentences = [g for g, _ in _group_sentences(cw, is_sentence_boundary,
+                                                     config.cuts.sentence_pause_s)]
+        for prev, nxt in zip(sentences, sentences[1:]):
+            a, b = _opener(prev), _opener(nxt)
+            if a and a == b:
+                flags.append((2, nxt[0].start,
+                              f'duplicate opener — "{" ".join(a)}…" repeats (possible false start)'))
+
+    for w in sorted((w for w in kept_words if w.confidence < LOW_CONF),
+                    key=lambda w: w.confidence)[:8]:
+        flags.append((3, w.start, f"low-conf survivor {w.word!r} ({w.confidence:.2f})"))
+
+    min_keep = config.cuts.min_keep_ms
+    for e in edl:
+        seg_ms = (e.end - e.start) * 1000
+        if e.keep and seg_ms < min_keep:
+            flags.append((4, e.start,
+                          f"micro keep-segment {seg_ms:.0f}ms < min_keep {min_keep}ms"))
+
+    for gaps in gaps_by_clip.values():
+        for g in gaps:
+            if not g.cut and g.duration_ms > 800:
+                why = f" ({g.skip_reason})" if g.skip_reason else ""
+                flags.append((5, g.start,
+                              f"large kept gap {g.duration_ms:.0f}ms {g.gap_type}{why}"))
+
+    total_dropped = sum(i["hallucinations_dropped"] for i in clip_info)
+    if total_dropped:
+        flags.append((6, 0.0,
+                      f"VAD dropped {total_dropped} word(s) as hallucinations — verify none were real"))
+
+    flags.sort(key=lambda f: (f[0], f[1]))
+    _rv(f"--- ⚠ CHECK THESE ({len(flags)}) ---")
+    if not flags:
+        _rv("  ✓ nothing flagged")
+    else:
+        for _, ts, msg in flags:
+            _rv(f"  {_ts(ts):>9}  {msg}")
+    _rv("")
+
+    # --- final transcript: kept EDL rendered as flowing prose with inline cuts
+    _rv("--- FINAL TRANSCRIPT (as it will play — ⟨cuts⟩ inline, ‹low-conf›? flagged) ---")
+    tokens: list[tuple[str, str, bool]] = []  # (kind, text, ends_sentence)
+    i, n = 0, len(edl)
+    while i < n:
+        e = edl[i]
+        if e.keep:
+            seg = sorted(
+                (w for w in kept_words
+                 if str(w.clip_path) == str(e.source_clip)
+                 and e.start - 0.02 <= (w.start + w.end) / 2 <= e.end + 0.02),
+                key=lambda w: w.start,
+            )
+            for w in seg:
+                tokens.append(("word", _fmt_token(w, LOW_CONF), _ends_sentence(w.word)))
+            i += 1
+        else:
+            j, dur, reasons = i, 0.0, []
+            while j < n and not edl[j].keep:
+                dur += edl[j].end - edl[j].start
+                if edl[j].reason not in reasons:
+                    reasons.append(edl[j].reason)
+                j += 1
+            significant = dur * 1000 >= config.cuts.min_silence_ms or \
+                any(r in ("silence", "retake") for r in reasons)
+            if significant:
+                tokens.append(("cut", f"{dur:.1f}s {'/'.join(reasons)}", False))
+            i = j
+
+    WIDTH = 72
+    cur = ""
+    for kind, text, brk in tokens:
+        if kind == "cut":
+            if cur:
+                _rv(cur)
+                cur = ""
+            _rv(f"  ⟨— cut {text} —⟩")
+            continue
+        add = text if not cur else f"{cur} {text}"
+        if len(add) > WIDTH and cur:
+            _rv(cur)
+            cur = text
+        else:
+            cur = add
+        if brk:
+            _rv(cur)
+            cur = ""
+    if cur:
+        _rv(cur)
+
+    Path(f"{base_path}.debug.0.review.txt").write_text("\n".join(rv) + "\n")
 
     # -------------------------------------------------------------------------
     # summary — config, pipeline summary, retrans windows, retake detection,
@@ -319,11 +446,21 @@ def write_debug_report(
     _a = a.append
 
     total_dropped = sum(i["hallucinations_dropped"] for i in clip_info)
-    _a("--- ALIGNED OUTPUT (after VAD hallucination filter — final word list) ---")
+    _a("--- ALIGNED OUTPUT (after VAD hallucination filter — final word list, ── CUT ── rules from EDL) ---")
     _a(f"  ({len(aligned_words)} words kept, {total_dropped} dropped as hallucinations)")
+    cut_runs = _collapse_cuts(edl)
+    ci = 0
     for w in aligned_words:
+        while ci < len(cut_runs) and cut_runs[ci][0] < w.start - 0.001:
+            _, _, dur, reasons = cut_runs[ci]
+            _a(f"  ──── CUT {dur:.2f}s · {'/'.join(reasons)} ────")
+            ci += 1
         keep_flag = "  [OUTTAKE]" if not w.keep else ""
         _a(f"  {_ts(w.start):>9} → {_ts(w.end):<9}  {w.word!r:<30}  conf={w.confidence:.2f}{keep_flag}")
+    while ci < len(cut_runs):
+        _, _, dur, reasons = cut_runs[ci]
+        _a(f"  ──── CUT {dur:.2f}s · {'/'.join(reasons)} ────")
+        ci += 1
 
     Path(f"{base_path}.debug.4.post-vad.txt").write_text("\n".join(a) + "\n")
 
@@ -396,6 +533,43 @@ def write_debug_report(
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _collapse_cuts(edl):
+    """Collapse consecutive CUT EDL entries into (start, end, dur_s, reasons) runs."""
+    ordered = sorted(edl, key=lambda e: e.start)
+    runs: list[tuple[float, float, float, list[str]]] = []
+    i, n = 0, len(ordered)
+    while i < n:
+        if ordered[i].keep:
+            i += 1
+            continue
+        j, dur, reasons = i, 0.0, []
+        start, end = ordered[i].start, ordered[i].end
+        while j < n and not ordered[j].keep:
+            dur += ordered[j].end - ordered[j].start
+            if ordered[j].reason not in reasons:
+                reasons.append(ordered[j].reason)
+            end = ordered[j].end
+            j += 1
+        runs.append((start, end, dur, reasons))
+        i = j
+    return runs
+
+
+def _opener(words, n=3):
+    """First n content tokens of a sentence, lowercased and stripped of punctuation."""
+    toks = [re.sub(r"[^\w']", "", w.word).lower() for w in words[:n]]
+    toks = [t for t in toks if t]
+    return tuple(toks) if len(toks) >= n else ()
+
+
+def _ends_sentence(word: str) -> bool:
+    return word.rstrip("'\"”’)").endswith((".", "!", "?"))
+
+
+def _fmt_token(w, low_conf: float) -> str:
+    return f"‹{w.word}›?" if w.confidence < low_conf else w.word
+
 
 def _group_sentences(words, boundary_fn, pause_s):
     """Group consecutive words into sentences using boundary_fn.
