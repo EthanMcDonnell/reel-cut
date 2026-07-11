@@ -37,6 +37,7 @@ git rev-parse --git-dir >/dev/null 2>&1 || exit 0
 GITDIR="$(git rev-parse --git-dir)"
 BASE_FILE="$GITDIR/claude-baseline"
 UNTR_FILE="$GITDIR/claude-untracked-baseline"
+TOUCH_FILE="$GITDIR/claude-touched-files"   # repo-relative paths Claude's tools wrote (see claude-touched.sh)
 
 # No baseline → session started before the hook existed. Do nothing; the /commit-mine
 # skill handles that case by staging hunks manually.
@@ -59,6 +60,21 @@ CHANGED="$(while IFS= read -r f; do
 done <<< "$CHANGED")"
 NEW="$(comm -13 <(sort -u "$UNTR_FILE") \
                 <(git ls-files --others --exclude-standard -- "${TARGETS[@]}" | sort -u))"
+
+# Ground-truth attribution gate: keep only files one of Claude's own tools actually wrote
+# this session. A baseline diff alone can't tell a mid-session USER edit from Claude's, so
+# without this a file the user edited after SessionStart would be committed under Claude's
+# name. If the touch list is missing/empty (session predates the PostToolUse hook), fall
+# back to baseline-only so older sessions keep working exactly as before.
+filter_touched() {
+  local list; list="$(cat)"; list="$(printf '%s\n' "$list" | grep -v '^[[:space:]]*$')"
+  [ -n "$list" ] || return 0
+  if [ -s "$TOUCH_FILE" ]; then printf '%s\n' "$list" | grep -Fxf "$TOUCH_FILE"
+  else printf '%s\n' "$list"; fi
+}
+CHANGED="$(printf '%s\n' "$CHANGED" | filter_touched)"
+NEW="$(printf '%s\n' "$NEW" | filter_touched)"
+
 HAVE=0
 [ -n "$CHANGED" ] && HAVE=1
 [ -n "$NEW" ] && HAVE=1
@@ -91,6 +107,7 @@ do_commit() {
   [ -n "$NEWBASE" ] || NEWBASE="$(git rev-parse HEAD)"
   printf '%s\n' "$NEWBASE" > "$BASE_FILE"
   git ls-files --others --exclude-standard | sort -u > "$UNTR_FILE"
+  : > "$TOUCH_FILE"   # committed files are no longer pending; re-populated by future edits
   echo "commit-mine: committed $(git rev-parse --short HEAD) — $FILES"
 }
 

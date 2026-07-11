@@ -21,4 +21,5 @@ BASE="$(git stash create 2>/dev/null || true)"
 
 printf '%s\n' "$BASE" > "$GITDIR/claude-baseline"
 git ls-files --others --exclude-standard | sort -u > "$GITDIR/claude-untracked-baseline"
+: > "$GITDIR/claude-touched-files"   # reset per session; claude-touched.sh re-populates as Claude edits
 exit 0
