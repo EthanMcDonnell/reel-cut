@@ -58,7 +58,7 @@ Summarise:
 - Alternate hook takes at the cold open — list them for the user to pick one (not an anomaly)
 - Anomalies found and recommended fix for each (for the user to apply)
 - Any remaining issues that need a human listen (ambiguous takes, uncertain boundaries)
-- `headings.json` and `images.json` stubs were auto-created in the slug folder — optionally add a title card / image overlays later by filling them in (covered in `/produce-video`)
+- `headings.json`, `images.json`, and `title.json` stubs were auto-created in the slug folder — optionally add a title card / image overlays / Instagram title later by filling them in (covered in `/produce-video`)
 
 ## Step 4 — Auto-fix the certain anomalies, then log
 

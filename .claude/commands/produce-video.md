@@ -185,6 +185,34 @@ Field reference:
 
 **Logo resets:** each card's start/end is a logo-reset boundary. A brand re-mentioned after any card edge re-fires its logo in that section — no extra configuration needed.
 
+## Step 4c — Instagram titles (one per hook)
+
+The **on-screen** title card (Step 4b) is a different artifact from the **Instagram/Telegram** title written here. This step names each rendered file and captions the post — it is not burned into the video. `render-hooks` reads `title.json` and writes `output/<video-slug>/<title-slug>.mp4` (one file per hook, grouped in a per-slug folder).
+
+Read `assets/<video-slug>/title.json`. If the first entry has a non-empty `title`, it's already filled in — skip to Step 5. If it's the empty stub (`[]`), generate one title **per hook** — each tailored to *that hook's* angle (the openings differ; the body is shared).
+
+**Style (all titles):**
+- **all lowercase**
+- **exactly one emoji**, at the end or wherever it lands best
+- **short & sharp** — roughly 4–8 words
+- **no em dashes.** `->`, `w/`, `&`, `/` are fine — that quirky shorthand register is the point
+- **slightly quirky, and it must describe the video** (not just restate the hook)
+
+Examples: `reddit & kafka -> kubernetes w/ no 🧑❓` · `why reddit ditched kafka 😵` · `the database that refuses to lose data 🗄️`
+
+**Use AskUserQuestion** to present the full set of proposed per-hook titles (one option to accept all, plus "Enter my own"). Once approved, write `title.json` with **one entry per hook** (same order as the hook windows / `headings.json` cards):
+
+```json
+[
+  { "title": "reddit & kafka -> kubernetes w/ no 🧑❓", "slug": "reddit-kafka-to-kubernetes" },
+  { "title": "why reddit ditched kafka 😵", "slug": "why-reddit-ditched-kafka" }
+]
+```
+
+Field reference:
+- `title` — the pretty caption (emoji + lowercase), used verbatim in the Telegram/Instagram post (Step 7)
+- `slug` — a filesystem-safe stem for the `.mp4` filename: lowercase, hyphen-separated, no emoji/punctuation. The renderer re-sanitizes it defensively; if you leave it empty it's derived from `title`, and if nothing usable survives the file falls back to `hook{i}.mp4`.
+
 ## Step 5 — Render (one video per hook)
 
 ```bash
@@ -193,8 +221,10 @@ Field reference:
 
 `render-hooks` reads the hook cards in `headings.json` (one per hook, from Step 4b) and
 renders **one video per hook** — each is `hook_i + body`, with the other hooks cut out. The
-outputs are `output/<video-slug>-hook1.mp4`, `-hook2.mp4`, … (one per hook). Music, captions,
-and the title card behave exactly as in a normal render; there is no concatenation.
+outputs are grouped in a per-slug folder and named by their Instagram title (Step 4c):
+`output/<video-slug>/<title-slug>.mp4`, one per hook (falling back to `hook{i}.mp4` if
+`title.json` is empty). Music, captions, and the title card behave exactly as in a normal
+render; there is no concatenation.
 
 Report all output paths when done.
 
@@ -226,11 +256,11 @@ Commit the fixture alongside the video's other artifacts.
 
 ## Step 7 — Publish to Tailscale & notify Telegram
 
-Make every rendered `output/<video-slug>-hook{i}.mp4` reachable over Tailscale, then post a
+Make every rendered `output/<video-slug>/*.mp4` reachable over Tailscale, then post a
 link for each **not-yet-notified** hook video **of this slug** to the Telegram `file-exchange`
-topic. The loop is scoped to the current slug so other videos' hooks are never touched; a
-`.notified` log additionally dedupes across renders, so re-running only posts newly rendered
-hooks.
+topic. The loop is scoped to the current slug's folder so other videos' hooks are never
+touched; a `.notified` log additionally dedupes across renders, so re-running only posts newly
+rendered hooks. The Telegram caption uses the pretty Instagram title from `title.json`.
 
 **Prerequisites** (set up once, outside this workflow):
 - Tailscale installed and this machine joined to the tailnet (`tailscale up`).
@@ -245,16 +275,22 @@ tailscale serve --bg --set-path /reels "{PROJECT_ROOT}/output"
 TS_HOST=$(tailscale status --json | jq -r '.Self.DNSName' | sed 's/\.$//')
 
 # 3. Post one link per hook video to the local Telegram bot API — the file-exchange topic.
-#    Scoped to THIS video's slug only (every hook of it), never other slugs' videos.
-#    The .notified log additionally guards against re-sending on repeat renders.
+#    Scoped to THIS video's slug folder only, never other slugs' videos.
+#    The .notified log additionally guards against re-sending on repeat renders (keyed on the
+#    slug-relative path so two videos sharing a title-slug can't collide).
+SLUG="<video-slug>"
+TITLES="{PROJECT_ROOT}/assets/${SLUG}/title.json"
 SENT_LOG="{PROJECT_ROOT}/output/.notified"
 touch "$SENT_LOG"
-for f in "{PROJECT_ROOT}"/output/<video-slug>-hook*.mp4; do
+for f in "{PROJECT_ROOT}"/output/"${SLUG}"/*.mp4; do
   name=$(basename "$f")
-  grep -qxF "$name" "$SENT_LOG" && continue   # already notified — skip
-  PAYLOAD=$(jq -n --arg c "🎬 ${name} is ready: https://${TS_HOST}/reels/${name}" '{content: $c, topic: "file-exchange"}')
+  key="${SLUG}/${name}"
+  grep -qxF "$key" "$SENT_LOG" && continue   # already notified — skip
+  # Pretty caption: the title.json entry whose slug matches this file's stem; else the filename.
+  caption=$(jq -r --arg s "${name%.mp4}" '(map(select(.slug == $s)) | .[0].title) // $s' "$TITLES" 2>/dev/null || echo "$name")
+  PAYLOAD=$(jq -n --arg c "🎬 ${caption} is ready: https://${TS_HOST}/reels/${SLUG}/${name}" '{content: $c, topic: "file-exchange"}')
   curl -sf {TELEGRAM_API}/telegram/send -H 'Content-Type: application/json' -d "$PAYLOAD" \
-    && echo "$name" >> "$SENT_LOG"
+    && echo "$key" >> "$SENT_LOG"
 done
 ```
 
