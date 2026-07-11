@@ -57,10 +57,10 @@
     28.279s → 28.380s    'and'                           conf=0.87
     28.400s → 28.601s    'save'                          conf=0.85
     28.630s → 29.250s    '$75'                           conf=0.77
-    28.641s → 28.862s    'million'                       conf=0.24
-    28.882s → 28.922s    'in'                            conf=0.50
-    29.023s → 29.264s    'process.'                      conf=0.31
+    29.250s → 29.710s    'million'                       conf=0.63
+    29.710s → 30.210s    'in'                            conf=0.87
     30.210s → 30.330s    'the'                           conf=0.81
+    30.330s → 30.630s    'process.'                      conf=0.88
     32.362s → 32.523s    'See,'                          conf=0.96
     32.623s → 32.904s    'everyone'                      conf=0.92
     32.944s → 33.165s    'tells'                         conf=0.84
@@ -121,7 +121,7 @@
     57.980s → 58.082s    'But'                           conf=0.74  [OUTTAKE]
     58.102s → 58.224s    'this'                          conf=0.97  [OUTTAKE]
     58.240s → 58.340s    'is'                            conf=0.90  [OUTTAKE]
-    58.326s → 58.489s    'where'                         conf=0.83  [OUTTAKE]
+    58.340s → 58.460s    'where'                         conf=0.91  [OUTTAKE]
     58.510s → 58.550s    'it'                            conf=0.99  [OUTTAKE]
     58.591s → 58.774s    'gets'                          conf=0.87  [OUTTAKE]
     58.836s → 59.060s    'wild.'                         conf=0.46  [OUTTAKE]
@@ -134,9 +134,9 @@
    1:01.115 → 1:01.175   'is'                            conf=0.75
    1:01.215 → 1:01.477   'almost'                        conf=0.91
    1:01.538 → 1:01.840   'boring.'                       conf=0.95
-   1:02.322 → 1:02.444   "It's"                          conf=0.84
-   1:02.464 → 1:02.648   'called'                        conf=0.74
-   1:02.729 → 1:03.054   'Amazon...'                     conf=0.97
+   1:02.322 → 1:02.444   "It's"                          conf=0.84  [OUTTAKE]
+   1:02.464 → 1:02.648   'called'                        conf=0.74  [OUTTAKE]
+   1:02.729 → 1:03.054   'Amazon...'                     conf=0.97  [OUTTAKE]
    1:04.763 → 1:04.883   "It's"                          conf=0.82
    1:04.903 → 1:05.104   'called'                        conf=0.86
    1:05.145 → 1:05.386   'Magic'                         conf=0.99
@@ -226,8 +226,8 @@
    1:36.195 → 1:36.476   'Pocket'                        conf=0.94
    1:36.536 → 1:36.697   'now'                           conf=0.97
    1:36.740 → 1:37.140   '10'                            conf=0.63
-   1:36.857 → 1:37.118   'later.'                        conf=0.44
    1:37.140 → 1:37.480   'years'                         conf=0.88
+   1:37.480 → 1:37.900   'later.'                        conf=0.87
    1:40.041 → 1:40.263   'Comment'                       conf=0.59
    1:40.283 → 1:40.665   'Dropbox'                       conf=0.84
    1:40.685 → 1:40.746   'and'                           conf=0.83
