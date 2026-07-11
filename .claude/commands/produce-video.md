@@ -51,6 +51,8 @@ Use `script_context` as the primary guide when locating the timestamp — it dir
 
 Image timings are stored in **source-clip time** (same as `words` and `edl`). The renderer remaps them to output-timeline at render time.
 
+**Hook vs body coverage (matters because of `render-hooks`).** Step 5 renders one video per hook — each is *that hook + the shared body*, with the other hooks cut out. So an overlay whose source-clip time falls inside a **hook** appears **only in that hook's video**; an overlay in the **body** appears in **all** of them. Before placing images, identify where the hooks end and the body begins (the shift from punchy hook statements into explaining/narrating — the same boundary as Step 3c, but note its source-clip time here). Screenshots and figures usually land on body lines already. For **concept** and **person** overlays you're free to position, prefer anchoring them to **body** words so every rendered video gets them — only pin one to a specific hook when the gag depends on that hook's exact wording.
+
 Work through every screenshot in the manifest (skip `body.png`). **Skip any screenshot whose `script_context` or `article_snippet` cannot be matched to words in the `words` array — do not invent a placement.**
 
 1. Use the `script_context` field to identify the moment the screenshot supports. If `script_context` is absent, match words from `article_snippet` against the `words` array
@@ -70,7 +72,8 @@ Build the complete images list — one entry per screenshot, plus any person ent
 
 A few quirky Wikipedia image can add a fun extra dimension — drop a literal photo of an unexpected *thing* onto a punchline. The gag lands when an abstract phrase is rendered as the real object behind it: "spaghetti code" → a bowl of spaghetti, "rubber-duck debugging" → a rubber duck, "the cops showed up" → a police car. Resolved exactly like a `person`, but the **name** is any Wikipedia subject, not a person.
 
-- Add **at most three** per video, and only when a beat genuinely wants it. If nothing clearly fits, add none — restraint beats clutter.
+- **Do a deliberate pass for these — don't wait for one to jump out.** A 60–90s reel that runs 15+ seconds with no visual overlay at all feels flat, so scan the **body** transcript for literal-noun gags: a concrete, photographable thing hiding inside an abstract phrase or a brand name (e.g. "the cloud" → a sky, "Amazon" → the rainforest, "hard drives" → an opened HDD). Aim for a visual beat of *some* kind (screenshot, figure, person, or concept) roughly every 10–15s of body — where the screenshots already cover that stretch you need no concept; where there's a gap, reach for one.
+- Cap concepts at **at most three** per video. If a beat has no concrete noun that genuinely fits, skip it — restraint beats clutter. But don't let the cap or the restraint rule talk you out of the *first* good gag: a long overlay-free stretch is its own failure.
 - The **name** must be the Wikipedia title of a **concrete, photographable object** whose page shows a **real photo** of that thing. This is the whole trick — and it's also where it breaks:
   - ✅ `Spaghetti code` (its page literally shows a bowl of spaghetti), `Rubber duck debugging`, `Police car`, `Trojan Horse` — concrete nouns with a real photo.
   - ❌ Abstract terms with **no photo**: `Technical debt`, `Scalability`, `Latency` — these resolve to nothing and silently vanish.
