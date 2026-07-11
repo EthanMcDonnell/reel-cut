@@ -2,6 +2,8 @@ from dataclasses import dataclass, field
 import pytest
 from reelcut.transcriber import (
     _caps_split,
+    _enforce_monotonic_timestamps,
+    _Expansion,
     _expand_to_sentence,
     _find_sentence_end,
     _merge_leading_comma_tokens,
@@ -389,3 +391,87 @@ def test_normal_words_pass_through_unchanged():
     words = [_w("over", 0.0, 0.3), _w("thirty", 0.3, 0.6), _w("thousand", 0.6, 1.0)]
     result = _merge_leading_comma_tokens(words)
     assert [w.word for w in result] == ["over", "thirty", "thousand"]
+
+
+# ---------------------------------------------------------------------------
+# _enforce_monotonic_timestamps
+# ---------------------------------------------------------------------------
+
+def _exp(word: str, start: float, end: float, conf: float = 0.9) -> _Expansion:
+    """Pair a collapsed word's pre-align original with a token list (unused by the guard)."""
+    return _Expansion(orig_word=_w(word, start, end, conf), tokens=[word])
+
+
+def test_monotonic_guard_repairs_hook4_alignment_corruption():
+    """Regression: WhisperX scrambled the tail of 'save $75 million in the process.'
+
+    Pre-align (Whisper) timestamps were clean and monotonic; alignment collapsed
+    'million'/'in'/'process' backward (overlapping '$75') and stranded 'the',
+    which drove a spurious mid-phrase cut. The guard must restore the run to its
+    monotonic pre-align timestamps.
+    """
+    # expansion.orig_word carries the clean pre-align timestamps.
+    expansion = [
+        _exp("$75", 28.630, 29.250, 0.77),
+        _exp("million", 29.250, 29.710, 0.63),
+        _exp("in", 29.710, 30.210, 0.87),
+        _exp("the", 30.210, 30.330, 0.81),
+        _exp("process.", 30.330, 30.630, 0.88),
+    ]
+    # Corrupted post-collapse alignment output (1:1 with expansion).
+    collapsed = [
+        _w("$75", 28.630, 29.250, 0.77),
+        _w("million", 28.641, 28.862, 0.24),
+        _w("in", 28.882, 28.922, 0.50),
+        _w("the", 30.210, 30.330, 0.81),
+        _w("process.", 29.023, 29.264, 0.31),
+    ]
+
+    result = _enforce_monotonic_timestamps(collapsed, expansion)
+
+    # Word order and text are preserved; timestamps are now monotonic.
+    assert [w.word for w in result] == ["$75", "million", "in", "the", "process."]
+    starts = [w.start for w in result]
+    ends = [w.end for w in result]
+    assert starts == sorted(starts)
+    assert all(ends[i] <= starts[i + 1] for i in range(len(result) - 1))
+    # The three corrupted words fell back to their pre-align timestamps.
+    assert (result[1].start, result[1].end) == (29.250, 29.710)   # million
+    assert (result[2].start, result[2].end) == (29.710, 30.210)   # in
+    assert (result[4].start, result[4].end) == (30.330, 30.630)   # process.
+
+
+def test_monotonic_guard_leaves_clean_alignment_untouched():
+    """A well-ordered alignment must pass through byte-for-byte (no over-firing)."""
+    expansion = [
+        _exp("save", 0.0, 0.4, 0.5),   # pre-align differs from aligned below
+        _exp("the", 0.4, 0.6, 0.5),
+        _exp("cloud", 0.6, 1.0, 0.5),
+    ]
+    collapsed = [
+        _w("save", 0.05, 0.42, 0.9),
+        _w("the", 0.45, 0.61, 0.9),
+        _w("cloud", 0.63, 0.98, 0.9),
+    ]
+    result = _enforce_monotonic_timestamps(collapsed, expansion)
+    # Aligned timestamps kept, not the pre-align originals.
+    assert [(w.start, w.end, w.confidence) for w in result] == [
+        (0.05, 0.42, 0.9), (0.45, 0.61, 0.9), (0.63, 0.98, 0.9),
+    ]
+
+
+def test_monotonic_guard_restores_single_overlapping_word():
+    """A lone backward word is restored; its neighbours are left alone."""
+    expansion = [
+        _exp("a", 1.0, 1.2),
+        _exp("b", 1.2, 1.4),   # clean pre-align
+        _exp("c", 1.4, 1.6),
+    ]
+    collapsed = [
+        _w("a", 1.0, 1.2),
+        _w("b", 0.5, 0.7),     # aligned before 'a' → must be restored
+        _w("c", 1.4, 1.6),
+    ]
+    result = _enforce_monotonic_timestamps(collapsed, expansion)
+    assert (result[1].start, result[1].end) == (1.2, 1.4)
+    assert (result[0].start, result[2].start) == (1.0, 1.4)

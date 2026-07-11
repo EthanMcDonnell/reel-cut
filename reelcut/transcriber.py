@@ -177,6 +177,11 @@ def align(
             # timestamps rather than being dropped — short function words ("at", "for")
             # routinely score just below the threshold despite being real.
             aligned = _collapse_expanded_words(expansion, aligned_flat, min_conf=min_conf)
+            # Alignment can place a word before its predecessor (overlapping or
+            # reordered timestamps), especially around numeric tokens at the tail
+            # of a long segment. Repair any such non-monotonic output before it
+            # drives a spurious mid-phrase cut downstream.
+            aligned = _enforce_monotonic_timestamps(aligned, expansion)
             return aligned, f"WhisperX wav2vec2 ({device})", segments
 
     except ImportError:
@@ -780,6 +785,34 @@ def _collapse_expanded_words(
                 # Nothing aligned at all — restore original Whisper timestamp.
                 result.append(orig)
 
+    return result
+
+
+def _enforce_monotonic_timestamps(
+    collapsed: list[WordTimestamp],
+    expansion: list[_Expansion],
+) -> list[WordTimestamp]:
+    """Repair non-monotonic alignment output.
+
+    WhisperX occasionally places a word before its predecessor — overlapping or
+    reordered timestamps, seen most often around numeric tokens near the tail of
+    a long segment. `_collapse_expanded_words` restores some words to their
+    pre-align Whisper timestamps while neighbours keep corrupted aligned ones, so
+    the collapsed sequence can come out overlapping or out of order. That reads
+    downstream as a sentence-ending word followed by a gap, which triggers a
+    spurious cut through the middle of the phrase.
+
+    Wherever a word starts before the previous word ends, fall it back to its
+    pre-align (Whisper) timestamp, which is monotonic by construction. `collapsed`
+    is 1:1 with `expansion`, so each word's original is `exp.orig_word`.
+    """
+    result: list[WordTimestamp] = []
+    prev_end = float("-inf")
+    for w, exp in zip(collapsed, expansion):
+        if w.start < prev_end:
+            w = exp.orig_word
+        result.append(w)
+        prev_end = w.end
     return result
 
 
