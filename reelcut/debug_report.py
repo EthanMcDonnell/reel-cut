@@ -513,10 +513,10 @@ def write_debug_report(
                     )
                     g_content = f"{gap.gap_type.upper()}: {gap.duration_ms:.0f}ms{eff_note}"
                     if gap.cut:
-                        # EDL uses gap.start (raw word end) as cut boundary, not
-                        # effective_start — must compare the same value or a
-                        # sub-ms offset between the two silently hides real cuts.
-                        cut_key = round(gap.start, 3)
+                        # EDL uses gap.speech_end (true speech end, >= raw word end) as
+                        # the cut boundary — must compare the same value or a sub-ms
+                        # offset between the two silently hides real cuts.
+                        cut_key = round(gap.speech_end, 3)
                         if cut_key not in edl_cut_boundaries:
                             decision = "KEEP [mid_sentence_floor]"
                         else:

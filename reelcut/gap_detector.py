@@ -19,6 +19,9 @@ class Gap:
     end: float             # seconds, = words[i+1].start
     effective_start: float # true silence onset — may be earlier than start when Whisper
                            # extends a word's end timestamp into trailing silence
+    speech_end: float      # true end of the preceding word's speech, >= start — later
+                           # than start when Whisper truncates a quiet trailing consonant
+                           # (sibilant/liquid). edl.py cuts here so tails aren't clipped.
     duration_ms: float
     gap_type: GapType
     cut: bool              # True = this gap will be removed
@@ -226,6 +229,44 @@ def _find_speech_end_forward(
     return word_end
 
 
+def _find_trailing_speech_end(
+    audio: np.ndarray,
+    sr: int,
+    word_end: float,
+    gap_end: float,
+    config: CutsConfig,
+    max_extend_ms: float = 400.0,
+) -> float:
+    """Scan forward from word_end to find where the word's trailing speech ends.
+
+    WhisperX often truncates a word's end timestamp before quiet trailing consonants
+    finish (sibilants/liquids: "MySQL"→/l/, "SSDs"→/z/). Because edl.py starts its cut
+    at the word end, those tails get clipped. This walks forward and stops at the first
+    silent frame, so the cut can start after the real speech end.
+
+    A truncated consonant is *contiguous* with the word, so the first silence marks its
+    end — stopping there avoids jumping across the gap to grab a later breath or click.
+    Returns a time in [word_end, min(gap_end, word_end + max_extend)]. Returns word_end
+    unchanged when audio is already silent there (accurate alignment — the common case).
+    """
+    frame_size = max(64, int(0.010 * sr))  # 10 ms frames
+    silence_thresh = float(10 ** (config.silence_threshold_db / 20))
+
+    start_sample = int(word_end * sr)
+    limit = min(gap_end, word_end + max_extend_ms / 1000.0)
+    end_sample = int(limit * sr)
+
+    for pos in range(start_sample, end_sample, frame_size):
+        frame = audio[pos : pos + frame_size]
+        if len(frame) < 64:
+            break
+        if float(np.mean(np.abs(frame) > silence_thresh)) < config.failure_tolerance_ratio:
+            return pos / sr  # first silent frame — speech ended here
+
+    # No silence inside the window — keep the whole tail up to the limit.
+    return limit
+
+
 _LONG_WORD_DUR_S = 1.5  # words longer than this are suspect for alignment errors
 
 
@@ -264,6 +305,11 @@ def _build_gaps(
         else:
             scan_s = config.word_end_scan_ms / 1000.0
         effective_start = _find_silence_onset(audio, sr, raw_start, scan_s=scan_s, config=config)
+
+        # Forward-only tail protection: if speech continues past the WhisperX word
+        # end, move the cut boundary to the true speech end so the trailing consonant
+        # isn't clipped. Never earlier than raw_start, so it can't land inside the word.
+        speech_end = _find_trailing_speech_end(audio, sr, raw_start, gap_end, config)
 
         duration_ms = (gap_end - effective_start) * 1000
 
@@ -309,6 +355,7 @@ def _build_gaps(
             start=raw_start,
             end=gap_end,
             effective_start=effective_start,
+            speech_end=speech_end,
             duration_ms=duration_ms,
             gap_type=gap_type,
             cut=should_cut,

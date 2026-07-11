@@ -32,8 +32,9 @@ def generate_scriptless_edl(
     """Build an EDL with no script: keep all speech, cut at every marked gap.
 
     Cut boundaries are placed at:
-      - gap.effective_start  (true silence onset — may be before Whisper's word end)
-      - nxt.start - pad_s    (leave a safety margin before the next word starts)
+      - gap.speech_end     (true speech end — >= Whisper's word end, so a truncated
+                            trailing consonant isn't clipped by starting the cut early)
+      - nxt.start - pad_s  (leave a safety margin before the next word starts)
 
     This prevents clipping word edges when Whisper timestamps are off by ±30 ms.
 
@@ -75,7 +76,7 @@ def generate_scriptless_edl(
                                      pause_threshold_s=sentence_pause_s, include_clause=True)
                 or gap.duration_ms >= mid_sentence_cut_floor_ms
             ):
-                cut_start = gap.start                    # raw word end — never inside the word
+                cut_start = gap.speech_end               # true speech end — >= word end, never inside the word
                 cut_end   = nxt.start - pad_s            # keep natural lead before next word
 
                 # If the word immediately before this cut is shorter than min_keep_ms,
