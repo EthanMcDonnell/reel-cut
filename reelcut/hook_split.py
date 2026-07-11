@@ -85,11 +85,34 @@ def build_hook_edl(edl, hook_windows: list[tuple[float, float]], target_idx: int
 def drop_covered(items, drop_intervals: dict[str, list[tuple[float, float]]]):
     """Keep only items whose `start` is NOT inside any dropped interval on their
     source clip. Works for CaptionWord and ImageSpec (both have .source_clip and
-    .start)."""
+    .start).
+
+    A dropped interval ends at a section boundary, and the next section's first
+    word starts exactly there — but the interval's upper bound is derived through
+    the output-time remap, which can round it a hair *above* the word start (float
+    imprecision). Without tolerance that first word is wrongly swept into the
+    previous section and dropped (its caption vanishes from the render). The 1ms
+    EPS on the upper edge excludes it; no real word starts within 1ms of a section
+    boundary, since sections are separated by EDL cuts.
+
+    A dropped section can span several intervals (EDL splits leave interior seams
+    at kept-hook boundaries). Coalesce touching intervals first so the EPS applies
+    only to a run's true outer edge — otherwise a word sitting on an interior seam
+    would leak through the 1ms hole and be wrongly kept."""
+    EPS = 1e-3
+    merged: dict[str, list[tuple[float, float]]] = {}
+    for clip, ivs in drop_intervals.items():
+        run: list[tuple[float, float]] = []
+        for s, e in sorted(ivs):
+            if run and s <= run[-1][1] + EPS:
+                run[-1] = (run[-1][0], max(run[-1][1], e))
+            else:
+                run.append((s, e))
+        merged[clip] = run
     out = []
     for it in items:
-        intervals = drop_intervals.get(it.source_clip, [])
-        if any(s <= it.start < e for s, e in intervals):
+        intervals = merged.get(it.source_clip, [])
+        if any(s <= it.start < e - EPS for s, e in intervals):
             continue
         out.append(it)
     return out

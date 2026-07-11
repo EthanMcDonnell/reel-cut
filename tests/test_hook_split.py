@@ -89,3 +89,24 @@ class TestDropCovered:
         ]
         kept = drop_covered(imgs, drop)
         assert len(kept) == 1 and kept[0].source_clip == "other.mp4"
+
+    def test_boundary_word_at_interval_upper_edge_is_kept(self):
+        # The target section's first word starts exactly on the boundary, but the
+        # drop interval's upper bound is rounded a hair *above* it by float remap
+        # imprecision. Without EPS tolerance it would be swept into the dropped
+        # section and its caption would vanish (the real "Dropbox on hook4" bug).
+        drop = {"c.mp4": [(2.73, 26.330099999999998)]}
+        words = [
+            CaptionWord(word="Dropbox", start=26.33, end=26.75, source_clip="c.mp4"),
+        ]
+        assert [w.word for w in drop_covered(words, drop)] == ["Dropbox"]
+
+    def test_word_on_interior_seam_of_dropped_run_is_still_dropped(self):
+        # A dropped section spans two touching intervals (EDL-split seam at 10.71).
+        # A word sitting on that interior seam must NOT leak through the EPS hole —
+        # coalescing the run applies EPS only to its true outer edge.
+        drop = {"c.mp4": [(10.56, 10.7101), (10.7101, 16.5)]}
+        words = [
+            CaptionWord(word="So", start=10.71, end=10.85, source_clip="c.mp4"),
+        ]
+        assert drop_covered(words, drop) == []
