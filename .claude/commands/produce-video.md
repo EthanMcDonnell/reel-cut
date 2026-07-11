@@ -1,6 +1,7 @@
 ---
 name: produce-video
 description: Assign screenshot and person image timings to images.json, then render one video per hook via reelcut.
+argument-hint: "<video-slug>"
 tools: Read, Edit, Bash
 permissionMode: default
 ---
@@ -10,6 +11,11 @@ Populates image overlays in images.json and renders one video per hook (each hoo
 **Paths:** `{TOKEN}` references below are machine-specific absolute paths/endpoints defined in [glossary.md](glossary.md) — resolve each to its value before running. Repo-relative paths (`assets/…`, `output/…`, `config.yaml`, `tests/…`) are written inline as-is.
 
 Arguments: `$ARGUMENTS` — expected format: `<video-slug>`
+
+Available slugs in `assets/`:
+!`ls -1 assets/ | grep -vE '^audio$|\.json$'`
+
+If `$ARGUMENTS` is empty, ask the user which of the slugs above to use.
 
 Example: `/produce-video netflix-cdn-architecture`
 

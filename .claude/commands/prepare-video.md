@@ -1,6 +1,7 @@
 ---
 name: prepare-video
 description: Wire footage path into config, run reelcut transcription, then review EDL anomalies (bad cuts, multiple takes, silence issues) in captions.json and report findings.
+argument-hint: "<video-slug>"
 tools: Read, Bash
 model: sonnet
 permissionMode: default
@@ -9,6 +10,11 @@ permissionMode: default
 Runs reelcut transcription for a video slug, then reviews the resulting captions.json for anomalies and reports them for the user to fix.
 
 Arguments: `$ARGUMENTS` — expected format: `<video-slug>`
+
+Available slugs in `assets/`:
+!`ls -1 assets/ | grep -vE '^audio$|\.json$'`
+
+If `$ARGUMENTS` is empty, ask the user which of the slugs above to use.
 
 Example: `/prepare-video netflix-cdn-architecture`
 

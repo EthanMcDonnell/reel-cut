@@ -1,6 +1,7 @@
 ---
 name: debug-video
 description: Debug a reelcut pipeline run by reading the .debug.* reports for a video slug. Use when audio has bad cuts, false starts survived, words are missing, or the output sounds wrong.
+argument-hint: "<video-slug>"
 tools: Read, Bash
 model: sonnet
 permissionMode: default
@@ -9,6 +10,11 @@ permissionMode: default
 Debug a reelcut pipeline run for a video slug.
 
 Arguments: `$ARGUMENTS` — expected format: `<video-slug>`
+
+Available slugs in `assets/`:
+!`ls -1 assets/ | grep -vE '^audio$|\.json$'`
+
+If `$ARGUMENTS` is empty, ask the user which of the slugs above to use.
 
 ## Step 1 — Always read the review file first
 
