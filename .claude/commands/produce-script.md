@@ -206,7 +206,7 @@ Write the CTA and the resources in **two** places, **no blank lines anywhere** (
 
 ```
 **CTA**
-Comment "<KEYWORD>" and I'll send you <resource>.
+Want <resource>? Comment "<KEYWORD>" and I'll send it over.
 ```
 
 2. Append the resources block to the **end** of the file, **after** the `**REFERENCES:**` section (lines after that header are exempt from the linter's prose checks, so the ` — ` separators are fine there):
