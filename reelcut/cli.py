@@ -74,6 +74,7 @@ def transcribe(
         _scaffold_headings(captions_path, cfg.headings.default_end_s)
         _scaffold_images(captions_path)
         _scaffold_audio(captions_path)
+        _scaffold_titles(captions_path)
         console.print(f"[green]Captions doc →[/green] {captions_path}")
     else:
         input_folder = Path(footage)
@@ -94,6 +95,7 @@ def transcribe(
                     _scaffold_headings(captions_path, cfg.headings.default_end_s)
                     _scaffold_images(captions_path)
                     _scaffold_audio(captions_path)
+                    _scaffold_titles(captions_path)
                     console.print(f"[green]Captions doc →[/green] {captions_path}")
                 except Exception as exc:
                     err_console.print(f"[red]Failed:[/red] {video.name} — {exc}")
@@ -110,6 +112,7 @@ def transcribe(
             _scaffold_headings(captions_path, cfg.headings.default_end_s)
             _scaffold_images(captions_path)
             _scaffold_audio(captions_path)
+            _scaffold_titles(captions_path)
             console.print(f"[green]Captions doc →[/green] {captions_path}")
 
     console.print(
@@ -170,7 +173,7 @@ def render_hooks(
     The titled cards in headings.json are the hook definition (one card per hook, as
     produced by /produce-video). Each render is a normal full render with the *other*
     hooks flipped to cuts, so music/captions/scaling all behave as usual — no concat.
-    Outputs output/<slug>-hook{i}.mp4.
+    Outputs output/<slug>/<title-slug>.mp4 (title from title.json; falls back to hook{i}.mp4).
     """
     import json
 
@@ -179,6 +182,7 @@ def render_hooks(
     from .heading import load_headings
     from .hook_split import build_hook_edl, drop_covered
     from .image_spec import load_images, save_images
+    from .title import load_titles, safe_slug
 
     try:
         cfg = load_config(config_path)
@@ -205,8 +209,11 @@ def render_hooks(
         raise typer.Exit(1)
     hook_windows = [(h.start, h.end) for h in cards]
 
-    out_dir = Path(cfg.output.location)
+    # Output videos are grouped in a per-slug folder and named by their viewer-facing title
+    # (from title.json); an empty/missing title falls back to positional hook{i}.mp4.
+    out_dir = Path(cfg.output.location) / slug
     out_dir.mkdir(parents=True, exist_ok=True)
+    titles = load_titles(assets_dir / "title.json")
     images = load_images(assets_dir / "images.json")
     audio_path = assets_dir / "audio.json"
 
@@ -215,7 +222,8 @@ def render_hooks(
     all_warnings: list[str] = []
     for i in range(n):
         card = cards[i]
-        output_path = out_dir / f"{slug}-hook{i + 1}.mp4"
+        stem = safe_slug(titles[i].slug or titles[i].title) if i < len(titles) else ""
+        output_path = out_dir / f"{stem or f'hook{i + 1}'}.mp4"
         console.rule(f"[bold]Hook {i + 1}/{n}[/bold] → {output_path.name}")
 
         new_edl, hook_dur, drop_intervals = build_hook_edl(doc.edl, hook_windows, i)
@@ -999,7 +1007,7 @@ def _clean_transcription_artifacts(output_dir: Path, console: Console) -> None:
     for p in output_dir.glob("*.debug.*.txt"):
         p.unlink()
         cleaned.append(p.name)
-    for name in ("images.json", "headings.json", "audio.json"):
+    for name in ("images.json", "headings.json", "audio.json", "title.json"):
         p = output_dir / name
         if p.exists():
             p.unlink()
@@ -1050,6 +1058,17 @@ def _scaffold_audio(captions_path: Path) -> None:
         return
     ap.write_text("[]\n")
     console.print(f"[green]Audio stub →[/green] {ap} [dim](add tracks e.g. {{\"track\": \"upbeat\"}}, or leave empty for the config default)[/dim]")
+
+
+def _scaffold_titles(captions_path: Path) -> None:
+    """Drop an editable title.json stub (empty list) next to the captions file, never
+    clobbering an existing one. Populated by /produce-video Step 4c with one {title, slug} per
+    hook; empty means render-hooks falls back to positional hook{i}.mp4 filenames."""
+    tp = captions_path.parent / "title.json"
+    if tp.exists():
+        return
+    tp.write_text("[]\n")
+    console.print(f"[green]Title stub →[/green] {tp} [dim](add one {{\"title\", \"slug\"}} per hook)[/dim]")
 
 
 def _assets_or_ts_dir(cfg, slug: str | None) -> Path:

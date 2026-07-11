@@ -17,6 +17,7 @@ def test_clean_removes_derived_keeps_sources(tmp_path):
     _touch(tmp_path / "images.json", '[{"type": "screenshot"}]')
     _touch(tmp_path / "headings.json", '[{"title": "Real Title"}]')
     _touch(tmp_path / "audio.json", "[]")
+    _touch(tmp_path / "title.json", '[{"title": "a title", "slug": "a-title"}]')
     clips = tmp_path / "retranscribe-clips"
     clips.mkdir()
     _touch(clips / "clip.wav")
@@ -36,6 +37,7 @@ def test_clean_removes_derived_keeps_sources(tmp_path):
     assert not (tmp_path / "images.json").exists()
     assert not (tmp_path / "headings.json").exists()
     assert not (tmp_path / "audio.json").exists()
+    assert not (tmp_path / "title.json").exists()
     assert not clips.exists()
 
     # Sources → kept.
