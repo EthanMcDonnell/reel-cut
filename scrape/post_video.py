@@ -1,0 +1,159 @@
+#!/usr/bin/env python3
+"""Publish a slug's rendered hook reels to the social-cockpit /api/publish endpoint.
+
+For each ``output/<slug>/*.mp4`` this uploads the local file to Cloudflare R2 to
+get a publicly fetchable URL (Instagram's Graph API downloads the video from its
+own servers, so the URL must be public), then POSTs it to the cockpit publish
+endpoint as a trial reel. One post per hook variant, spaced by a random 1-5
+minute interval so they don't all fire at once.
+
+Already-published hooks are recorded in ``output/.published`` and skipped on
+re-run, so publishing to Instagram is never accidentally repeated.
+
+Env (read from the repo-root ``.env``):
+  R2_ACCOUNT_ID          Cloudflare account id (the R2 S3 endpoint subdomain)
+  R2_ACCESS_KEY_ID       R2 access key id
+  R2_SECRET_ACCESS_KEY   R2 secret access key
+  R2_BUCKET              target bucket name
+  R2_PUBLIC_BASE_URL     public base for the bucket, e.g. https://pub-xxxx.r2.dev
+                         or a custom domain (no trailing slash needed)
+  COCKPIT_URL            optional, default http://localhost:3000
+
+Usage:
+  .venv/bin/python scrape/post_video.py <slug> [--dry-run]
+"""
+
+import argparse
+import json
+import os
+import random
+import sys
+import time
+from pathlib import Path
+
+import requests
+from dotenv import load_dotenv
+
+ROOT = Path(__file__).parent.parent
+load_dotenv(ROOT / ".env")
+
+COCKPIT = os.environ.get("COCKPIT_URL", "http://localhost:3000").rstrip("/")
+MIN_INTERVAL_S = 60      # 1 minute
+MAX_INTERVAL_S = 300     # 5 minutes
+REQUIRED_R2_VARS = (
+    "R2_ACCOUNT_ID",
+    "R2_ACCESS_KEY_ID",
+    "R2_SECRET_ACCESS_KEY",
+    "R2_BUCKET",
+    "R2_PUBLIC_BASE_URL",
+)
+
+
+def captions_for(slug):
+    """Map each hook slug -> pretty caption from assets/<slug>/title.json."""
+    path = ROOT / "assets" / slug / "title.json"
+    if not path.exists():
+        return {}
+    return {e["slug"]: e["title"] for e in json.loads(path.read_text()) if e.get("slug")}
+
+
+def r2_client():
+    import boto3
+
+    return boto3.client(
+        "s3",
+        endpoint_url=f"https://{os.environ['R2_ACCOUNT_ID']}.r2.cloudflarestorage.com",
+        aws_access_key_id=os.environ["R2_ACCESS_KEY_ID"],
+        aws_secret_access_key=os.environ["R2_SECRET_ACCESS_KEY"],
+        region_name="auto",
+    )
+
+
+def upload_to_r2(client, mp4, slug):
+    """Upload one mp4 and return its public URL."""
+    key = f"reels/{slug}/{mp4.name}"
+    client.upload_file(str(mp4), os.environ["R2_BUCKET"], key,
+                       ExtraArgs={"ContentType": "video/mp4"})
+    return f"{os.environ['R2_PUBLIC_BASE_URL'].rstrip('/')}/{key}"
+
+
+def publish(video_url, caption):
+    r = requests.post(
+        f"{COCKPIT}/api/publish",
+        json={
+            "media_type": "REELS",
+            "video_url": video_url,
+            "caption": caption,
+            "trial_params": {"graduation_strategy": "MANUAL"},
+        },
+        timeout=180,
+    )
+    r.raise_for_status()
+    return r
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("slug", help="video slug (an output/<slug>/ folder of rendered hooks)")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="show what would be posted without uploading or publishing")
+    args = ap.parse_args()
+
+    out_dir = ROOT / "output" / args.slug
+    if not out_dir.is_dir():
+        sys.exit(f"No rendered output for slug '{args.slug}' (missing {out_dir})")
+
+    mp4s = sorted(out_dir.glob("*.mp4"))
+    if not mp4s:
+        sys.exit(f"No .mp4 files in {out_dir}")
+
+    captions = captions_for(args.slug)
+    log = ROOT / "output" / ".published"
+    done = set(log.read_text().splitlines()) if log.exists() else set()
+
+    to_post = []
+    for mp4 in mp4s:
+        key = f"{args.slug}/{mp4.name}"
+        if key in done:
+            print(f"skip (already published): {key}")
+            continue
+        to_post.append((mp4, captions.get(mp4.stem, mp4.stem)))
+
+    if not to_post:
+        print("Nothing to publish — every hook is already in output/.published.")
+        return
+
+    print(f"Will publish {len(to_post)} hook(s) for '{args.slug}', "
+          f"random {MIN_INTERVAL_S//60}-{MAX_INTERVAL_S//60} min apart:")
+    for mp4, caption in to_post:
+        print(f"  - {mp4.name}  ->  {caption!r}")
+
+    if args.dry_run:
+        print("\n(dry run — nothing uploaded or posted)")
+        return
+
+    missing = [v for v in REQUIRED_R2_VARS if not os.environ.get(v)]
+    if missing:
+        sys.exit("Missing R2 env var(s) in .env: " + ", ".join(missing))
+
+    client = r2_client()
+    for i, (mp4, caption) in enumerate(to_post):
+        print(f"\n[{i+1}/{len(to_post)}] {mp4.name}")
+        video_url = upload_to_r2(client, mp4, args.slug)
+        print(f"  uploaded -> {video_url}")
+        publish(video_url, caption)
+        print(f"  published: {caption!r}")
+        with log.open("a") as f:
+            f.write(f"{args.slug}/{mp4.name}\n")
+
+        if i < len(to_post) - 1:
+            wait = random.uniform(MIN_INTERVAL_S, MAX_INTERVAL_S)
+            print(f"  waiting {wait/60:.1f} min before the next post…")
+            time.sleep(wait)
+
+    print(f"\nDone — published {len(to_post)} hook(s).")
+
+
+if __name__ == "__main__":
+    main()
