@@ -100,8 +100,16 @@ screenshots:
    words, `name: ""`, and `path` = the absolute path `{PROJECT_ROOT}/assets/<video-slug>/<file>`
    where `<file>` is the entry's `file` (e.g. `figures/figure-01.png`).
 
-Figures render on a padded card sized by `figure_overlay_size_pct`; give them a little more room
-than a text pop — they take longer to read.
+**Figures are held, not flashed.** A figure renders on a padded card (sized by
+`figure_overlay_size_pct`) and has to be *read*, so after step 2 enforce a minimum on-screen hold:
+- **`diagram`: at least 5s** (target 5–8s). A diagram has to be *studied*. If the speaker keeps
+  discussing the same system past `trigger_go_away_word`, extend `end` forward to the last word of
+  that explanation — hold the diagram across the whole walk-through instead of cutting it at the
+  single line.
+- **`chart`: at least 3s.** A chart proves one number, so it can leave sooner — but never a flash.
+
+Widen the window by pushing `end` later (and only if needed, nudging `start` a touch earlier) to
+reach the floor, staying inside the same `source_clip` and not overrunning the next hard cut.
 
 Example entry (added to the same images list written in Step 4):
 ```json

@@ -324,7 +324,10 @@ Keep the ones that support a specific beat, matched by kind:
 
 - **`chart` → the stat beat** whose exact number the chart visualises (highest priority — it
   proves the "shocking number" a hook makes).
-- **`diagram` → the "here's how it works" line** describing that system/flow.
+- **`diagram` → the "here's how it works" passage** describing that system/flow. Anchor it to the
+  *whole* explanation, not a single clause, so `trigger_go_away_word` falls at the **end of the
+  walk-through** — a diagram has to be studied, and produce-video holds it ≥5s and across the
+  passage.
 
 **Cap at ≤3 figures per video**, and drop redundant ones (two figures of the same system → keep
 the more legible / higher-resolution). Figures hold longer and take more screen space than a
@@ -350,7 +353,9 @@ figure equivalent of the screenshot manifest — it records the *selection* and 
 ]
 ```
 
-- `script_context` — copy the supported script line **verbatim** from the script.
+- `script_context` — copy the supported script line **verbatim** from the script. For a `diagram`,
+  copy the **whole explanation passage** (the several sentences that walk through the system), not
+  one line, so `trigger_go_away_word` can sit at the end of the walk-through.
 - `trigger_show_word` / `trigger_go_away_word` — short verbatim anchors from **inside**
   `script_context`, marking where the figure appears and disappears. Same rules as screenshot
   triggers; leave `""` if no clean anchor and produce-video spans the whole line.
