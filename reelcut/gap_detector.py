@@ -32,6 +32,7 @@ def detect_gaps(
     words: list[WordTimestamp],
     wav_path: str | Path,
     config: CutsConfig,
+    retake_ranges: list[tuple[float, float]] | None = None,
 ) -> list[Gap]:
     """Detect and classify inter-word gaps.
 
@@ -41,6 +42,11 @@ def detect_gaps(
        VAD is NOT used to filter gaps — on talking-head footage VAD marks everything
        as speech, causing 0 gaps to be detected.
     3. Mark gaps for cutting based on config thresholds.
+
+    `retake_ranges` (start_s, end_s spans that a later pass cuts as retakes/outtakes)
+    lets the confidence guards ignore words that won't survive to the output — those
+    guards exist only to avoid clipping *kept* speech, so a doomed word must not block
+    a cut. See `_build_gaps`.
     """
     wav_path = Path(wav_path)
     audio, sr = _load_audio(wav_path)
@@ -50,7 +56,7 @@ def detect_gaps(
     # - failure tolerance threshold (jumpcutter: allow small fraction of spikes in silence)
     peak_amplitude = float(np.max(np.abs(audio))) if len(audio) > 0 else 1.0
 
-    gaps = _build_gaps(words, audio, sr, config, peak_amplitude)
+    gaps = _build_gaps(words, audio, sr, config, peak_amplitude, retake_ranges)
     return gaps
 
 
@@ -288,12 +294,23 @@ def _find_trailing_speech_end(
 _LONG_WORD_DUR_S = 1.5  # words longer than this are suspect for alignment errors
 
 
+def _in_retake(word: WordTimestamp, ranges: list[tuple[float, float]]) -> bool:
+    """True if the word's midpoint falls inside any retake/outtake range.
+
+    Midpoint (not overlap) so a word whose padded boundary grazes the range edge
+    isn't misjudged; a word being cut as a retake sits squarely inside its range.
+    """
+    mid = (word.start + word.end) / 2
+    return any(r_start <= mid <= r_end for r_start, r_end in ranges)
+
+
 def _build_gaps(
     words: list[WordTimestamp],
     audio: np.ndarray,
     sr: int,
     config: CutsConfig,
     peak_amplitude: float,
+    retake_ranges: list[tuple[float, float]] | None = None,
 ) -> list[Gap]:
     gaps: list[Gap] = []
 
@@ -338,6 +355,17 @@ def _build_gaps(
 
         prev_conf = words[i].confidence
         next_conf = words[i + 1].confidence
+
+        # The confidence guards below protect kept speech from being clipped. A word
+        # inside a retake range is slated for removal, so it is not speech to protect —
+        # treat it as fully confident so it can't block a cut it will never be part of.
+        # (Without this, silence in front of an aborted low-confidence take survives as
+        # dead air, because the guard defends a word the retake pass then deletes.)
+        if retake_ranges:
+            if _in_retake(words[i], retake_ranges):
+                prev_conf = 1.0
+            if _in_retake(words[i + 1], retake_ranges):
+                next_conf = 1.0
 
         clip_duration_s = len(audio) / sr
         skip_reason = ""

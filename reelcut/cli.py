@@ -583,7 +583,7 @@ def _phase1(cfg, clips: list[str], output_dir: Path, verbose: bool):
         for clip_path in clips:
             wav = tmp / (Path(clip_path).stem + ".wav")
             clip_words = [w for w in all_words if w.clip_path == str(clip_path)]
-            clip_gaps = detect_gaps(clip_words, wav, cfg.cuts)
+            clip_gaps = detect_gaps(clip_words, wav, cfg.cuts, retake_ranges.get(str(clip_path)))
             gaps_by_clip[str(clip_path)] = clip_gaps
             gaps.extend(clip_gaps)
         n_cut_total = sum(1 for g in gaps if g.cut)
