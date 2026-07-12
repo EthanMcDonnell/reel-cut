@@ -181,7 +181,11 @@ The goal: give the viewer a reason to **comment**, and a payoff worth commenting
 
 ### Step 3.6.1 — Brainstorm topic-specific resource ideas
 
-Think about what *this specific audience* (developers/builders watching a `SERIES` video on `TOPIC`) would actually want to do *next* after the video lands the `SPINE`. **Anchor on what the article itself names** — the specific technology, system, or company it's about, the source's own deeper write-ups, talks, or repos, or the source article itself. Reach for a generic third-party tool only when nothing article-specific fits; a random tool with no direct tie to what the video explained is the weakest option. Generate **4–6 candidate resources**, pulling from different categories so they diverge — don't return six of the same kind:
+Think about what *this specific audience* (developers/builders watching a `SERIES` video on `TOPIC`) would actually want to do *next* after the video lands the `SPINE`. **Anchor on what the article itself names** — the specific technology, system, or company it's about, the source's own deeper write-ups, talks, or repos, or the source article itself.
+
+**Hard gate — every resource must be about a technology, system, paper, or company the article actually names.** Check the resource's subject against `FULL_CONTENT` the same way you check a claim: if the article says "a column-oriented key-value database" but never names Bigtable, you may **not** add a Bigtable paper — the article didn't cite it, so the tie is fabricated. Either find a resource for something the article *does* name (in this example the article does name "Direct Preference Optimization" and "LLM as a judge", so those are fair game), or generalise the resource so it doesn't claim a specific product the source never mentioned. A resource for tech the article doesn't name is not a go-deeper, it's an invented association. Reach for a generic third-party tool only when nothing article-named fits, and never in violation of this gate.
+
+Generate **4–6 candidate resources**, pulling from different categories so they diverge — don't return six of the same kind:
 
 - **Steal-this asset** — a free template, cheatsheet, boilerplate, config, checklist, or diagram the viewer can copy and use today. Highest comment-bait pull ("I want that").
 - **Hands-on / try-it-yourself** — a playground, sandbox, interactive demo, or online tool that lets them *experience* the concept from the video themselves.
@@ -214,14 +218,18 @@ Write the CTA and the resources in **two** places, **no blank lines anywhere** (
 Want <resource>? Comment "<KEYWORD>" and I'll send it over.
 ```
 
-2. Append the resources block to the **end** of the file, **after** the `**REFERENCES:**` section (lines after that header are exempt from the linter's prose checks, so the ` — ` separators are fine there):
+2. Append the resources block to the **end** of the file, **after** the `**REFERENCES:**` section. Keep it **concise and free of em dashes** — one resource per pair of lines: a short label naming what it is on the first line, the bare URL on the second. The lead magnet's label starts with `Lead Magnet`; the source article uses the fixed label `Reference article for the video`. No blank lines anywhere (the linter still blocks on them):
 
 ```
 **VIEWER RESOURCES:**
-LEAD MAGNET: <category> — <name> — <url>
-<category> — <name> — <url>
-<category> — <name> — <url>
-<category> — <name> — <url>
+Lead Magnet (<name>):
+<url>
+Go Deeper (<name>):
+<url>
+Hands-on (<name>):
+<url>
+Reference article for the video:
+<url>
 ```
 
 Then re-run the linter and confirm it still passes:
