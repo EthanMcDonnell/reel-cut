@@ -1,6 +1,6 @@
 ---
 name: post-video
-description: Publish a slug's rendered hook reels to Instagram via social-cockpit — uploads each output/<slug>/*.mp4 to Cloudflare R2, then POSTs it to /api/publish as a trial reel, one post per hook spaced a random 1-5 minutes apart.
+description: Publish a slug's rendered hook reels to Instagram via social-cockpit — POSTs each output/<slug>/*.mp4 local path to /api/publish/local as a trial reel, one post per hook spaced a random 1-5 minutes apart.
 argument-hint: "<video-slug>"
 tools: Read, Bash
 model: sonnet
@@ -8,12 +8,12 @@ permissionMode: default
 ---
 
 Publishes every rendered hook variant for a slug (`output/<video-slug>/*.mp4`) to Instagram
-through the social-cockpit `/api/publish` endpoint. Each mp4 is uploaded to Cloudflare R2 to get
-a publicly fetchable URL (Instagram's Graph API downloads the video server-side, so a local path
-or a tailnet-private link won't work), captioned from `assets/<slug>/title.json`, and posted as a
-trial reel (`graduation_strategy: MANUAL`). Posts are spaced a **random 1-5 minutes apart** and
-each hook is posted **once** — `output/.published` records what's gone out so re-runs never
-double-post.
+through social-cockpit's `/api/publish/local` endpoint. It hands the endpoint each mp4's local
+filesystem path and social-cockpit manages the whole chain server-side (read file → upload to R2 →
+presign → call Instagram → reclaim the object). Each hook is captioned from
+`assets/<slug>/title.json` and posted as a trial reel (`graduation_strategy: MANUAL`). Posts are
+spaced a **random 1-5 minutes apart** and each hook is posted **once** — `output/.published`
+records what's gone out so re-runs never double-post.
 
 Arguments: `$ARGUMENTS` — expected format: `<video-slug>`
 
@@ -27,10 +27,9 @@ Example: `/post-video spotify-wrapped-billion-ai-stories`
 ## Prerequisites (set up once, outside this workflow)
 
 - **social-cockpit** dev server running on `{COCKPIT_URL}` (`http://localhost:3000`), exposing
-  `POST /api/publish` (`{ media_type, video_url, caption, trial_params }`).
-- **Cloudflare R2** credentials in the repo-root `.env` (never printed or committed):
-  `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `R2_PUBLIC_BASE_URL`
-  (the bucket's public base, e.g. `https://pub-xxxx.r2.dev` or a custom domain).
+  `POST /api/publish/local` (`{ video_path, caption, trial_params }`). It reads the local file,
+  uploads to R2, presigns, calls Instagram, and reclaims the object — no R2 credentials are needed
+  on this side.
 
 ## Step 1 — Preview the plan (dry run)
 
