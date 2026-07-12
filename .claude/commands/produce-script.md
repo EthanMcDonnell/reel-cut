@@ -101,12 +101,17 @@ Once `SERIES` is resolved (and it is not `misc`), **read `series/<SERIES>.md`** 
 
 The **spine** is what the video is actually about: the crux mechanism it explains and the reframe it lands at the end. It is the single biggest driver of whether the video works, because it decides what the viewer *stays* for. It is not the hook and not a framing — it is the story the body tells. Build it from the `topic_package`, drawing the payoff from `HOW_IT_WAS_SOLVED`, not just the surprising fact.
 
-1. **Find the strongest spine.** Identify the best video the sources support, as three parts:
-   - **Crux** — the one mechanism worth explaining.
+1. **Find the strongest spine.** Identify the best video the sources support. A spine takes one of three shapes — pick the one the sources best support, then don't force the material into a different one:
+   - **Deep-dive** — one mechanism, explained in depth. Crux = that mechanism.
+   - **Key problem solved** — one hard problem and the clever fix. Crux = the problem and its solution; lean on any reversal or irony in *how* it was solved.
+   - **Walkthrough** — a multi-stage system where no single mechanism is the whole story. Crux = the pipeline itself; the individual mechanisms are ordered *beats* of the body, not separate spines. This is the shape to reach for when the user wants to understand how the whole thing works.
+
+   Whichever shape, state it as three parts:
+   - **Crux** — what the video explains: a mechanism, a problem+fix, or a pipeline, per the shape above.
    - **Payoff** — how it actually works: the methods, the tradeoff, the *how they solved it*. Ground this in `HOW_IT_WAS_SOLVED` so the body has a real payoff, not a problem-then-fix summary.
    - **Turn** — the reframe that recasts the whole thing at the end.
-2. **Only fork when the story genuinely diverges.** Most articles have one clearly-best spine — when they do, proceed with it and just tell the user what it is; do not force a choice. Generate alternate spines **only** where the sources support genuinely distinct videos: a different crux, a different payoff, and a different turn — not reworded framings of the same story.
-3. **Select only when real forks exist.** If two or more genuinely distinct spines exist, present them and ask the user to choose; each option states its crux, payoff, and turn (the flow of the video) so the choice is made on the story, not a label. If one spine dominates, skip the question and continue.
+2. **Default to one spine; apply the merge test before forking.** Most articles have one clearly-best spine — when they do, proceed with it and just tell the user what it is; do not force a choice. Before presenting a fork, try to *merge* the candidates into one walkthrough: if they merge cleanly (they are stages of the same build), it is **one** spine — present the walkthrough, do not fork. Only fork when merging would force a candidate to lose its payoff — i.e. they are genuinely two videos that cannot share one body: a different crux, a different payoff, and a different turn, not reworded framings of the same story.
+3. **Select only when real forks exist.** If two or more genuinely distinct spines survive the merge test, present them and ask the user to choose; each option states its shape, crux, payoff, and turn (the flow of the video) so the choice is made on the story, not a label. If one spine dominates, skip the question and continue.
 
 The chosen `SPINE` drives Stage 1 (hooks) and Stage 3 (script). If the story gate recorded `STORY_STRENGTH: thin`, restate that here — the spine can only be as strong as the sources allow, so flag the weakness rather than overselling it.
 
