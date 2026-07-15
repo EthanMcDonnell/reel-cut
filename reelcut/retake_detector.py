@@ -419,10 +419,13 @@ def _detect_reworded_takes(
     its content words but reorders them and swaps connective tissue, so it has no long
     contiguous run and the ratio gate rejects it. Here each sentence is compared to
     later sentences by content-word overlap instead. A sentence is a failed take when a
-    later sentence (within max_gap_s of silence) repeats >= min_overlap of its content
-    words; the cut spans just that sentence (start → next sentence start), so the true
-    keeper and any unique sentence sitting between the take and its reprise are left
-    untouched — overlapping/adjacent cuts are unioned by the caller.
+    later sentence (within max_gap_s of silence) shares >= min_overlap of its content
+    words in BOTH directions — the shared words are a majority of each sentence, so the
+    two are re-reads of the same script line rather than one being a longer, different
+    sentence that merely reuses a few of the other's words. The cut spans just that
+    sentence (start → next sentence start), so the true keeper and any unique sentence
+    sitting between the take and its reprise are left untouched — overlapping/adjacent
+    cuts are unioned by the caller.
     """
     sentences: list[list[WordTimestamp]] = []
     cur: list[WordTimestamp] = []
@@ -446,7 +449,17 @@ def _detect_reworded_takes(
             cj = contents[j]
             if sum(cj.values()) < min_content_words:
                 continue
-            if sum((ci & cj).values()) / sum(ci.values()) >= min_overlap:
+            # Require the shared content to be a majority of BOTH sentences. A genuine
+            # reworded retake re-reads the SAME script line, so the two takes overlap
+            # heavily in either direction. Measuring only against the failed take lets a
+            # short fragment clear the gate against a much longer, DIFFERENT later
+            # sentence that merely reuses a couple of its words — e.g. deliberate
+            # parallel phrasing ("you add a replica, so one…" vs a later run-on "…so you
+            # add a tool that auto promotes a healthy replica to primary…", forward 0.60
+            # but reverse 0.09), which would wrongly cut the earlier line's unique content.
+            inter = sum((ci & cj).values())
+            if (inter / sum(ci.values()) >= min_overlap
+                    and inter / sum(cj.values()) >= min_overlap):
                 nxt = sentences[i + 1][0].start if i + 1 < len(sentences) else seg[-1].end
                 cuts.append((seg[0].start, nxt))
                 break

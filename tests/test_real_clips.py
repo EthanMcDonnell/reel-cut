@@ -31,8 +31,10 @@ _FIXTURE_DIR = Path(__file__).parent / "fixtures" / "retake"
 _REPO_ROOT = Path(__file__).parent.parent
 
 # Matches a post-vad word line, e.g. "  1:36.839 → 1:37.320   'shortcuts.'   conf=0.74"
-# (a trailing [OUTTAKE] tag, if present, is ignored).
-_WORD_LINE = re.compile(r"([\d:.]+)\s*→\s*([\d:.]+)\s+'([^']*)'\s+conf=([\d.]+)")
+# (a trailing [OUTTAKE] tag, if present, is ignored). Sub-minute timestamps carry a
+# trailing 's' ("33.582s"); the optional s? captures them so _secs (which rstrips it)
+# sees them — without it every word before 1:00 was silently dropped from the fixture.
+_WORD_LINE = re.compile(r"([\d:.]+s?)\s*→\s*([\d:.]+s?)\s+'([^']*)'\s+conf=([\d.]+)")
 
 
 def _secs(t: str) -> float:
@@ -143,3 +145,24 @@ def test_billion_laughs_unique_content_survives():
         if w.word.lower().strip(".,!?").startswith(tuple(survivors)) and is_cut(w.start)
     ]
     assert not cut_words, f"unique content cut as retake: {cut_words}"
+
+
+def test_split_brain_replica_lead_in_survives():
+    """Regression (database-split-brain): the sentence lead-in "You add a replica, so
+    one…" (Whisper: "So you add a replica, so why not?", ~33.6–36.2s) must not be cut.
+
+    The reworded pass used to flag it: 3 of its 5 content words (you/add/replica) recur
+    in the following run-on sentence "…so you add a tool that auto promotes a healthy
+    replica to primary…" (forward overlap 0.60). But that later sentence is not a
+    re-recording — it shares only 0.09 of its own content back, it's the script's
+    deliberate "you add a X" parallel structure — so cutting the earlier line stranded
+    "database splits into a primary…" as a subjectless fragment.
+    """
+    fixture = _FIXTURE_DIR / "database-split-brain.txt"
+    words = load_clip_words(fixture)
+    ranges, _ = detect_retakes(words, **_retake_kwargs())
+    # The "replica" at ~35.3s (in "So you add a replica…") must survive.
+    replica = next(w for w in words if 35.0 < w.start < 35.6 and "replica" in w.word.lower())
+    assert not any(s <= replica.start < e for s, e in ranges), (
+        f"'you add a replica' lead-in cut as a reworded retake; ranges={ranges}"
+    )
