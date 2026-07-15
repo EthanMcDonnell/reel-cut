@@ -76,6 +76,40 @@ def test_digest_flags_hard_cap_and_skipped_retake(tmp_path):
     assert 'retake SKIPPED — "the cloud"' in review
 
 
+def test_digest_flags_abandoned_aside(tmp_path):
+    """A short low-confidence clause with no cut before the next sentence is flagged.
+
+    Regression for a real clip: "So you add a replica, so why not?" (no lexical
+    overlap with what follows, no trail-off ellipsis) ran straight into "Database
+    splits." with a sub-threshold gap — invisible to both the retake matcher
+    (needs shared wording) and the aborted-restart pass (needs an ellipsis).
+    """
+    words = [
+        _w("So", 33.58, 34.79, c=0.21), _w("you", 34.81, 34.95, c=0.75),
+        _w("add", 35.05, 35.17, c=0.54), _w("a", 35.21, 35.25, c=0.99),
+        _w("replica,", 35.29, 35.84, c=0.69), _w("so", 35.90, 36.00, c=0.88),
+        _w("why", 36.02, 36.16, c=0.21), _w("not?", 36.16, 36.16, c=0.43),
+        _w("Database", 36.20, 36.58, c=0.82), _w("splits.", 36.62, 36.94, c=0.85),
+    ]
+    edl = [EDLEntry(33.58, 36.94, True, CLIP, "speech")]
+    base = _run(tmp_path, words=words, edl=edl)
+    review = Path(f"{base}.debug.0.review.txt").read_text()
+    assert "possible abandoned aside" in review
+    assert "So you add a replica, so why not?" in review
+
+
+def test_confident_short_sentence_not_flagged_as_aside(tmp_path):
+    """A short but high-confidence clause before the next sentence isn't flagged."""
+    words = [
+        _w("Quick", 0.0, 0.3, c=0.95), _w("point.", 0.3, 0.6, c=0.9),
+        _w("Now", 0.6, 0.9, c=0.9), _w("the", 0.9, 1.0, c=0.9), _w("rest.", 1.0, 1.3, c=0.9),
+    ]
+    edl = [EDLEntry(0.0, 1.3, True, CLIP, "speech")]
+    base = _run(tmp_path, words=words, edl=edl)
+    review = Path(f"{base}.debug.0.review.txt").read_text()
+    assert "possible abandoned aside" not in review
+
+
 def test_clean_run_flags_nothing(tmp_path):
     words = [_w("all", 0.0, 0.3), _w("good.", 0.4, 0.8)]
     edl = [EDLEntry(0.0, 0.8, True, CLIP, "speech")]

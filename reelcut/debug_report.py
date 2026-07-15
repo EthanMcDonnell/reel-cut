@@ -84,6 +84,18 @@ def write_debug_report(
             if a and a == b:
                 flags.append((2, nxt[0].start,
                               f'duplicate opener — "{" ".join(a)}…" repeats (possible false start)'))
+            # Abandoned aside: a short, low-confidence clause with no lexical
+            # overlap with what follows (so the retake/aborted-restart passes
+            # miss it) that runs straight into the next sentence with no EDL
+            # cut between them — the shape of a speaker pivoting mid-thought
+            # without a clean re-take.
+            gap_ms = (nxt[0].start - prev[-1].end) * 1000
+            low_conf_n = sum(1 for w in prev if w.confidence < LOW_CONF)
+            if len(prev) <= 15 and low_conf_n >= 2 and gap_ms < config.cuts.min_silence_ms:
+                phrase = " ".join(w.word for w in prev)
+                flags.append((2, prev[0].start,
+                              f'possible abandoned aside — "{phrase}" ({low_conf_n} low-conf words) '
+                              f'runs into next sentence with no cut ({gap_ms:.0f}ms gap)'))
 
     for w in sorted((w for w in kept_words if w.confidence < LOW_CONF),
                     key=lambda w: w.confidence)[:8]:
