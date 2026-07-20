@@ -1,6 +1,6 @@
 ---
 name: post-video
-description: Publish a slug's rendered hook reels to Instagram via social-cockpit — POSTs each output/<slug>/*.mp4 local path to /api/publish/local as a trial reel, one post per hook spaced a random 1-5 minutes apart.
+description: Publish a slug's rendered hook reels to Instagram via social-cockpit — POSTs each output/<slug>/*.mp4 local path to /api/publish/local as a trial reel, one post per hook spaced a random 3-7 minutes apart.
 argument-hint: "<video-slug>"
 tools: Read, Bash
 model: sonnet
@@ -12,7 +12,7 @@ through social-cockpit's `/api/publish/local` endpoint. It hands the endpoint ea
 filesystem path and social-cockpit manages the whole chain server-side (read file → upload to R2 →
 presign → call Instagram → reclaim the object). Each hook is captioned from
 `assets/<slug>/title.json` and posted as a trial reel (`graduation_strategy: MANUAL`). Posts are
-spaced a **random 1-5 minutes apart** and each hook is posted **once** — `output/.published`
+spaced a **random 3-7 minutes apart** and each hook is posted **once** — `output/.published`
 records what's gone out so re-runs never double-post.
 
 Arguments: `$ARGUMENTS` — expected format: `<video-slug>`
@@ -51,7 +51,7 @@ Ask the user to confirm before posting. On confirmation:
 ```
 
 The script uploads each hook to R2, POSTs it to `/api/publish`, appends it to `output/.published`,
-then sleeps a random 1-5 minutes before the next. Because it sleeps between posts, the run stays
+then sleeps a random 3-7 minutes before the next. Because it sleeps between posts, the run stays
 alive for several minutes per hook — let it finish. Report the published titles at the end.
 
 Notes:

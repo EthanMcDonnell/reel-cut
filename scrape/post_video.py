@@ -5,7 +5,7 @@ For each ``output/<slug>/*.mp4`` this POSTs the local file path to social-cockpi
 ``/api/publish/local``, which manages the whole chain server-side (read file ->
 upload to R2 -> presign -> call Instagram -> reclaim the object). Each hook is
 captioned from ``assets/<slug>/title.json`` and posted as a trial reel. One post
-per hook variant, spaced by a random 1-5 minute interval so they don't all fire
+per hook variant, spaced by a random 3-7 minute interval so they don't all fire
 at once.
 
 Already-published hooks are recorded in ``output/.published`` and skipped on
@@ -33,8 +33,8 @@ ROOT = Path(__file__).parent.parent
 load_dotenv(ROOT / ".env")
 
 COCKPIT = os.environ.get("COCKPIT_URL", "http://localhost:3000").rstrip("/")
-MIN_INTERVAL_S = 60      # 1 minute
-MAX_INTERVAL_S = 300     # 5 minutes
+MIN_INTERVAL_S = 180     # 3 minutes
+MAX_INTERVAL_S = 420     # 7 minutes
 
 
 def captions_for(slug):
