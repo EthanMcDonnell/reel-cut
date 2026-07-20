@@ -205,7 +205,7 @@ For each candidate, name the category, a one-line "why a viewer wants this," and
 From the verified candidates, select the **single best lead magnet**: the one with the strongest "I want that" pull *and* the tightest tie to the article's actual topic (a steal-this asset, the source's own deeper material, or the article itself). Then write a comment-bait CTA:
 
 - A short, memorable, topic-tied **keyword** (one word, uppercase, e.g. `CACHE`, `SCALE`, `RAFT`).
-- A one-line CTA the creator can pin or say: `Comment "<KEYWORD>" and I'll send you <what the resource is>.`
+- A one-line CTA the creator can pin or say: `Want <what the resource is>? Comment "<KEYWORD>" and I'll send it over.`
 
 ### Step 3.6.4 — Append to the saved script file
 
