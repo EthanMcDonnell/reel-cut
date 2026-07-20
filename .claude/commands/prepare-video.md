@@ -30,7 +30,7 @@ The user drops their footage into `assets/<video-slug>/` before running this com
 
 Output goes to `assets/<slug>/`, named after the footage stem (e.g. `Teleprompter-2026-01-06_20-59-13.captions.json`). The transcription step prints the actual path.
 
-**This is a full reset.** Transcription first wipes everything derived from any prior run — the old `captions.json`, debug reports, and the overlay files `images.json` / `headings.json` / `audio.json` — then re-scaffolds them as fresh stubs. So re-running this command on a slug that already went through `/produce-video` discards those image timings and title cards (they'd otherwise drift against the new transcript). Source inputs are untouched: the footage, `manifest.json`, and the produce-script screenshots all carry over.
+**This is a full reset.** Transcription first wipes everything derived from any prior run — the old `captions.json`, debug reports, and the overlay files `images.json` / `headings.json` / `audio.json` / `title.json` — then re-scaffolds them as fresh stubs. So re-running this command on a slug that already went through `/produce-video` discards those image timings, title cards, and Instagram titles (they'd otherwise drift against the new transcript). Source inputs are untouched: the footage, `manifest.json`, and the produce-script screenshots all carry over.
 
 ## Step 2.5 — Reconcile screenshot manifest (only if one exists)
 
@@ -50,12 +50,11 @@ If no `manifest.json` exists, skip this step.
 
 ## Step 3 — Report
 
-**Hook takes are intentional.** The user deliberately records several alternate openers back-to-back at the top of the clip (often fully reworded, e.g. "Reddit moved a petabyte…" then "Reddit swapped Kafka onto Kubernetes…"). The retake detector won't cut these because they share little verbatim wording. Do **not** flag them as anomalies or bad cuts — just list the alternate hooks as a quick "pick one" so the user can flip the others to `keep: false`. Only a *truncated false start* (a cut-off opener like "…brokers to re…" immediately followed by its clean completion) is a real anomaly worth flagging as such.
+**Hook takes are intentional.** The user deliberately records several alternate openers back-to-back at the top of the clip (often fully reworded, e.g. "Reddit moved a petabyte…" then "Reddit swapped Kafka onto Kubernetes…"). The retake detector won't cut these because they share little verbatim wording. Do **not** flag them as anomalies or bad cuts — just list the alternate hooks. Only a *truncated false start* (a cut-off opener like "…brokers to re…" immediately followed by its clean completion) is a real anomaly worth flagging as such.
 
 Summarise:
 - Manifest reconciliation results (if run): contexts re-aligned, and any orphaned screenshots / unsupported claims for the user to action
 - Keep / cut duration after fixes
-- Alternate hook takes at the cold open — list them for the user to pick one (not an anomaly)
 - Anomalies found and recommended fix for each (for the user to apply)
 - Any remaining issues that need a human listen (ambiguous takes, uncertain boundaries)
 - `headings.json`, `images.json`, and `title.json` stubs were auto-created in the slug folder — optionally add a title card / image overlays / Instagram title later by filling them in (covered in `/produce-video`)
