@@ -153,35 +153,42 @@ Example `images.json`:
 
 All `start`/`end` values are **source-clip seconds** taken from the `words` array in captions.json (the renderer remaps them to the output timeline).
 
-## Step 4b — Headings
+## Step 4b — Headings (one distinct on-screen title card per hook)
 
-Read `assets/<video-slug>/headings.json`. If the first entry has a non-empty `title`, it's already filled in — skip to Step 5.
+Read `assets/<video-slug>/headings.json`. If the first entry has a non-empty `title`, it's already filled in — skip to Step 4c.
 
-If the title is empty (the stub state from `prepare-video`), generate heading suggestions.
+If the title is empty (the stub state from `prepare-video`), generate the heading cards.
+
+**Each hook video gets its OWN on-screen title card, derived from that hook's angle — do NOT stamp one shared title across all cards.** This is deliberate. The three hook videos (`render-hooks` → `output/<slug>/*.mp4`) share an identical body and voiceover, so the burned-in title card in the opening seconds is the one visual element we can cheaply make distinct per variant. A single reused title stamps a byte-identical overlay onto the exact region Instagram scans hardest for near-duplicates; a per-hook title removes that shared signal and keeps each card matching the hook the viewer just heard. (This alone does **not** de-cluster the videos — the shared body + voiceover cap that; see `INSTAGRAM_DEDUP_EVASION_PLAN.md`. It is cheap, on-strategy hygiene, not a silver bullet.)
 
 **Inputs to draw from:**
-- The video slug and topic
-- The manifest `topic` / `hook` fields if present
-- The series from the manifest or inferred from the slug (check SERIES.md for the tone of each series)
-- `hook_windows` from Step 3c — one window per hook, each with its output-timeline `(start, end)`
+- `hook_windows` from Step 3c — one window per hook, each with its output-timeline `(start, end)` — **plus that hook's spoken text** (from the Step 1 timeline). The title for card N is derived from hook N's angle.
+- The video slug and topic; the manifest `topic` / `hook` fields if present
+- The series (from the manifest or inferred from the slug — check SERIES.md for the tone of each series)
 
-**Generate 3 title/subtitle options.** A single title/subtitle is picked and stamped across all hook cards — every hook introduces the same video. Tailor to the series tone:
-- *tbbt*: punchy question or shocking statement about the architecture, subtitle `Tech Behind Big Tech Day {n:tbbt}` (the literal words "Tech Behind Big Tech Day" followed by the episode number — not `#`, and never just `Day {n:tbbt}` on its own)
-- *updates*: news-style headline, no series token in subtitle
-- *interesting-tech / Interesting Tech*: the "impossible thing" framing ("Can a prime number be illegal?"), subtitle can include the series day count
+**Generate one title per hook** — each punchy, tailored to *that hook's* angle, and in the series tone (a stylized 2–3-second card, not the hook's verbatim wording):
+- *tbbt*: punchy question or shocking statement about the architecture
+- *updates*: news-style headline
+- *interesting-tech / Interesting Tech*: the "impossible thing" framing ("Can a prime number be illegal?")
 - *AI Fundamentals*: first-principles question the viewer is already asking
 
-Use `\n` in `title` for line breaks (2 lines usually reads better on mobile). Keep titles short enough to read in 2–3 seconds.
+Use `\n` in `title` for line breaks (2 lines usually reads better on mobile). Keep each title short enough to read in 2–3 seconds.
 
-**Use AskUserQuestion** to present the 3 options (plus "Enter my own"). Show each as a preview with the full JSON for the **first card only** so the user can see exactly what will be written.
+**The subtitle stays constant across all cards** — it carries the series branding, so keep it identical for every hook (varying the big gold title is what makes the cards visually distinct; the subtitle keeps the brand recognisable):
+- *tbbt*: `Tech Behind Big Tech Day {n:tbbt}` (the literal words "Tech Behind Big Tech Day" followed by the episode number — not `#`, and never just `Day {n:tbbt}` on its own)
+- *updates*: no series token in subtitle
+- *interesting-tech / Interesting Tech*: subtitle can include the series day count
+- *AI Fundamentals*: a short tagline
 
-Once the user selects or provides a heading, write `headings.json` with **one card per hook window** from `hook_windows`, all sharing the chosen title and subtitle:
+**Use AskUserQuestion** to present the full set of proposed per-hook titles at once — one option to accept all, plus "Enter my own" — the same pattern as Step 4c. Pair each proposed title with the hook it was derived from so the mapping is clear.
+
+Once approved, write `headings.json` with **one card per hook window** from `hook_windows` — each card carries its OWN `title`, all sharing the same `subtitle`:
 
 ```json
 [
-  { "title": "What Are\nAI Tokens?", "subtitle": "explained in 90 seconds", "start": 0.0, "end": 3.1, "scrim": true },
-  { "title": "What Are\nAI Tokens?", "subtitle": "explained in 90 seconds", "start": 3.1, "end": 6.4, "scrim": true },
-  { "title": "What Are\nAI Tokens?", "subtitle": "explained in 90 seconds", "start": 6.4, "end": 9.8, "scrim": true }
+  { "title": "What Are\nAI Tokens?", "subtitle": "Tech Behind Big Tech Day {n:tbbt}", "start": 0.0, "end": 3.1, "scrim": true },
+  { "title": "Why ChatGPT\nBills Per Word", "subtitle": "Tech Behind Big Tech Day {n:tbbt}", "start": 3.1, "end": 6.4, "scrim": true },
+  { "title": "You Pay\nBy The Syllable", "subtitle": "Tech Behind Big Tech Day {n:tbbt}", "start": 6.4, "end": 9.8, "scrim": true }
 ]
 ```
 
