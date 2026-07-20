@@ -95,7 +95,7 @@ audio:
   tracks:                           # optional per-track tuning, keyed by track name. Add an entry
                                     # only to set a start time, volume trim, or slow-down.
     chill-draw-interest:
-      source_start: 3               # begin 3s into the file
+      source_start: 3.5             # begin X seconds into the file
       slow_pct: 10                  # slow the track by 10% (pitch drops with it). 0 = original
                                     # speed; max ~50.
 
