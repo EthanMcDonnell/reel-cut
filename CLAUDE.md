@@ -53,7 +53,17 @@ When your changes create orphans:
 
 The test: Every changed line should trace directly to the user's request.
 
-## 4. Goal-Driven Execution
+## 4. Fix the Automation, Not Just the Video
+
+**A question about the output is a question about the process that produced it.**
+
+When the user asks why something in a script, EDL, or render looks the way it does — or points out something wrong with the current video — treat it as a genuine desire to improve the underlying automation (the skills, prompts, scripts, and config that generate every video), not merely a request to patch this one output.
+
+- Default to fixing the source: the skill, prompt rule, script, or config that will make every future video better.
+- Don't silently hand-edit the current video's artifacts to paper over a systemic flaw. If a one-off manual fix is genuinely warranted, say so and explain why the automation shouldn't change.
+- When a question exposes a gap, ask: "what rule or code change prevents this next time?" — then propose that.
+
+## 5. Goal-Driven Execution
 
 **Define success criteria. Loop until verified.**
 
