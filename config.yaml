@@ -81,6 +81,10 @@ output:
   # max_duration_s: 60
   location: ./output/
   render_workers: 8                 # number of parallel workers for frame rendering.
+  zoom:                             # per-hook crop-zoom, seeded by output filename.
+    enabled: false                  # EXPERIMENT ONLY — not a proven IG dedup lever (SSCD sees through it).
+    min: 0.96                       # fraction of frame kept (0.96 = zoom in up to 4%)
+    max: 1.0
 
 audio:
   enabled: true

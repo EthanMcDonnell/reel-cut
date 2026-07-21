@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import concurrent.futures
+import hashlib
 import subprocess
 import sys
 import tempfile
@@ -229,6 +230,20 @@ def _prepare_caption_sequence(
     return seq_dir, min_frame
 
 
+def _zoom_fraction(stem: str, config: ReelCutConfig) -> float:
+    """Fraction of frame to keep for this output's per-hook crop-zoom.
+
+    Deterministic in `stem` (the output filename), so a re-render is identical while the
+    three hooks — with distinct title slugs — get distinct framings. Returns 1.0 (no-op)
+    when disabled. See ZoomConfig for why this is an experiment, not a dedup lever.
+    """
+    z = config.output.zoom
+    if not z.enabled or z.max <= z.min:
+        return 1.0
+    seed = int(hashlib.sha1(stem.encode()).hexdigest(), 16) % 1000
+    return z.min + (seed / 1000) * (z.max - z.min)
+
+
 def _final_encode(
     input_path: Path,
     output_path: Path,
@@ -239,6 +254,7 @@ def _final_encode(
     """Re-encode to final output spec, optionally overlaying caption frames in the same pass."""
     w, h = config.output.resolution
     fps = config.output.fps
+    zoom_frac = _zoom_fraction(output_path.stem, config)
 
     # Auto-level background tracks relative to the measured voice loudness. Done once here
     # (not in _build_streams, which can run twice on the videotoolbox→libx264 fallback).
@@ -267,6 +283,11 @@ def _final_encode(
                 eof_action="pass",
             )
         video = video.filter("scale", w, h, force_original_aspect_ratio="disable")
+        if zoom_frac < 1.0:
+            # Centered crop (ffmpeg default x/y) of the composited frame, rescaled back to
+            # full res — a subtle per-hook zoom-in. Shaves at most (1-frac)/2 per side.
+            video = video.filter("crop", f"iw*{zoom_frac}", f"ih*{zoom_frac}")
+            video = video.filter("scale", w, h)
         return video, audio
 
     common: dict = dict(

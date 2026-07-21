@@ -70,6 +70,15 @@ class CutsConfig(BaseModel):
     preserve_end_s: float = 0.0
 
 
+class ZoomConfig(BaseModel):
+    # Per-hook centered crop-zoom, deterministically seeded by output filename. A subtle
+    # per-variant fingerprint experiment — NOT a proven Instagram dedup lever (SSCD sees
+    # through it). `min`/`max` are the fraction of frame kept (0.96 = zoom in 4%).
+    enabled: bool = False
+    min: float = 0.96
+    max: float = 1.0
+
+
 class OutputConfig(BaseModel):
     format: str = "9:16"
     resolution: list[int] = Field(default=[1080, 1920])
@@ -79,6 +88,7 @@ class OutputConfig(BaseModel):
     max_duration_s: int = 90
     location: str = "./output/"
     render_workers: int = 8
+    zoom: ZoomConfig = Field(default_factory=ZoomConfig)
 
     @field_validator("resolution")
     @classmethod
