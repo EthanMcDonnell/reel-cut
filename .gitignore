@@ -211,3 +211,6 @@ SERIES.md
 /models
 whisper.cpp/
 /series
+
+# Persistent browser profile for single_scrape.py --solve-captcha
+scrape/.captcha-profile/
