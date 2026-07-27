@@ -176,7 +176,7 @@ Use `\n` in `title` for line breaks (2 lines usually reads better on mobile). Ke
 
 **The subtitle stays constant across all cards** — it carries the series branding, so keep it identical for every hook (varying the big gold title is what makes the cards visually distinct; the subtitle keeps the brand recognisable):
 - *tbbt*: `Tech Behind Big Tech Day {n:tbbt}` (the literal words "Tech Behind Big Tech Day" followed by the episode number — not `#`, and never just `Day {n:tbbt}` on its own)
-- *updates*: no series token in subtitle
+- *updates*: `Tech & AI Updates #{n:updates}` (the series name followed by the episode number)
 - *interesting-tech / Interesting Tech*: subtitle can include the series day count
 - *AI Fundamentals*: a short tagline
 
