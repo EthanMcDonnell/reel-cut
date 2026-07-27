@@ -8,6 +8,7 @@ Fetches the full content of a specific article URL using the same fetch method
 Usage:
   python scrape/single_scrape.py <url>
   python scrape/single_scrape.py <url> --json   # structured JSON output
+  python scrape/single_scrape.py <url> --solve-captcha   # clear an anti-bot wall by hand
 
 Output (stdout):
   title, source, company, fetch method used, full article text
@@ -46,6 +47,10 @@ SOURCES_FILES = [
 ]
 
 USER_AGENT = "local reddit article viewer/1.0"
+
+# Persistent browser profile for --solve-captcha, so a challenge cleared by hand once
+# keeps working on later runs.
+CAPTCHA_PROFILE = SCRAPE_DIR / ".captcha-profile"
 
 # ---------------------------------------------------------------------------
 # Source lookup
@@ -173,27 +178,67 @@ async def fetch_http(url: str, insecure: bool = False) -> str:
         return resp.text
 
 
-async def fetch_playwright_content(url: str, headed: bool = False) -> str:
+# Interstitials served *after* a challenge is cleared, while the site verifies entitlement.
+# They extract to plausible-looking text, so the wait loop must not mistake them for the article.
+_PREVIEW_MARKERS = (
+    "preview view of this article",
+    "while we are checking your access",
+    "having trouble retrieving the article content",
+    "Thank you for your patience while we verify access",
+)
+
+
+async def _wait_for_human(page, is_bot_block, timeout_s: int) -> str:
+    """Poll an open page until the human clears the challenge and real content appears."""
+    print(
+        f"Browser window open — solve the CAPTCHA there. Waiting up to {timeout_s}s...",
+        file=sys.stderr, flush=True,
+    )
+    for _ in range(timeout_s // 2):
+        html = await page.content()
+        if not is_bot_block(html):
+            _, text = extract_content_from_html(html)
+            if len(text) > 500 and not any(m in text for m in _PREVIEW_MARKERS):
+                print("Challenge cleared — content captured.", file=sys.stderr, flush=True)
+                return html
+        await page.wait_for_timeout(2000)
+    return await page.content()
+
+
+async def fetch_playwright_content(
+    url: str, headed: bool = False, solve_captcha: bool = False, solve_timeout: int = 300
+) -> str:
     """Fetch a JS-rendered page using Playwright, return HTML."""
     try:
         from playwright.async_api import async_playwright
     except ImportError:
         raise RuntimeError("playwright not installed: pip install playwright && playwright install chromium")
 
-    from playwright_utils import STEALTH_ARGS, is_bot_block, stealth_context
+    from playwright_utils import (
+        STEALTH_ARGS, is_bot_block, stealth_context, stealth_persistent_context,
+    )
     async with async_playwright() as pw:
-        browser = await pw.chromium.launch(headless=not headed, args=STEALTH_ARGS)
-        ctx = await stealth_context(browser)
-        page = await ctx.new_page()
-        await page.goto(url, wait_until="domcontentloaded", timeout=30000)
-        await page.wait_for_timeout(2000)
-        html = await page.content()
-        await browser.close()
+        browser = None
+        if solve_captcha:
+            ctx = await stealth_persistent_context(pw, str(CAPTCHA_PROFILE))
+            page = ctx.pages[0] if ctx.pages else await ctx.new_page()
+        else:
+            browser = await pw.chromium.launch(headless=not headed, args=STEALTH_ARGS)
+            ctx = await stealth_context(browser)
+            page = await ctx.new_page()
+        await page.goto(url, wait_until="domcontentloaded", timeout=60000)
+        if solve_captcha:
+            html = await _wait_for_human(page, is_bot_block, solve_timeout)
+        else:
+            await page.wait_for_timeout(2000)
+            html = await page.content()
+        await (browser.close() if browser else ctx.close())
     if is_bot_block(html):
         raise RuntimeError(
             f"Blocked by anti-bot protection (CAPTCHA/challenge page returned instead of the "
-            f"article): {url} — the page cannot be fetched automatically. Paste the article text "
-            f"manually to continue."
+            f"article): {url} — the page cannot be fetched automatically. Retry with "
+            f"--solve-captcha to clear the challenge by hand in a visible browser, or paste the "
+            f"article text manually to continue."
         )
     return html
 
@@ -255,7 +300,13 @@ async def fetch_reddit_content(url: str) -> tuple[str, str]:
 # Main dispatch
 # ---------------------------------------------------------------------------
 
-async def scrape_single(url: str, force_method: str | None = None, headed: bool = False) -> dict:
+async def scrape_single(
+    url: str,
+    force_method: str | None = None,
+    headed: bool = False,
+    solve_captcha: bool = False,
+    solve_timeout: int = 300,
+) -> dict:
     sources = load_all_sources()
     source = find_source_for_url(url, sources)
 
@@ -300,8 +351,11 @@ async def scrape_single(url: str, force_method: str | None = None, headed: bool 
     try:
         if fetch_method == "reddit":
             title, content = await fetch_reddit_content(url)
-        elif fetch_method == "playwright":
-            html = await fetch_playwright_content(url, headed=headed)
+        elif fetch_method == "playwright" or solve_captcha:
+            html = await fetch_playwright_content(
+                url, headed=headed, solve_captcha=solve_captcha, solve_timeout=solve_timeout
+            )
+            fetch_method = "playwright"
             title, content = extract_content_from_html(html)
         else:
             # rss, scrape, or unknown — try HTTP first, fall back to Playwright on 4xx
@@ -340,9 +394,18 @@ def main():
     parser.add_argument("--method", choices=["http", "playwright", "reddit"], default=None,
                         help="Force a specific fetch method (overrides source config)")
     parser.add_argument("--headed", action="store_true", help="Run Playwright in headed (visible) mode")
+    parser.add_argument("--solve-captcha", action="store_true",
+                        help="Open a visible browser and wait for you to clear the anti-bot "
+                             "challenge by hand, then capture the page. Uses a persistent profile, "
+                             "so later runs of the same source usually work unattended.")
+    parser.add_argument("--solve-timeout", type=int, default=300, metavar="SECONDS",
+                        help="How long --solve-captcha waits for you (default: 300)")
     args = parser.parse_args()
 
-    result = asyncio.run(scrape_single(args.url, force_method=args.method, headed=args.headed))
+    result = asyncio.run(scrape_single(
+        args.url, force_method=args.method, headed=args.headed,
+        solve_captcha=args.solve_captcha, solve_timeout=args.solve_timeout,
+    ))
 
     if args.as_json:
         print(json.dumps(result, indent=2, ensure_ascii=False))

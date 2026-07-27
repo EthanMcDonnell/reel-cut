@@ -314,33 +314,55 @@ async def _capture_snippet(
         return _miss(f"capture error: {exc}")
 
 
-async def capture(url: str, output_dir: Path, snippets: list[str | dict] | None = None) -> dict:
+async def capture(url: str, output_dir: Path, snippets: list[str | dict] | None = None,
+                  solve_captcha: bool = False, solve_timeout: int = 300) -> dict:
     try:
         from playwright.async_api import async_playwright
     except ImportError:
         return {"dir": str(output_dir), "files": [], "skipped": "playwright not installed"}
 
     sys.path.insert(0, str(ROOT / "scrape"))
-    from playwright_utils import STEALTH_ARGS, is_bot_block, stealth_context
+    from playwright_utils import (
+        STEALTH_ARGS, is_bot_block, stealth_context, stealth_persistent_context,
+    )
+    from single_scrape import CAPTCHA_PROFILE
 
     output_dir.mkdir(parents=True, exist_ok=True)
     source_dir = output_dir / _url_prefix(url)
     source_dir.mkdir(parents=True, exist_ok=True)
     async with async_playwright() as pw:
-        browser = await pw.chromium.launch(headless=True, args=STEALTH_ARGS)
-        ctx = await stealth_context(browser, device_scale_factor=2)
+        browser = None
+        if solve_captcha:
+            # Reuses the profile primed by `single_scrape.py --solve-captcha`, so a wall
+            # already cleared for this source usually needs no interaction here.
+            ctx = await stealth_persistent_context(pw, str(CAPTCHA_PROFILE), device_scale_factor=2)
+        else:
+            browser = await pw.chromium.launch(headless=True, args=STEALTH_ARGS)
+            ctx = await stealth_context(browser, device_scale_factor=2)
+
+        async def _close():
+            await (browser.close() if browser else ctx.close())
 
         try:
             main_page = await _prepare_page(ctx, url)
         except Exception as exc:
-            await browser.close()
+            await _close()
             return {"dir": str(output_dir), "files": [], "skipped": f"page load failed: {exc}"}
 
         if is_bot_block(await main_page.content()):
-            # Without this the CAPTCHA page itself gets screenshotted as "evidence".
-            await browser.close()
-            return {"dir": str(output_dir), "files": [],
-                    "skipped": "blocked by anti-bot protection — no screenshots captured"}
+            if solve_captcha:
+                print(f"Anti-bot wall hit — solve it in the open browser window "
+                      f"(waiting up to {solve_timeout}s)...", file=sys.stderr, flush=True)
+                for _ in range(solve_timeout // 2):
+                    if not is_bot_block(await main_page.content()):
+                        break
+                    await main_page.wait_for_timeout(2000)
+            if is_bot_block(await main_page.content()):
+                # Without this the CAPTCHA page itself gets screenshotted as "evidence".
+                await _close()
+                return {"dir": str(output_dir), "files": [],
+                        "skipped": "blocked by anti-bot protection — no screenshots captured. "
+                                   "Retry with --solve-captcha to clear it by hand."}
 
         # --- Load snippet-targeting JS helpers ---
         # bytes([95,115,115,95,42,46,106,115]) == b'_ss_*.js'
@@ -381,7 +403,7 @@ async def capture(url: str, output_dir: Path, snippets: list[str | dict] | None 
 
             await asyncio.gather(*[_worker(p) for p in worker_pages])
 
-        await browser.close()
+        await _close()
 
     statuses.sort(key=lambda s: s["index"])
     subdir = source_dir.name
@@ -438,11 +460,18 @@ def main():
                              '{"article_snippet": "...", "script_context": "...", '
                              '"trigger_show_word": "...", "trigger_go_away_word": "..."} '
                              '(context/trigger fields optional), or a bare string for article_snippet only.')
+    parser.add_argument("--solve-captcha", action="store_true",
+                        help="Use the persistent browser profile shared with single_scrape.py and, "
+                             "if a wall still appears, open it visibly and wait for you to clear it.")
+    parser.add_argument("--solve-timeout", type=int, default=300, metavar="SECONDS",
+                        help="How long --solve-captcha waits for you (default: 300)")
     args = parser.parse_args()
 
     snippets = json.loads(args.snippets) if args.snippets else None
     output_dir = Path(args.output_dir)
-    result = asyncio.run(capture(args.url, output_dir, snippets=snippets))
+    result = asyncio.run(capture(args.url, output_dir, snippets=snippets,
+                                 solve_captcha=args.solve_captcha,
+                                 solve_timeout=args.solve_timeout))
     print(json.dumps(result, indent=2))
 
 

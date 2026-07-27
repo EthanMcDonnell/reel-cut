@@ -289,32 +289,54 @@ def _write_candidates(output_dir: Path, url: str, entries: list[dict]) -> None:
         path.write_text(json.dumps(existing, indent=2))
 
 
-async def harvest(url: str, output_dir: Path, max_figures: int = 8) -> dict:
+async def harvest(url: str, output_dir: Path, max_figures: int = 8,
+                  solve_captcha: bool = False, solve_timeout: int = 300) -> dict:
     try:
         from playwright.async_api import async_playwright
     except ImportError:
         return {"dir": str(output_dir), "candidates": [], "skipped": "playwright not installed"}
 
     sys.path.insert(0, str(ROOT / "scrape"))
-    from playwright_utils import STEALTH_ARGS, is_bot_block, stealth_context
+    from playwright_utils import (
+        STEALTH_ARGS, is_bot_block, stealth_context, stealth_persistent_context,
+    )
+    from single_scrape import CAPTCHA_PROFILE
 
     output_dir.mkdir(parents=True, exist_ok=True)
     figures_dir = output_dir / "figures"
     figures_dir.mkdir(parents=True, exist_ok=True)
 
     async with async_playwright() as pw:
-        browser = await pw.chromium.launch(headless=True, args=STEALTH_ARGS)
-        ctx = await stealth_context(browser, device_scale_factor=2)
+        browser = None
+        if solve_captcha:
+            # Shares the profile primed by `single_scrape.py --solve-captcha`.
+            ctx = await stealth_persistent_context(pw, str(CAPTCHA_PROFILE), device_scale_factor=2)
+        else:
+            browser = await pw.chromium.launch(headless=True, args=STEALTH_ARGS)
+            ctx = await stealth_context(browser, device_scale_factor=2)
+
+        async def _close():
+            await (browser.close() if browser else ctx.close())
+
         try:
             page = await _prepare(ctx, url)
         except Exception as exc:
-            await browser.close()
+            await _close()
             return {"dir": str(output_dir), "candidates": [], "skipped": f"page load failed: {exc}"}
 
         if is_bot_block(await page.content()):
-            await browser.close()
-            return {"dir": str(output_dir), "candidates": [],
-                    "skipped": "blocked by anti-bot protection — no figures harvested"}
+            if solve_captcha:
+                print(f"Anti-bot wall hit — solve it in the open browser window "
+                      f"(waiting up to {solve_timeout}s)...", file=sys.stderr, flush=True)
+                for _ in range(solve_timeout // 2):
+                    if not is_bot_block(await page.content()):
+                        break
+                    await page.wait_for_timeout(2000)
+            if is_bot_block(await page.content()):
+                await _close()
+                return {"dir": str(output_dir), "candidates": [],
+                        "skipped": "blocked by anti-bot protection — no figures harvested. "
+                                   "Retry with --solve-captcha to clear it by hand."}
 
         raw = await page.evaluate(_JS_HARVEST, {"selectors": ARTICLE_SELECTORS})
         kept = sorted(
@@ -351,7 +373,7 @@ async def harvest(url: str, output_dir: Path, max_figures: int = 8) -> dict:
                 "score": c["score"],
             })
 
-        await browser.close()
+        await _close()
 
     _write_candidates(output_dir, url, entries)
     return {"dir": str(output_dir), "candidates": entries, "skipped": None}
@@ -362,9 +384,16 @@ def main():
     parser.add_argument("--url", required=True, help="Article URL")
     parser.add_argument("--output-dir", required=True, help="Directory to save figures (e.g. assets/<slug>/)")
     parser.add_argument("--max", type=int, default=8, help="Max candidates to download (default 8)")
+    parser.add_argument("--solve-captcha", action="store_true",
+                        help="Use the persistent browser profile shared with single_scrape.py and, "
+                             "if a wall still appears, open it visibly and wait for you to clear it.")
+    parser.add_argument("--solve-timeout", type=int, default=300, metavar="SECONDS",
+                        help="How long --solve-captcha waits for you (default: 300)")
     args = parser.parse_args()
 
-    result = asyncio.run(harvest(args.url, Path(args.output_dir), max_figures=args.max))
+    result = asyncio.run(harvest(args.url, Path(args.output_dir), max_figures=args.max,
+                                 solve_captcha=args.solve_captcha,
+                                 solve_timeout=args.solve_timeout))
     print(json.dumps(result, indent=2))
 
 

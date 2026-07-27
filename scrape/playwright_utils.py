@@ -37,11 +37,25 @@ def is_bot_block(html: str) -> bool:
     return any(marker in html for marker in _BLOCK_MARKERS)
 
 
+_CONTEXT_OPTS = dict(
+    viewport={"width": 1920, "height": 1080},
+    user_agent=_USER_AGENT,
+    locale="en-US",
+    extra_http_headers={"Accept-Language": "en-US,en;q=0.9"},
+)
+
+
 async def stealth_context(browser, device_scale_factor: float = 1):
-    return await browser.new_context(
-        viewport={"width": 1920, "height": 1080},
-        device_scale_factor=device_scale_factor,
-        user_agent=_USER_AGENT,
-        locale="en-US",
-        extra_http_headers={"Accept-Language": "en-US,en;q=0.9"},
+    return await browser.new_context(device_scale_factor=device_scale_factor, **_CONTEXT_OPTS)
+
+
+async def stealth_persistent_context(pw, user_data_dir: str, device_scale_factor: float = 1):
+    """Headed context backed by a persistent profile.
+
+    Lets a human clear a CAPTCHA once; the resulting cookie survives into later runs so
+    the same source usually fetches headless afterwards.
+    """
+    return await pw.chromium.launch_persistent_context(
+        user_data_dir=user_data_dir, headless=False, args=STEALTH_ARGS,
+        device_scale_factor=device_scale_factor, **_CONTEXT_OPTS
     )
