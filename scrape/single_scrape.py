@@ -180,7 +180,7 @@ async def fetch_playwright_content(url: str, headed: bool = False) -> str:
     except ImportError:
         raise RuntimeError("playwright not installed: pip install playwright && playwright install chromium")
 
-    from playwright_utils import STEALTH_ARGS, stealth_context
+    from playwright_utils import STEALTH_ARGS, is_bot_block, stealth_context
     async with async_playwright() as pw:
         browser = await pw.chromium.launch(headless=not headed, args=STEALTH_ARGS)
         ctx = await stealth_context(browser)
@@ -189,6 +189,12 @@ async def fetch_playwright_content(url: str, headed: bool = False) -> str:
         await page.wait_for_timeout(2000)
         html = await page.content()
         await browser.close()
+    if is_bot_block(html):
+        raise RuntimeError(
+            f"Blocked by anti-bot protection (CAPTCHA/challenge page returned instead of the "
+            f"article): {url} — the page cannot be fetched automatically. Paste the article text "
+            f"manually to continue."
+        )
     return html
 
 
@@ -199,7 +205,14 @@ async def fetch_reddit_content(url: str) -> tuple[str, str]:
 
     match = _re.search(r"/comments/([a-z0-9]+)", url)
     if not match:
-        raise ValueError(f"Could not extract submission ID from URL: {url}")
+        # Share links (/r/<sub>/s/<code>) carry no submission ID — resolve the redirect first.
+        async with httpx.AsyncClient(
+            headers={"User-Agent": USER_AGENT}, follow_redirects=True, timeout=20
+        ) as client:
+            resp = await client.get(url)
+        match = _re.search(r"/comments/([a-z0-9]+)", str(resp.url))
+        if not match:
+            raise ValueError(f"Could not extract submission ID from URL: {url}")
     submission_id = match.group(1)
 
     reddit = praw.Reddit(
@@ -215,9 +228,14 @@ async def fetch_reddit_content(url: str) -> tuple[str, str]:
     if not selftext and submission.url and not submission.url.startswith("https://www.reddit.com"):
         linked = await scrape_single(submission.url)
         content = linked.get("content", "")
+        if not content:
+            # Surface as a real failure — a placeholder string here reads downstream as a
+            # successful fetch and silently defeats the workflow's source-access check.
+            reason = linked.get("error") or "no article text could be extracted"
+            raise RuntimeError(f"Link post points to {submission.url} but it failed to fetch: {reason}")
         if linked.get("title"):
             title = linked["title"]
-        return title, content if content else f"[Link post to {submission.url} — could not extract content]"
+        return title, content
 
     # Grab top comments for context
     submission.comments.replace_more(limit=0)

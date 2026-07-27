@@ -321,7 +321,7 @@ async def capture(url: str, output_dir: Path, snippets: list[str | dict] | None 
         return {"dir": str(output_dir), "files": [], "skipped": "playwright not installed"}
 
     sys.path.insert(0, str(ROOT / "scrape"))
-    from playwright_utils import STEALTH_ARGS, stealth_context
+    from playwright_utils import STEALTH_ARGS, is_bot_block, stealth_context
 
     output_dir.mkdir(parents=True, exist_ok=True)
     source_dir = output_dir / _url_prefix(url)
@@ -335,6 +335,12 @@ async def capture(url: str, output_dir: Path, snippets: list[str | dict] | None 
         except Exception as exc:
             await browser.close()
             return {"dir": str(output_dir), "files": [], "skipped": f"page load failed: {exc}"}
+
+        if is_bot_block(await main_page.content()):
+            # Without this the CAPTCHA page itself gets screenshotted as "evidence".
+            await browser.close()
+            return {"dir": str(output_dir), "files": [],
+                    "skipped": "blocked by anti-bot protection — no screenshots captured"}
 
         # --- Load snippet-targeting JS helpers ---
         # bytes([95,115,115,95,42,46,106,115]) == b'_ss_*.js'

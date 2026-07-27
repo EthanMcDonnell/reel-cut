@@ -296,7 +296,7 @@ async def harvest(url: str, output_dir: Path, max_figures: int = 8) -> dict:
         return {"dir": str(output_dir), "candidates": [], "skipped": "playwright not installed"}
 
     sys.path.insert(0, str(ROOT / "scrape"))
-    from playwright_utils import STEALTH_ARGS, stealth_context
+    from playwright_utils import STEALTH_ARGS, is_bot_block, stealth_context
 
     output_dir.mkdir(parents=True, exist_ok=True)
     figures_dir = output_dir / "figures"
@@ -310,6 +310,11 @@ async def harvest(url: str, output_dir: Path, max_figures: int = 8) -> dict:
         except Exception as exc:
             await browser.close()
             return {"dir": str(output_dir), "candidates": [], "skipped": f"page load failed: {exc}"}
+
+        if is_bot_block(await page.content()):
+            await browser.close()
+            return {"dir": str(output_dir), "candidates": [],
+                    "skipped": "blocked by anti-bot protection — no figures harvested"}
 
         raw = await page.evaluate(_JS_HARVEST, {"selectors": ARTICLE_SELECTORS})
         kept = sorted(

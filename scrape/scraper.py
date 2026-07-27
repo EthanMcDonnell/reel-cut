@@ -486,7 +486,7 @@ async def scrape_playwright(source: dict) -> list[dict]:
         log.error("playwright not installed: pip install playwright && playwright install chromium")
         return []
     try:
-        from playwright_utils import STEALTH_ARGS, stealth_context
+        from playwright_utils import STEALTH_ARGS, is_bot_block, stealth_context
         async with async_playwright() as pw:
             browser = await pw.chromium.launch(headless=True, args=STEALTH_ARGS)
             ctx = await stealth_context(browser)
@@ -497,6 +497,9 @@ async def scrape_playwright(source: dict) -> list[dict]:
             await browser.close()
 
         log.debug(f"  [Playwright] HTML length: {len(html)}")
+        if is_bot_block(html):
+            log.error(f"  [Playwright] blocked by anti-bot protection: {source['homepage']}")
+            return []
         articles = extract_article_cards(html, source, "playwright")
         log.info(f"  [Playwright] extract_article_cards found: {len(articles)}")
 
