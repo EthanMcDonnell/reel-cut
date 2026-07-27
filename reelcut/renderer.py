@@ -31,6 +31,10 @@ def _videotoolbox_available() -> bool:
 
 _USE_VIDEOTOOLBOX = _videotoolbox_available()
 
+# Rate-control baselines that per-hook encode variation jitters around.
+_X264_BASE_CRF = 23      # x264's own default, previously left implicit
+_VT_BASE_BITRATE_K = 8000
+
 
 def render(
     edl: list[EDLEntry],
@@ -244,6 +248,40 @@ def _zoom_fraction(stem: str, config: ReelCutConfig) -> float:
     return z.min + (seed / 1000) * (z.max - z.min)
 
 
+def _seed(stem: str, salt: str) -> float:
+    """Stable [0, 1) draw from an output filename + salt, so each knob varies independently."""
+    return (int(hashlib.sha1(f"{stem}:{salt}".encode()).hexdigest(), 16) % 1000) / 1000
+
+
+def _encode_variation(stem: str, config: ReelCutConfig, codec: str) -> dict:
+    """Per-hook encoder settings, deterministic in `stem` (the output filename).
+
+    Returns ffmpeg output kwargs: a jittered rate-control target (CRF for libx264, bitrate
+    for videotoolbox), a jittered keyframe interval, and a metadata tag — so each hook is a
+    distinct bitstream. Tier 0 hash hygiene only; see EncodeVariationConfig for why this is
+    not a content-matching lever. Returns {} when disabled.
+    """
+    ev = config.output.encode_variation
+    if not ev.enabled:
+        return {}
+
+    fps = config.output.fps
+    # Keyframe interval between 4s and ~8s of frames — changes GOP structure without
+    # inflating file size the way a short keyint would.
+    kwargs: dict = {
+        "g": int(fps * (4 + 4 * _seed(stem, "gop"))),
+        "metadata": f"comment=rc-{int(_seed(stem, 'tag') * 1e6):06d}",
+    }
+
+    # Symmetric jitter in [-1, 1), scaled per codec. Small enough to be imperceptible.
+    swing = _seed(stem, "rate") * 2 - 1
+    if codec == "libx264":
+        kwargs["crf"] = _X264_BASE_CRF + round(swing * ev.crf_jitter)
+    else:
+        kwargs["b:v"] = f"{int(_VT_BASE_BITRATE_K * (1 + swing * ev.bitrate_jitter))}k"
+    return kwargs
+
+
 def _final_encode(
     input_path: Path,
     output_path: Path,
@@ -301,7 +339,12 @@ def _final_encode(
     if _USE_VIDEOTOOLBOX:
         video, audio = _build_streams()
         try:
-            vt_kwargs = {**common, "vcodec": "h264_videotoolbox", "b:v": "8000k"}
+            vt_kwargs = {
+                **common,
+                "vcodec": "h264_videotoolbox",
+                "b:v": f"{_VT_BASE_BITRATE_K}k",
+                **_encode_variation(output_path.stem, config, "h264_videotoolbox"),
+            }
             (
                 ffmpeg
                 .output(video, audio, str(output_path), **vt_kwargs)
@@ -314,9 +357,10 @@ def _final_encode(
 
     video, audio = _build_streams()
     try:
+        x264_kwargs = {**common, **_encode_variation(output_path.stem, config, "libx264")}
         (
             ffmpeg
-            .output(video, audio, str(output_path), vcodec="libx264", **common)
+            .output(video, audio, str(output_path), vcodec="libx264", **x264_kwargs)
             .overwrite_output()
             .run(quiet=True)
         )

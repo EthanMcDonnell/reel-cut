@@ -79,6 +79,18 @@ class ZoomConfig(BaseModel):
     max: float = 1.0
 
 
+class EncodeVariationConfig(BaseModel):
+    # Per-hook encoder settings, deterministically seeded by output filename, so the three
+    # hooks are distinct *files* (different bitstream, different hash). Tier 0 render
+    # hygiene from INSTAGRAM_DEDUP_EVASION_PLAN.md: this defeats naive file/perceptual-hash
+    # clustering only. It is NOT a content-matching lever — measured jitter/crop results in
+    # that doc show SSCD and audio fingerprinting are unaffected by this class of change.
+    # Kept because it is free and touches nothing but the encoder.
+    enabled: bool = True
+    crf_jitter: int = 1          # libx264: +/- CRF steps around the x264 default (23)
+    bitrate_jitter: float = 0.08  # videotoolbox: +/- fraction of the 8000k base bitrate
+
+
 class OutputConfig(BaseModel):
     format: str = "9:16"
     resolution: list[int] = Field(default=[1080, 1920])
@@ -89,6 +101,7 @@ class OutputConfig(BaseModel):
     location: str = "./output/"
     render_workers: int = 8
     zoom: ZoomConfig = Field(default_factory=ZoomConfig)
+    encode_variation: EncodeVariationConfig = Field(default_factory=EncodeVariationConfig)
 
     @field_validator("resolution")
     @classmethod
