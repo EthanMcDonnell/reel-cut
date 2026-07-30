@@ -367,10 +367,11 @@ not pad the span with adjacent narration just to clear the number — a diagram 
 about something else is worse than no diagram. Report every figure dropped this way in the Final
 Output, since it usually means Stage 3 didn't write the passage the diagram needed.
 
-**Don't let two overlays collide.** If a screenshot from Stage 4 already occupies part of the
-span, hand the figure a non-overlapping stretch — typically start the figure where the
-screenshot's `trigger_go_away_word` ends. The span gate still applies to what's left; if the
-remainder is too short, that figure fails the gate.
+**Do not shorten a figure to avoid a screenshot.** Overlap is handled by the renderer, not by
+you: `_assign_slots` gives the figure the centre slot and displaces the overlapping screenshot to
+a corner, so both show at once. A figure may and should span straight across any screenshots
+sitting inside its passage. Truncating the span to dodge them is the main way a diagram ends up
+flashed on one sentence — the thing this gate exists to prevent.
 
 ### Step 4b.3: Select
 
