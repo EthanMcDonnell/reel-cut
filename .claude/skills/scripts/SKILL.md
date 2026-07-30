@@ -24,7 +24,8 @@ The default voice above is the polished explainer. When writing for a series, **
 ## Audience & Scope
 - **Audience:** tech-curious viewers swiping through social media. Step through concepts clearly; assume no prior knowledge.
 - **One topic only:** don't cram multiple concepts. One thing, explained well.
-- **Technology first:** any technology a high-school CS student wouldn't understand needs explaining.
+- **Technology first:** any technology a high-school CS student wouldn't understand needs explaining. Gloss it at first mention or replace it with plain language — prefer replacing, it's usually cheaper ("Canva's front door servers" beats "the gateway, the servers every request hits first"). Never swap the source's jargon for your own coinage; "durable copy" is no better than "fully durable configuration" if neither is explained.
+  - **This rule outranks the word count.** An unexplained term is never what you cut to fit the cap. If you can't afford to explain a term, the script has too many mechanisms — cut a mechanism, not the explanation. If every remaining mechanism is load-bearing for a hook, that's the signal to split it into two scripts, one per hook.
 - **Learning payoff:** the viewer must walk away able to explain the core mechanism to someone else. Don't just surprise them — teach. Use analogies to make abstract concepts concrete and sticky.
 - **Word count:** use only as many words as the topic needs — never pad. Shorter wins: the channel's 100k-view performers run ~175 words. Hard cap 190. Simple concepts should land under 130; reach toward 190 only when the topic genuinely needs more steps.
 
@@ -106,3 +107,4 @@ This is not a documentation template — it is the literal output format. Do not
 - **Questions to raise:** ask the user before writing if any requirement is vague, doesn't make sense, or contradicts another.
 - **Mandatory post-write review:** after writing and before saving or delivering, invoke the **stop-slop** skill on the output and fix every issue it flags. Do not skip this step.
 - **Mandatory comprehension pass:** stop-slop catches prose slop, not missing logic. So also read the script back as a viewer who knows nothing about the topic and, for every noun and every number, ask "was I told why this exists?" Anything that arrives unexplained either earns a clause or gets cut — and the words come from tightening elsewhere, not from raising the cap.
+- **Mandatory jargon sweep:** as part of that pass, list out every technical term and proper noun in the draft — infrastructure words ("gateway", "pod", "cluster"), storage and protocol names ("S3", "MySQL", "Redis"), and complexity or systems vocabulary ("O(N squared)", "durable", "idempotent"). Go term by term: each one is glossed at first mention, replaced with plain language, or cut. Listing them explicitly is the point — jargon reads as normal prose to whoever wrote it, so it only surfaces when you enumerate it.
