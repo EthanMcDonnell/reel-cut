@@ -31,13 +31,19 @@ FALLBACK_SUBJECT="chore: auto-commit claude changes"   # safety-net only (re-wak
 
 ARG_SUBJECT="${1:-}"
 
+# The Stop-hook role gets the payload (and the session id in it) on stdin; the committer
+# role is run from Bash with a subject and no stdin, so don't read there — it would block
+# on a terminal — and let claude-session-paths.sh fall back to the env var.
+PAYLOAD=""
+[ -n "$ARG_SUBJECT" ] || PAYLOAD="$(cat 2>/dev/null || true)"
+
 DIR="${CLAUDE_PROJECT_DIR:-$PWD}"
 cd "$DIR" || exit 0
 git rev-parse --git-dir >/dev/null 2>&1 || exit 0
 GITDIR="$(git rev-parse --git-dir)"
-BASE_FILE="$GITDIR/claude-baseline"
-UNTR_FILE="$GITDIR/claude-untracked-baseline"
-TOUCH_FILE="$GITDIR/claude-touched-files"   # repo-relative paths Claude's tools wrote (see claude-touched.sh)
+# Per-session markers: baseline SHA, untracked list, and the repo-relative paths Claude's
+# tools wrote (see claude-touched.sh). Sets BASE_FILE / UNTR_FILE / TOUCH_FILE.
+. "$(dirname "$0")/claude-session-paths.sh"
 
 # No baseline → session started before the hook existed. Do nothing; the /commit-mine
 # skill handles that case by staging hunks manually.
@@ -75,10 +81,19 @@ filter_touched() {
 CHANGED="$(printf '%s\n' "$CHANGED" | filter_touched)"
 NEW="$(printf '%s\n' "$NEW" | filter_touched)"
 
+# Files Claude's tools wrote that differ from HEAD but NOT from the baseline: their lines
+# can't be isolated, so they'd be dropped from the commit with nothing said. Per-session
+# markers should prevent this; if it happens anyway, report it rather than lose the work.
+STRANDED=""
+if [ -s "$TOUCH_FILE" ]; then
+  STRANDED="$(comm -12 <(git diff --name-only HEAD -- "${TARGETS[@]}" | sort -u) <(sort -u "$TOUCH_FILE") \
+              | comm -23 - <(printf '%s\n' "$CHANGED" | sort -u))"
+fi
+
 HAVE=0
 [ -n "$CHANGED" ] && HAVE=1
 [ -n "$NEW" ] && HAVE=1
-echo "  baseline=$BASE  HAVE=$HAVE  changed=[$(echo $CHANGED)]  new=[$(echo $NEW)]" >> "$DEBUG_LOG"
+echo "  baseline=$BASE  HAVE=$HAVE  changed=[$(echo $CHANGED)]  new=[$(echo $NEW)]  stranded=[$(echo $STRANDED)]" >> "$DEBUG_LOG"
 
 # Stage Claude's lines and commit them under the given subject. Re-baselines on success.
 do_commit() {
@@ -95,6 +110,11 @@ do_commit() {
     [ -n "$f" ] || continue
     git add -- "$f" && staged=1
   done <<< "$NEW"
+
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    echo "commit-mine: $f matches the session baseline (another session re-baselined?) — commit it by hand."
+  done <<< "$STRANDED"
 
   [ "$staged" -eq 1 ] || { echo "commit-mine: nothing of mine could be staged."; return 0; }
   git diff --cached --quiet && return 0
@@ -118,14 +138,19 @@ json_escape() {
 
 # ---- Role 1: committer (session passed a message) --------------------------------------
 if [ -n "$ARG_SUBJECT" ]; then
-  [ "$HAVE" -eq 1 ] || { echo "commit-mine: nothing of mine to commit."; exit 0; }
+  if [ "$HAVE" -eq 0 ]; then
+    [ -n "$STRANDED" ] || { echo "commit-mine: nothing of mine to commit."; exit 0; }
+    printf '%s\n' "$STRANDED" | while IFS= read -r f; do
+      [ -n "$f" ] && echo "commit-mine: $f matches the session baseline (another session re-baselined?) — commit it by hand."
+    done
+    exit 0
+  fi
   do_commit "$ARG_SUBJECT"
   exit 0
 fi
 
 # ---- Role 2: Stop-hook detector (no arg, stdin = payload) ------------------------------
-PAYLOAD="$(cat 2>/dev/null || true)"
-[ "$HAVE" -eq 1 ] || exit 0   # nothing of mine pending — let the turn end
+[ "$HAVE" -eq 1 ] || [ -n "$STRANDED" ] || exit 0   # nothing of mine pending — let the turn end
 
 case "$PAYLOAD" in
   *'"stop_hook_active":true'*|*'"stop_hook_active": true'*) STOP_ACTIVE=1 ;;
@@ -140,5 +165,8 @@ fi
 # First stop with pending changes: re-wake the session to author the message in context.
 FILES="$(printf '%s\n%s\n' "$CHANGED" "$NEW" | grep -v '^[[:space:]]*$' | sort -u | tr '\n' ' ')"
 REASON="You changed tracked files under one of the auto-commit dirs (reelcut/ tests/ scrape/ .claude/ config.yaml) this turn ($FILES) but haven't committed it. Review your own diff for those files and commit JUST your changes (not the user's pre-existing edits) with a context-aware conventional-commits subject you write from this session — run: bash .claude/scripts/commit-mine.sh \"<subject>\". Do not describe changes you didn't make."
+if [ -n "$STRANDED" ]; then
+  REASON="$REASON These files you edited are indistinguishable from this session's baseline, so the script cannot isolate them ($(printf '%s' "$STRANDED" | tr '\n' ' ')): check their diff yourself, and if it is all yours, stage and commit those files by hand."
+fi
 printf '{"decision":"block","reason":%s}\n' "$(printf '%s' "$REASON" | json_escape)"
 exit 0

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # PostToolUse(Edit|Write|MultiEdit) hook — record the repo-relative path of every file
-# Claude's OWN tools write this session, into .git/claude-touched-files.
+# Claude's OWN tools write this session, into this session's touched-files marker
+# (.git/claude-sessions/<session-id>/touched-files).
 #
 # Why: commit-mine.sh used to decide "is this Claude's change?" purely from a git snapshot
 # (the SessionStart baseline). But a point-in-time snapshot cannot tell a user's edit that
@@ -22,8 +23,10 @@ else
 fi
 [ -n "$FP" ] || exit 0
 
+. "$(dirname "$0")/claude-session-paths.sh"   # PAYLOAD carries session_id
+
 # Normalize to a repo-relative path so it compares equal to `git diff --name-only` output.
 case "$FP" in /*) ABS="$FP" ;; *) ABS="$DIR/$FP" ;; esac
 REL="${ABS#"$TOP"/}"
-printf '%s\n' "$REL" >> "$GITDIR/claude-touched-files"
+printf '%s\n' "$REL" >> "$TOUCH_FILE"
 exit 0
