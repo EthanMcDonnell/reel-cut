@@ -367,11 +367,18 @@ not pad the span with adjacent narration just to clear the number — a diagram 
 about something else is worse than no diagram. Report every figure dropped this way in the Final
 Output, since it usually means Stage 3 didn't write the passage the diagram needed.
 
-**Do not shorten a figure to avoid a screenshot.** Overlap is handled by the renderer, not by
-you: `_assign_slots` gives the figure the centre slot and displaces the overlapping screenshot to
-a corner, so both show at once. A figure may and should span straight across any screenshots
-sitting inside its passage. Truncating the span to dodge them is the main way a diagram ends up
-flashed on one sentence — the thing this gate exists to prevent.
+**One overlay on screen at a time.** Never plan a figure and a screenshot to be visible together.
+The viewer can only read one thing while you narrate one thing, and the script never describes two
+at once. The renderer does displace an overlapping screenshot to a corner rather than dropping it
+(`_assign_slots` in `reelcut/image_overlay.py`), but that is a safety net for accidental pile-ups,
+not a layout to design for.
+
+So when a screenshot from Stage 4 falls inside a figure's passage, **the figure keeps the span and
+the screenshot is removed** — delete that entry from `manifest.json`. Do not resolve it the other
+way by shortening the figure: truncating a diagram to dodge a screenshot is the main way it ends up
+flashed on one sentence, which is what this gate exists to prevent. Losing the text crop costs
+little, since a diagram covering that passage usually shows the same number the screenshot proved.
+List every screenshot removed this way in the Final Output.
 
 ### Step 4b.3: Select
 
