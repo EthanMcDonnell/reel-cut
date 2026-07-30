@@ -121,7 +121,7 @@ do_commit() {
 
   FILES="$(git diff --cached --name-only | tr '\n' ' ')"
   git commit -q -m "$subject" \
-    -m "Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>" || return 0
+    -m "Co-Authored-By: Claude <noreply@anthropic.com>" || return 0
 
   NEWBASE="$(git stash create 2>/dev/null || true)"
   [ -n "$NEWBASE" ] || NEWBASE="$(git rev-parse HEAD)"
