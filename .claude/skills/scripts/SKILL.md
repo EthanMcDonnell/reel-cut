@@ -46,6 +46,13 @@ Take the viewer on a journey of discovery, not a lecture — they should feel li
   - Bad: "Computers are deterministic by nature." (too abstract, skips the journey)
 - **Narrative causality:** read the finished script as a causal chain. Does A actually cause B? Can B happen before A? Every step must follow from the previous — critical in incident post-mortems where sequence is the whole point.
 - **Connect components explicitly:** when two concepts combine to create an effect, show the connection at the moment it matters — don't introduce them separately and leave the viewer to bridge the gap.
+- **Rejected alternatives earn the solution:** when the source rejects an approach before landing on the real one, give the rejection its own beat with the consequence spelled out. Compressed into a subordinate clause it makes the solution look arbitrary — the viewer never feels why the obvious fix failed, so "here's the clever part" is unearned.
+  - Bad: "Redis was the obvious fix, but it isn't durable and you're still babysitting a cluster." (two undefined objections in one clause)
+  - Good: "Redis was the obvious fix, but Redis isn't a durable copy, so MySQL stays underneath and they'd be babysitting a cluster on top."
+- **No unexplained parameters:** any number that is a design knob — window sizes, intervals, chunk sizes, thresholds — carries its reason in the same or next sentence, or gets cut. Introduce it at the beat where it does work, never earlier, and never twice. Outcome numbers ("memory dropped 87.5%") stand alone and need no justification.
+  - Bad: "every gateway holds 12 hours of those in memory" (why 12?)
+  - Good: "a booting pod only grabs the last 12 hours, since every cookie refreshes by then"
+- **One antecedent per pronoun:** never open a sentence with It/They/This when the previous sentence introduced more than one noun. Name the thing instead.
 - **Determinism vs luck:** if something is guaranteed and attacker-controlled, say so. Vague phrasing implies coincidence; make precision legible.
 - **Examples need a verifiable mechanism:** any example illustrating risk must show a traceable path from cause to harm. If you can't explain it end-to-end, find a better example.
 - **Be precise about claim strength:** don't imply equivalence between things of different weight. Overstatement breaks trust.
@@ -98,3 +105,4 @@ This is not a documentation template — it is the literal output format. Do not
 ## Process
 - **Questions to raise:** ask the user before writing if any requirement is vague, doesn't make sense, or contradicts another.
 - **Mandatory post-write review:** after writing and before saving or delivering, invoke the **stop-slop** skill on the output and fix every issue it flags. Do not skip this step.
+- **Mandatory comprehension pass:** stop-slop catches prose slop, not missing logic. So also read the script back as a viewer who knows nothing about the topic and, for every noun and every number, ask "was I told why this exists?" Anything that arrives unexplained either earns a clause or gets cut — and the words come from tightening elsewhere, not from raising the cap.

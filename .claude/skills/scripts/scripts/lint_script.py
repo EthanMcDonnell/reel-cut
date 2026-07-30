@@ -177,9 +177,9 @@ def lint(lines):
                 n_hooks += 1
             continue
         words += len(s.split())
-    if words > 230:
+    if words > 190:
         note = f"body only, {n_hooks} hooks excluded" if n_hooks else "body only"
-        warns.append((0, "word-count", f"{words} words of content ({note}; hard cap 230)"))
+        warns.append((0, "word-count", f"{words} words of content ({note}; hard cap 190)"))
 
     return errors, warns
 
