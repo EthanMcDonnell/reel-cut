@@ -160,6 +160,7 @@ def lint(lines):
     # tag, so both are excluded from the cap — only SCRIPT + CONCLUSION, the
     # shared body, counts. Also excludes headers and reference URLs.
     words, n_hooks = 0, 0
+    body = []
     section, in_refs = None, False
     for s in stripped:
         if s == "**REFERENCES:**":
@@ -177,9 +178,19 @@ def lint(lines):
                 n_hooks += 1
             continue
         words += len(s.split())
+        body.append(s)
     if words > 190:
         note = f"body only, {n_hooks} hooks excluded" if n_hooks else "body only"
         warns.append((0, "word-count", f"{words} words of content ({note}; hard cap 190)"))
+
+    # Per-sentence length. A spoken sentence past ~25 words has chained one
+    # clause too many, burying the reveal under its own qualifiers. Across the
+    # existing script library only the weakest script trips this, so the
+    # threshold flags real run-ons rather than ordinary long sentences.
+    for sentence in re.split(r"(?<=[.!?])\s+", " ".join(body)):
+        n = len(sentence.split())
+        if n > 25:
+            warns.append((0, "sentence-length", f"{n}-word sentence; split it: \"{sentence}\""))
 
     return errors, warns
 

@@ -54,6 +54,10 @@ Take the viewer on a journey of discovery, not a lecture — they should feel li
   - Bad: "every gateway holds 12 hours of those in memory" (why 12?)
   - Good: "a booting pod only grabs the last 12 hours, since every cookie refreshes by then"
 - **One antecedent per pronoun:** never open a sentence with It/They/This when the previous sentence introduced more than one noun. Name the thing instead.
+- **Transitions carry weight:** "then", "so", "and now" only earn their place when the previous sentence set up what follows. A bare "Then X started happening" after a present-tense standing fact has no moment to follow from — the connective fakes a causal link the script never made. Supply the hinge that makes the turn inevitable before you turn.
+  - Bad: "…a deny-list every gateway keeps in memory. Then deploys started hurting."
+  - Good: "…a deny-list every gateway keeps in memory. And memory starts empty. So every deploy…"
+- **Watch the tense seam:** setup runs in present tense (how the system works today), the problem runs in past (what went wrong). Crossing between them without a bridge is where flow breaks most often — that's the same seam the example above repairs.
 - **Determinism vs luck:** if something is guaranteed and attacker-controlled, say so. Vague phrasing implies coincidence; make precision legible.
 - **Examples need a verifiable mechanism:** any example illustrating risk must show a traceable path from cause to harm. If you can't explain it end-to-end, find a better example.
 - **Be precise about claim strength:** don't imply equivalence between things of different weight. Overstatement breaks trust.
