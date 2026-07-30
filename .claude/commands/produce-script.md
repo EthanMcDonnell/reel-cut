@@ -97,6 +97,38 @@ If no usable content can be resolved from the prompt, abort with: "Could not res
 
 Once `SERIES` is resolved (and it is not `misc`), **read `series/<SERIES>.md`** — that file is the source of truth for this series' identity, voice profile (register, target length, CTA), and best hooks. It drives Stage 0.5 (spine), Stage 1 (hooks), and Stage 3 (voice). The canonical slugs are `tbbt`, `updates`, `tech-in-one-breathe`, `interesting-tech`, `ai-fundamentals`; `misc` has no file and uses the `scripts` skill's default voice.
 
+### Fix the video slug
+
+Choose the `<video-slug>` **now**: kebab-case, describing the topic (e.g. `canva-session-revocations-s3`). Everything downstream uses it — the figures and screenshots in `assets/<video-slug>/`, and the script filename in Stage 3.5. Pick it once here rather than letting the script filename decide it later, because Stage 0.4 needs somewhere to write before the script exists.
+
+## Stage 0.4 — Harvest Source Figures
+
+Figures are explanatory images the article already contains — **charts** and **diagrams** — reused as on-screen overlays. A chart is the visual proof of a shocking number; a diagram shows how a system works.
+
+**This runs before the script is written, and that ordering is the point.** A diagram has to stay on screen for 5–8 seconds and the narration has to still be about that system the whole time. A script written blind to the available figures usually has no passage that long, so the figure gets retrofitted onto one short line and flashed. Knowing what diagrams exist *before* Stage 3 lets the body be written with somewhere for them to live. Selection and anchoring still happen later, at Stage 4b, once there's a script to match against.
+
+### Step 0.4.1: Harvest candidates
+
+For each source URL, run:
+
+```bash
+.venv/bin/python scrape/figure_finder.py --url "<source_url>" --output-dir "assets/<video-slug>/"
+```
+
+It writes candidate images to `assets/<video-slug>/figures/` and metadata to `assets/<video-slug>/figure_candidates.json` (each entry: `file`, `figcaption`, `alt`, `heading`, `surrounding_text`, `format`, `width`/`height`, `score`). The deterministic prefilter has already dropped icons/avatars/logos/ads/banners/hero images; what remains is worth a look. If `candidates` is empty, record `FIGURES_AVAILABLE: none` and skip Stage 4b entirely.
+
+### Step 0.4.2: Look at each candidate and judge it
+
+**Use the Read tool on each `figures/figure-NN.*` image** and judge it, grounded by its `figcaption`/`alt`/`surrounding_text` from the candidates JSON:
+
+- **`is_usable`** — an informative chart or diagram, not a photo/headshot/decorative/logo. Drop anything that isn't.
+- **`kind`** — `chart` (bars/curves/comparisons of numbers) or `diagram` (architecture / flow / sequence / how-it-works). v1 uses only these two; drop tables, UI screenshots, and photos.
+- **`legibility`** — **would it read on a 9:16 phone screen?** A dense diagram with tiny text or a busy multi-panel chart is a drop — an unreadable figure hurts more than none. Aspect ratio matters as much as resolution: a 2.7:1 panorama shrinks to nothing in a vertical frame however many pixels it has.
+
+If reading the images fails or the user asks you not to, say so plainly and judge from `figcaption`/`alt`/`surrounding_text` and the dimensions instead — then flag in the Final Output that legibility was inferred, not seen.
+
+Carry the survivors forward as `FIGURES_AVAILABLE` — for each, its `file`, `kind`, and a one-line description of what it shows. Stage 0.5 and Stage 3 both read this.
+
 ## Stage 0.5 — Script Spine
 
 The **spine** is what the video is actually about: the crux mechanism it explains and the reframe it lands at the end. It is the single biggest driver of whether the video works, because it decides what the viewer *stays* for. It is not the hook and not a framing — it is the story the body tells. Build it from the `topic_package`, drawing the payoff from `HOW_IT_WAS_SOLVED`, not just the surprising fact.
@@ -147,6 +179,10 @@ HOOK 3: <HOOK_3 text>
 
 Each hook must independently lead into the **same** body, so any split (hook N + the body) stands alone as a complete video. Keep the "why should I care" stakes sentence at the **start of `**SCRIPT**`**, not attached to any single hook, so it is shared across every variant. No blank lines.
 
+**If `FIGURES_AVAILABLE` contains a `diagram`, the body must give it somewhere to live.** Write **one sustained walk-through passage** — several consecutive sentences, **25+ words**, staying on that one system the whole way — describing what the diagram shows. This is not a request to narrate the picture: never write "as you can see in this diagram" or otherwise point at it. The viewer should just be hearing the system explained for long enough that a diagram can sit on screen and be read while they listen. Absent this, Stage 4b has nothing to anchor to and the diagram gets dropped.
+
+This runs *with* the series voice, not against it. Punchy one-line delivery is still correct everywhere else in the body — spend the length in one place, on the mechanism the diagram illustrates, and keep the rest tight. If the spine's crux genuinely doesn't warrant a sustained passage, don't manufacture one to justify a figure: drop the figure instead. The script serves the video, not the assets.
+
 For every claim, stat, or quote that will appear in the script:
 
 1. **Locate it verbatim** in `FULL_CONTENT`. Drop any quote that doesn't appear there.
@@ -160,7 +196,7 @@ Any claim that cannot be traced to a specific sentence in `FULL_CONTENT` is cut,
 After the script is written, save it:
 
 1. Save to `{VAULT_VIDEOS_TODO}`
-2. Use kebab-case filename describing the topic (e.g. `netflix-cdn-architecture.md`)
+2. Filename is `<video-slug>.md` — the slug already fixed in Stage 0 (e.g. `netflix-cdn-architecture.md`), so it matches `assets/<video-slug>/`
 3. No empty lines in the saved file
 4. Ignore any other existing `.md` files in the `Videos/` folder — do not read, reference, or modify them
 5. **Run the deterministic QC linter and block on it.** It catches mechanical defects (em dashes, banned throat-clearing openers, missing apostrophes, format and blank-line violations) that self-review keeps missing:
@@ -286,7 +322,7 @@ For each source URL, run:
   --snippets '[{"article_snippet": "verbatim phrase 1", "script_context": "exact script line", "trigger_show_word": "anchor in", "trigger_go_away_word": "the line"}, {"article_snippet": "verbatim phrase 2", "script_context": "...", "trigger_show_word": "...", "trigger_go_away_word": "..."}, ...]'
 ```
 
-Where `<video-slug>` matches the saved script filename (without `.md`).
+Where `<video-slug>` is the slug fixed in Stage 0 (the same one Stage 0.4 harvested figures into).
 
 If a source URL is a Reddit post, use the linked article URL instead (already fetched in Stage 0).
 
@@ -299,50 +335,44 @@ The JSON result includes a `snippets` array — one entry per requested snippet 
 - **Flag any `highlight: "whole_block"`** — the exact phrase couldn't be pinpointed so the whole paragraph was coloured; the screenshot shows a wall of highlight rather than the specific proof. Worth eyeballing, and often fixed by trimming the `article_snippet` to a span that matches the live page verbatim and re-running.
 - If `skipped` is non-null, the whole page failed to load — report that reason; no screenshots were captured for that URL.
 
-## Stage 4b — Source Figures (article charts & diagrams)
+## Stage 4b — Match Figures to Script Beats
 
-Separate from text screenshots (which crop article *prose* to prove a claim), figures are
-explanatory images the article already contains — **charts** and **diagrams** — reused as
-on-screen overlays. A chart is the visual proof of a shocking number; a diagram shows how a
-system works. This stage is deterministic-harvest-then-you-look: `figure_finder.py` finds and
-filters candidates; **you** read the images and pick the good ones.
+The usable charts and diagrams were already harvested and judged in Stage 0.4 and carried
+forward as `FIGURES_AVAILABLE`. If it is `none`, skip to Final Output. This stage does the half
+that needed a finished script: anchoring each figure to the beat it supports.
 
-### Step 4b.1: Harvest candidates
+### Step 4b.1: Match to a script beat
 
-For each source URL, run:
-
-```bash
-.venv/bin/python scrape/figure_finder.py --url "<source_url>" --output-dir "assets/<video-slug>/"
-```
-
-It writes candidate images to `assets/<video-slug>/figures/` and metadata to
-`assets/<video-slug>/figure_candidates.json` (each entry: `file`, `figcaption`, `alt`,
-`heading`, `surrounding_text`, `format`, `width`/`height`, `score`). The deterministic prefilter
-has already dropped icons/avatars/logos/ads/banners/hero images; what remains is worth a look.
-If `candidates` is empty, there were no usable figures — skip to Final Output.
-
-### Step 4b.2: Look at each candidate and judge it
-
-**Use the Read tool on each `figures/figure-NN.*` image** and judge it, grounded by its
-`figcaption`/`alt`/`surrounding_text` from the candidates JSON:
-
-- **`is_usable`** — an informative chart or diagram, not a photo/headshot/decorative/logo. Drop
-  anything that isn't.
-- **`kind`** — `chart` (bars/curves/comparisons of numbers) or `diagram` (architecture / flow /
-  sequence / how-it-works). v1 uses only these two; drop tables, UI screenshots, and photos.
-- **`legibility`** — **would it read on a 9:16 phone screen?** A dense diagram with tiny text or
-  a busy multi-panel chart is a drop — an unreadable figure hurts more than none.
-
-### Step 4b.3: Match to a script beat and select
-
-Keep the ones that support a specific beat, matched by kind:
+Match by kind:
 
 - **`chart` → the stat beat** whose exact number the chart visualises (highest priority — it
   proves the "shocking number" a hook makes).
-- **`diagram` → the "here's how it works" passage** describing that system/flow. Anchor it to the
-  *whole* explanation, not a single clause, so `trigger_go_away_word` falls at the **end of the
-  walk-through** — a diagram has to be studied, and produce-video holds it ≥5s and across the
-  passage.
+- **`diagram` → the sustained walk-through passage** Stage 3 wrote for it. Anchor it to the
+  *whole* passage, not one clause.
+
+### Step 4b.2: Apply the span gate
+
+`script_context` is a ceiling, not a hint: produce-video can only hold a figure inside the span
+you give it, so a short span means a flashed figure or one stretched over narration that has
+moved on. Measure the span you're about to write — `trigger_show_word` through
+`trigger_go_away_word` — and check it against its kind:
+
+- **`diagram`: the anchored span must be 25+ words** (roughly 8s of speech) and stay on that one
+  system throughout. Multi-sentence is normal and expected here.
+- **`chart`: 10+ words.** A chart proves one number, so it can leave sooner — but never a flash.
+
+If a diagram's span falls short, in this order: **widen** it to take in the neighbouring
+sentences, provided they're still about the same system; if they aren't, **drop the figure**. Do
+not pad the span with adjacent narration just to clear the number — a diagram held over words
+about something else is worse than no diagram. Report every figure dropped this way in the Final
+Output, since it usually means Stage 3 didn't write the passage the diagram needed.
+
+**Don't let two overlays collide.** If a screenshot from Stage 4 already occupies part of the
+span, hand the figure a non-overlapping stretch — typically start the figure where the
+screenshot's `trigger_go_away_word` ends. The span gate still applies to what's left; if the
+remainder is too short, that figure fails the gate.
+
+### Step 4b.3: Select
 
 **Cap at ≤3 figures per video**, and drop redundant ones (two figures of the same system → keep
 the more legible / higher-resolution). Figures hold longer and take more screen space than a
@@ -369,8 +399,8 @@ figure equivalent of the screenshot manifest — it records the *selection* and 
 ```
 
 - `script_context` — copy the supported script line **verbatim** from the script. For a `diagram`,
-  copy the **whole explanation passage** (the several sentences that walk through the system), not
-  one line, so `trigger_go_away_word` can sit at the end of the walk-through.
+  copy the **whole walk-through passage** (the several sentences that explain the system), not one
+  line, so `trigger_go_away_word` can sit at the end of the walk-through and clear the span gate.
 - `trigger_show_word` / `trigger_go_away_word` — short verbatim anchors from **inside**
   `script_context`, marking where the figure appears and disappears. Same rules as screenshot
   triggers; leave `""` if no clean anchor and produce-video spans the whole line.
@@ -384,6 +414,6 @@ Report to the user:
 - Viewer resources: the comment CTA line (keyword + lead magnet), and the shipped links (2 max, plus the source article) appended to the script file. Note any verified candidate you cut, in case the user wants a different lead magnet
 - Screenshots saved to: `assets/<slug>/`
 - Screenshot results: how many captured (with the exact/fuzzy breakdown), and explicitly list any snippets that were **not found** so the user knows which claims lack on-screen evidence
-- Figures: how many charts/diagrams were selected (with `kind` and the beat each supports), the count of candidates harvested vs. kept, and where they were saved (`assets/<slug>/figures/`, `figures.json`)
+- Figures: how many charts/diagrams were selected (with `kind` and the beat each supports), the count of candidates harvested vs. kept, and where they were saved (`assets/<slug>/figures/`, `figures.json`). Call out each figure **dropped by the span gate** and the span it fell short by — that means the body never got the sustained passage the diagram needed, and is worth a script edit. Say so if legibility was judged from metadata rather than from reading the images
 - Unsupported claims: any checkable claim you dropped at selection time because the source didn't state it verbatim (Step 4.1.2) — the user may want to re-source or soften it
 - Any warnings (near-tie runner-up available, low-confidence fuzzy matches, skipped screenshots, etc.)
