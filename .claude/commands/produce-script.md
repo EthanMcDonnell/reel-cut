@@ -185,7 +185,7 @@ Think about what *this specific audience* (developers/builders watching a `SERIE
 
 **Hard gate — every resource must be about a technology, system, paper, or company the article actually names.** Check the resource's subject against `FULL_CONTENT` the same way you check a claim: if the article says "a column-oriented key-value database" but never names Bigtable, you may **not** add a Bigtable paper — the article didn't cite it, so the tie is fabricated. Either find a resource for something the article *does* name (in this example the article does name "Direct Preference Optimization" and "LLM as a judge", so those are fair game), or generalise the resource so it doesn't claim a specific product the source never mentioned. A resource for tech the article doesn't name is not a go-deeper, it's an invented association. Reach for a generic third-party tool only when nothing article-named fits, and never in violation of this gate.
 
-Generate **4–6 candidate resources**, pulling from different categories so they diverge — don't return six of the same kind:
+Generate **3–4 candidate resources**, pulling from different categories so they diverge — don't return four of the same kind. Only one or two of these ship (see Step 3.6.4), so the spread exists to give you a real choice, not to fill a list:
 
 - **Steal-this asset** — a free template, cheatsheet, boilerplate, config, checklist, or diagram the viewer can copy and use today. Highest comment-bait pull ("I want that").
 - **Hands-on / try-it-yourself** — a playground, sandbox, interactive demo, or online tool that lets them *experience* the concept from the video themselves.
@@ -218,19 +218,33 @@ Write the CTA and the resources in **two** places, **no blank lines anywhere** (
 Want <resource>? Comment "<KEYWORD>" and I'll send it over.
 ```
 
-2. Append the resources block to the **end** of the file, **after** the `**REFERENCES:**` section. Keep it **concise and free of em dashes** — one resource per pair of lines: a short label naming what it is on the first line, the bare URL on the second. The lead magnet's label starts with `Lead Magnet`; the source article uses the fixed label `Reference article for the video`. No blank lines anywhere (the linter still blocks on them):
+2. Append the resources block to the **end** of the file, **after** the `**REFERENCES:**` section. One resource per pair of lines: a short label on the first line, the bare URL on the second. No blank lines anywhere (the linter still blocks on them):
 
 ```
 **VIEWER RESOURCES:**
-Lead Magnet (<name>):
+Lead Magnet: <name>
 <url>
-Go Deeper (<name>):
-<url>
-Hands-on (<name>):
+<name>
 <url>
 Reference article for the video:
 <url>
 ```
+
+**Two resource links maximum**, plus the source article link(s), which always go last and don't count against the two. The lead magnet on its own, followed by the article, is a finished list. Add the second resource only when it covers ground the lead magnet doesn't; a second link that overlaps the first is worse than no second link. Everything else you verified stays out.
+
+If the script drew on more than one source article, list each article URL under the reference label, one per line.
+
+**Label rules — a label is a name, not a pitch:**
+
+- **Six words or fewer**, and free of em dashes. Name the thing the way its own page names it.
+- No parenthetical explanation of why the viewer wants it. The URL is one line down; they can look.
+- No category names (`Go Deeper`, `Hands-on`, `Go-deeper canonical`, `The real source`). Those are your sorting buckets from Step 3.6.1, not words a viewer needs.
+- No hype or endorsement adjectives: `exact`, `actual`, `complete`, `ultimate`, `definitive`, `deep dive`, `everything you need`.
+- Only two labels are fixed: the lead magnet's starts with `Lead Magnet:`, and the source article's is `Reference article for the video:` (`Reference articles for the video:` when there are several).
+
+Good: `Lead Magnet: AWS guide to S3 conditional writes` / `ZooKeeper leader election recipe` / `GLM-5.2 open weights on Hugging Face`
+
+Bad: `Lead Magnet (AWS Storage Blog, building multi writer applications on S3 with conditional writes, the exact If-Match pattern Canva used, with code):` — it is three labels stapled together, it argues for the link, and nobody reads that far.
 
 Then re-run the linter and confirm it still passes:
 
@@ -366,7 +380,7 @@ Report to the user:
 
 - Prompt resolved as: [URL / file reference / phrase] → [TOPIC] ([SERIES])
 - Script saved to: [file path]
-- Viewer resources: the comment CTA line (keyword + lead magnet), and the full verified resource list appended to the script file
+- Viewer resources: the comment CTA line (keyword + lead magnet), and the shipped links (2 max, plus the source article) appended to the script file. Note any verified candidate you cut, in case the user wants a different lead magnet
 - Screenshots saved to: `assets/<slug>/`
 - Screenshot results: how many captured (with the exact/fuzzy breakdown), and explicitly list any snippets that were **not found** so the user knows which claims lack on-screen evidence
 - Figures: how many charts/diagrams were selected (with `kind` and the beat each supports), the count of candidates harvested vs. kept, and where they were saved (`assets/<slug>/figures/`, `figures.json`)

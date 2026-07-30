@@ -49,6 +49,14 @@ APOSTROPHE = [
     "wheres", "theres", "whos", "youll", "theyll", "youd", "theyd",
 ]
 
+# Category tags and hype that belong nowhere in a resource label.
+RESOURCE_BANNED_LABELS = [
+    "go deeper", "go-deeper", "hands-on", "hands on", "the real source",
+    "steal this", "steal-this", "build-it", "adjacent tool", "canonical",
+    "deep dive", "deep-dive", "the exact", "the actual", "definitive",
+    "ultimate", "everything you need",
+]
+
 # Softer banned phrases — surfaced, but not blocking.
 WARN_PHRASES = [
     "it turns out", "the truth is", "the reality is", "make no mistake",
@@ -112,6 +120,33 @@ def lint(lines):
         if re.match(r"\s*(so|look)[ ,]", low):
             opener = "So" if low.lstrip().startswith("so") else "Look"
             warns.append((i, "opener", f'line opens with "{opener}"; start with the content'))
+
+    # Viewer resources block: short list, short labels. Labels are names, not
+    # pitches, so a long one is always a run-on justification or a category tag.
+    if "**VIEWER RESOURCES:**" in stripped:
+        start = stripped.index("**VIEWER RESOURCES:**")
+        urls, in_ref_links = 0, False
+        for i, s in enumerate(stripped[start + 1:], start + 2):
+            if s.startswith("http"):
+                if not in_ref_links:  # source article links are uncapped
+                    urls += 1
+                continue
+            label = s.rstrip(":")
+            if label.lower().startswith("lead magnet"):  # fixed prefix, not part of the name
+                label = label[len("lead magnet"):].lstrip(": ")
+            if label.lower().startswith("reference article"):
+                in_ref_links = True
+                continue  # fixed label
+            low_label = label.lower()
+            if "—" in label:
+                errors.append((i, "resource-label", "em dash in resource label; use a comma or cut it"))
+            for tag in RESOURCE_BANNED_LABELS:
+                if tag in low_label:
+                    errors.append((i, "resource-label", f'label says "{tag}"; name the resource instead'))
+            if len(label.split()) > 6:
+                errors.append((i, "resource-label", f"label is {len(label.split())} words; 6 or fewer, no explanation"))
+        if urls > 2:
+            errors.append((start + 1, "resource-count", f"{urls} resource links; 2 maximum, not counting the source article(s)"))
 
     # Optional **CTA**, if present, must sit between CONCLUSION and REFERENCES.
     if "**CTA**" in stripped:
