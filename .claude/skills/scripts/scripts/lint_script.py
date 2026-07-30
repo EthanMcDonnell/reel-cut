@@ -51,7 +51,7 @@ APOSTROPHE = [
 
 # Category tags and hype that belong nowhere in a resource label.
 RESOURCE_BANNED_LABELS = [
-    "go deeper", "go-deeper", "hands-on", "hands on", "the real source",
+    "lead magnet", "go deeper", "go-deeper", "hands-on", "hands on", "the real source",
     "steal this", "steal-this", "build-it", "adjacent tool", "canonical",
     "deep dive", "deep-dive", "the exact", "the actual", "definitive",
     "ultimate", "everything you need",
@@ -132,12 +132,10 @@ def lint(lines):
                     urls += 1
                 continue
             label = s.rstrip(":")
-            if label.lower().startswith("lead magnet"):  # fixed prefix, not part of the name
-                label = label[len("lead magnet"):].lstrip(": ")
-            if label.lower().startswith("reference article"):
-                in_ref_links = True
-                continue  # fixed label
             low_label = label.lower()
+            if "reference article" in low_label:  # the source article label, fixed
+                in_ref_links = True
+                continue
             if "—" in label:
                 errors.append((i, "resource-label", "em dash in resource label; use a comma or cut it"))
             for tag in RESOURCE_BANNED_LABELS:

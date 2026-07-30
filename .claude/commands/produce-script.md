@@ -222,27 +222,28 @@ Want <resource>? Comment "<KEYWORD>" and I'll send it over.
 
 ```
 **VIEWER RESOURCES:**
-Lead Magnet: <name>
+<name> resource:
 <url>
-<name>
+<name> resource:
 <url>
-Reference article for the video:
+Video reference article:
 <url>
 ```
 
-**Two resource links maximum**, plus the source article link(s), which always go last and don't count against the two. The lead magnet on its own, followed by the article, is a finished list. Add the second resource only when it covers ground the lead magnet doesn't; a second link that overlaps the first is worse than no second link. Everything else you verified stays out.
+**Two resource links maximum**, plus the source article link(s), which always go last and don't count against the two. One resource followed by the article is a finished list. Add the second only when it covers ground the first doesn't; a second link that overlaps the first is worse than no second link. Everything else you verified stays out.
 
-If the script drew on more than one source article, list each article URL under the reference label, one per line.
+If the script drew on more than one source article, use `Video reference articles:` and list each URL under it, one per line.
+
+**The resource the CTA promises goes first.** That position is the only marker it needs, so nothing in the file says `Lead Magnet` — that is your word for it, not the viewer's, and the viewer is the one reading this block.
 
 **Label rules — a label is a name, not a pitch:**
 
-- **Six words or fewer**, and free of em dashes. Name the thing the way its own page names it.
+- Name the thing, then `resource:`. **Six words or fewer** including that word, and no em dashes.
 - No parenthetical explanation of why the viewer wants it. The URL is one line down; they can look.
-- No category names (`Go Deeper`, `Hands-on`, `Go-deeper canonical`, `The real source`). Those are your sorting buckets from Step 3.6.1, not words a viewer needs.
+- No category names (`Lead Magnet`, `Go Deeper`, `Hands-on`, `Go-deeper canonical`, `The real source`). Those are your sorting buckets from Step 3.6.1, not words a viewer needs.
 - No hype or endorsement adjectives: `exact`, `actual`, `complete`, `ultimate`, `definitive`, `deep dive`, `everything you need`.
-- Only two labels are fixed: the lead magnet's starts with `Lead Magnet:`, and the source article's is `Reference article for the video:` (`Reference articles for the video:` when there are several).
 
-Good: `Lead Magnet: AWS guide to S3 conditional writes` / `ZooKeeper leader election recipe` / `GLM-5.2 open weights on Hugging Face`
+Good: `S3 conditional writes resource:` / `ZooKeeper leader election resource:` / `GLM-5.2 open weights resource:`
 
 Bad: `Lead Magnet (AWS Storage Blog, building multi writer applications on S3 with conditional writes, the exact If-Match pattern Canva used, with code):` — it is three labels stapled together, it argues for the link, and nobody reads that far.
 
