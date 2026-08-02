@@ -72,6 +72,30 @@ WARN_PHRASES = [
     "at the end of the day", "needless to say",
 ]
 
+# Percentages, multiples, and fractions — each is a comparison, so each needs
+# the other side of it stated nearby.
+RELATIVE_STAT = re.compile(
+    r"\d+(?:\.\d+)?\s?(?:%|percent)"
+    r"|\b\d+(?:\.\d+)?\s?x\b"
+    r"|\b(?:\d+|two|three|four|five|six|seven|eight|nine|ten)\s+times\s+"
+    r"(?:\w+er|faster|slower|smaller|bigger|larger|cheaper|more|less)"
+    r"|\bfactor of\s+(?:\d+|two|three|four|five|six|seven|eight|nine|ten)\b"
+    # "in half" only in its outcome sense; bare double/triple describe scaling
+    # relationships ("double the input, quadruple the work"), which are self-contained.
+    r"|\b(?:cut|drop(?:ped)?|shrank|shrunk|fell)\s+(?:\w+\s+){0,3}in half\b"
+    r"|\bhalved\b",
+    re.I,
+)
+
+# Phrasing that establishes what the stat is measured against.
+BASELINE_MARKER = re.compile(
+    r"\bcompared to\b|\bcompared with\b|\bversus\b|\bvs\.?\b"
+    r"|\bbefore\b|\bpreviously\b|\bused to\b|\bhad been\b|\bwas\b|\bwere\b"
+    r"|\bdown from\b|\bup from\b|\bfrom \d|\binstead of\b|\bthan\b"
+    r"|\bold\b|\bformerly\b|\bonce\b",
+    re.I,
+)
+
 
 def lint(lines):
     errors, warns = [], []
@@ -203,10 +227,22 @@ def lint(lines):
     # clause too many, burying the reveal under its own qualifiers. Across the
     # existing script library only the weakest script trips this, so the
     # threshold flags real run-ons rather than ordinary long sentences.
-    for sentence in re.split(r"(?<=[.!?])\s+", " ".join(body)):
+    sentences = re.split(r"(?<=[.!?])\s+", " ".join(body))
+    for sentence in sentences:
         n = len(sentence.split())
         if n > 25:
             warns.append((0, "sentence-length", f"{n}-word sentence; split it: \"{sentence}\""))
+
+    # Relative stats without a baseline. "cut memory by 87.5%" is unusable to a
+    # viewer who was never told what the old number was, and the baseline is
+    # nearly always sitting right there in the source.
+    for i, sentence in enumerate(sentences):
+        if not RELATIVE_STAT.search(sentence):
+            continue
+        window = " ".join(sentences[max(0, i - 1):i + 2])
+        if not BASELINE_MARKER.search(window):
+            warns.append((0, "stat-baseline",
+                          f'relative stat with no stated baseline — compared to what? "{sentence}"'))
 
     return errors, warns
 
