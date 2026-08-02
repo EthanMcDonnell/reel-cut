@@ -26,16 +26,11 @@ All commands output JSON. Run from the project root (`{PROJECT_ROOT}`).
 
 The user's prompt is: `$ARGUMENTS`
 
-Determine the prompt type and resolve it to a `topic_package`. Try each check in order:
+Determine the prompt type and resolve it to **source URLs** (branches 1–3) or to no source at all (branch 4). Try each check in order; branches 1–3 all end at the shared fetch step below.
 
 ### 1. If the prompt looks like a URL
 
-- Fetch the article content using the Bash tool:
-
-  ```bash
-  .venv/bin/python scrape/single_scrape.py --json "<URL>"
-  ```
-- This uses the correct fetch method (rss/scrape/playwright/reddit) based on the source config.1
+The URL is the source. Note it and go to the fetch step.
 
 ### 2. If the prompt looks like a DB reference (article ID, title fragment, or `db:<keyword>`)
 
@@ -44,20 +39,14 @@ Determine the prompt type and resolve it to a `topic_package`. Try each check in
   - `.venv/bin/python scrape/query.py articles updates --search "<keyword>"`
 - Match against `id` (exact) or `title` (case-insensitive substring) across both results.
 - If multiple matches, pick the one with the highest `relevance_score`. If scores are tied, prefer the most recent `published_date`.
-- Use the matched article's `url`, `title`, `description`, and `company` to build the research base.
-- Fetch the article URL for full content using the Bash tool:
-
-  ```bash
-  .venv/bin/python scrape/single_scrape.py --json "<matched_url>"
-  ```
-
+- Use the matched article's `url`, `title`, `description`, and `company` to build the research base. Its `url` is the source.
 - **Mark as read:** `.venv/bin/python scrape/query.py mark-done <series> "<url>"`
 
 ### 3. If the prompt references a file (path, filename, or Obsidian note title)
 
 - Search for a matching `.md` file in `{VAULT_VIDEO_IDEAS}` using Glob.
 - Read the matched file. Extract topic, angle, and any URLs listed in the file.
-- If URLs are present, fetch the first one for additional research.
+- The first URL it lists, if any, is the source.
 - Set `series` to `misc`.
 
 ### 4. If the prompt is a bare claim (an opinion with no source)
@@ -68,26 +57,40 @@ There is no article to fetch, so the material has to come from the user:
 
 1. **Ask for the mechanism.** The body of a hot take is *why the user believes it, from real use*. You cannot supply this — inventing lived experience for a first-person video is the one thing this branch must never do. Ask the user directly: what happened when they did it, what broke, what they tried instead. Keep asking until there is a concrete mechanism rather than a preference.
 2. **Ask for the strongest counter-argument** and where they concede it wins. The series structure requires this and it is also the user's opinion to give, not yours.
-3. **Take gate.** Judge whether the claim is actually contested — would a competent engineer argue the other side? If nothing opposes it, say so plainly: it is a recommendation, not a take, and this series' own data says recommendations draw no comments. Record `STORY_STRENGTH: thin` with that reason and let the user reframe or proceed.
 
-Build the `topic_package` with `SOURCE_URLS: none` and `FULL_CONTENT: none`, putting the user's own reasoning in `HOW_IT_WAS_SOLVED` and the claim in `MOST_SURPRISING_FACT`. Skip the Source Access Check and the story gate below — the take gate replaces them. With no source URLs, Stage 0.4 has nothing to harvest: record `FIGURES_AVAILABLE: none` and skip Stage 4b.
+Build the `topic_package` with `SOURCE_URLS: none` and `FULL_CONTENT: none`, putting the user's own reasoning in `HOW_IT_WAS_SOLVED` and the claim in `MOST_SURPRISING_FACT`. There is nothing to fetch, so skip the fetch step below.
 
 If the take rests on a specific fact, number, or attribution, research **that** and only that (`WebSearch` / `single_scrape.py`), and add what you verify to `FULL_CONTENT` so Stage 3 can trace it.
 
-### Reddit — Linked Article Fetch
+### Fetch the sources (branches 1–3)
 
-After fetching a Reddit article, scan `content` and `description` for external URLs and fetch each one via `single_scrape.py --json`. Append results to `FULL_CONTENT`. If any fetch fails or returns empty content, abort: "Failed to fetch linked article: `<url>`."
+Fetch each resolved URL with the Bash tool:
 
-### Source Access Check
+```bash
+.venv/bin/python scrape/single_scrape.py --json "<url>"
+```
 
-If the primary source returned an error or empty content, stop: "⚠️ Couldn't fetch `<url>` directly — research is from search snippets only. Paste the article text to continue, or type 'proceed' to write from secondary sources."
+This picks the right fetch method (rss/scrape/playwright/reddit) from the source config.
+
+**Reddit — linked article fetch.** After fetching a Reddit source, scan `content` and `description` for external URLs and fetch each one the same way. Append the results to `FULL_CONTENT`. If any fetch fails or returns empty content, abort: "Failed to fetch linked article: `<url>`."
+
+**Source access check.** If a source returned an error or empty content, stop: "⚠️ Couldn't fetch `<url>` directly — research is from search snippets only. Paste the article text to continue, or type 'proceed' to write from secondary sources."
+
+### Mine the material (branches 1–3)
 
 We then want to collate all information as well as provide some summarisation and insight for future steps: what are the key points across sources that could be used. Mine two kinds of raw material, because a video needs both a reason to stop and a reason to stay:
 
 - **Problem side** — the single most surprising or counterintuitive fact across the sources, and the assumption a viewer probably holds that this fact overturns.
 - **Solution side** — *how* it was actually done: the specific methods, the core mechanism, the tradeoff, and any reversal or irony in the approach (e.g. the fix reused the very thing that caused the problem). This is what the video pays off with, and it is what the spine stage below draws its payoff from. Do not stop at the surprising fact; the interesting part is usually in the solution.
 
-**Story gate.** Before continuing, judge whether the sources actually contain a video-worthy story: a non-obvious mechanism, a surprising cause or reversal, and a concrete outcome. If the material is thin (an announcement, or a plain "we improved X by N%" with no mechanism or twist), say so plainly and record `STORY_STRENGTH: thin` with the reason — do not manufacture drama the sources don't support. A thin gate isn't an automatic stop: surface it and let the user decide whether to proceed, pick a different source, or reframe.
+### Story gate
+
+Before continuing, judge whether there is a video here at all. The bar depends on where the material came from:
+
+- **With sources:** the material must hold a non-obvious mechanism, a surprising cause or reversal, and a concrete outcome. Thin looks like an announcement, or a plain "we improved X by N%" with no mechanism or twist.
+- **Without sources:** the claim must be genuinely contested — would a competent engineer argue the other side? Thin looks like a recommendation nobody opposes, which this channel's data says draws no comments.
+
+Either way, say so plainly and record `STORY_STRENGTH: thin` with the reason. Do not manufacture drama the material doesn't support. A thin gate isn't an automatic stop: surface it and let the user decide whether to proceed, pick a different source, or reframe.
 
 Build the following `topic_package` once resolved:
 
@@ -106,9 +109,18 @@ KEY_DISCUSSION_POINTS: <summarise/provide key talking points>
 
 If no usable content can be resolved from the prompt, abort with: "Could not resolve prompt to a scriptable topic — please provide a URL or more specific phrase."
 
+### Source gate
+
+`SOURCE_URLS` decides which of the later stages run at all. Three of them exist only to mine an article — **Stage 0.4** (harvest figures), **Stage 4** (screenshots), and **Stage 4b** (match figures). With `SOURCE_URLS: none` there is nothing for them to read: record `FIGURES_AVAILABLE: none`, skip all three, and say in the Final Output that the video ships without on-screen evidence. This is one rule for every source-free video, not a carve-out for one series.
+
 ### Load the series profile
 
-Once `SERIES` is resolved (and it is not `misc`), **read `series/<SERIES>.md`** — that file is the source of truth for this series' identity, voice profile (register, target length, CTA), and best hooks. It drives Stage 0.5 (spine), Stage 1 (hooks), and Stage 3 (voice). The canonical slugs are `tbbt`, `updates`, `tech-in-one-breathe`, `interesting-tech`, `ai-fundamentals`, `hot-takes`; `misc` has no file and uses the `scripts` skill's default voice.
+Once `SERIES` is resolved (and it is not `misc`), **read `series/<SERIES>.md`** — that file is the source of truth for this series, and it outranks the defaults written into this command. It drives Stage 0.5 (spine), Stage 1 (hooks), Stage 3 (voice), and Stage 3.6 (CTA and resources). The canonical slugs are `tbbt`, `updates`, `tech-in-one-breathe`, `interesting-tech`, `ai-fundamentals`, `hot-takes`; `misc` has no file and uses the `scripts` skill's default voice, no CTA, and no resources.
+
+Two of its sections replace this command's defaults outright rather than adding to them:
+
+- **`## Structure`** (when present) — the series has a fixed body shape, so it *is* the spine; Stage 0.5 fills in its beats instead of choosing a shape.
+- **`## CTA & Resources`** (always present) — the series owns its CTA type, how many resources ship, and what kind. Stage 3.6 does what it says.
 
 ### Fix the video slug
 
@@ -146,6 +158,8 @@ Carry the survivors forward as `FIGURES_AVAILABLE` — for each, its `file`, `ki
 
 The **spine** is what the video is actually about: the crux mechanism it explains and the reframe it lands at the end. It is the single biggest driver of whether the video works, because it decides what the viewer *stays* for. It is not the hook and not a framing — it is the story the body tells. Build it from the `topic_package`, drawing the payoff from `HOW_IT_WAS_SOLVED`, not just the surprising fact.
 
+**If the series file has a `## Structure` section, that structure is the spine.** The series has already fixed the body shape and usually says which measured problem it fixes, so there is nothing to select: name the crux, payoff, and turn *in its beats*, and skip the shape-choice below. Do not reshape the material to fit deep-dive / key-problem / walkthrough — those are defaults for series that leave the shape open.
+
 1. **Find the strongest spine.** Identify the best video the sources support. A spine takes one of three shapes — pick the one the sources best support, then don't force the material into a different one:
    - **Deep-dive** — one mechanism, explained in depth. Crux = that mechanism.
    - **Key problem solved** — one hard problem and the clever fix. Crux = the problem and its solution; lean on any reversal or irony in *how* it was solved.
@@ -177,7 +191,7 @@ Present the shortlist: for each hook show its `TEXT`, its `PATTERN`, and one lin
 
 ## Stage 3 — Script Writing
 
-Invoke the `scripts` skill and `stop-slop` skill, use the full `topic_package`, the chosen `SPINE`, and the confirmed `HOOK_SET` to create a captivating short form content script for platforms like Instagram Reels. Write the body to the `SPINE`: explain its crux, deliver the payoff (the *how*, drawn from `HOW_IT_WAS_SOLVED`), and land its turn. A body that only states the problem and names the fix has failed the spine — the payoff is the video. Pass the resolved `SERIES` to the `scripts` skill — it applies the series file's voice profile (register, target length, CTA) and layers the user's delivery voice from `.claude/voice/voice-profile.md` on top; for `misc` it uses its default voice.
+Invoke the `scripts` skill and `stop-slop` skill, use the full `topic_package`, the chosen `SPINE`, and the confirmed `HOOK_SET` to create a captivating short form content script for platforms like Instagram Reels. Write the body to the `SPINE`: explain its crux, deliver the payoff (the *how*, drawn from `HOW_IT_WAS_SOLVED`), and land its turn. A body that only states the problem and names the fix has failed the spine — the payoff is the video. Pass the resolved `SERIES` to the `scripts` skill — it applies the series file's voice profile (register, target length) and layers the user's delivery voice from `.claude/voice/voice-profile.md` on top; for `misc` it uses its default voice. The CTA is not written here: Stage 3.6 appends it once the series' policy has been read.
 
 **Write every hook from `HOOK_SET` into the script.** You record all of them in one take and split them into separate videos later, so the `**HOOK**` section holds the full set, numbered and ordered best-first, one hook per line:
 
@@ -205,7 +219,7 @@ For every claim, stat, or quote that will appear in the script:
 
 Any claim that cannot be traced to a specific sentence in `FULL_CONTENT` is cut, not paraphrased from memory.
 
-**`hot-takes` exception.** This series has no article, so the opinion itself and the user's own account of their experience are traced to *the user*, not to `FULL_CONTENT` — use them as given and never embellish them into specifics they didn't say. Every **factual claim, number, or attribution** in the script still meets the bar above against whatever was verified into `FULL_CONTENT` in Stage 0 branch 4. An unverifiable stat is cut and the mechanism argued without it.
+**With `SOURCE_URLS: none`, the user is the source.** The opinion and the user's own account of their experience trace to *them*, not to `FULL_CONTENT` — use them as given and never embellish them into specifics they didn't say. Every **factual claim, number, or attribution** in the script still meets the bar above against whatever was verified into `FULL_CONTENT` in Stage 0. An unverifiable stat is cut and the mechanism argued without it.
 
 ## Stage 3.5 — Save & QC Gate
 After the script is written, save it:
@@ -224,19 +238,28 @@ After the script is written, save it:
 
 Wait for the saved file path before continuing.
 
-**Mark the videos ideas `status:` frontmatter field:** update it from `new` to `done` using the Edit tool.
+**If the prompt resolved to a video-idea file** (Stage 0 branch 3), update that file's `status:` frontmatter from `new` to `done` using the Edit tool. Prompts from the other branches have no idea file to mark.
 
-## Stage 3.6 — Viewer Resources & Comment CTA
+## Stage 3.6 — CTA & Viewer Resources
 
-The goal: give the viewer a reason to **comment**, and a payoff worth commenting for. Comments are the strongest algorithmic signal on Reels/Shorts, and the standard "comment a keyword and I'll send the link" mechanic only works if the thing you're sending is genuinely worth getting.
+**Read the series file's `## CTA & Resources` section before doing anything here.** It names the CTA type, how many resources ship, and which kinds fit this audience. It decides which of the steps below run:
+
+| CTA type | What this stage does |
+|---|---|
+| `comment-bait` | All four steps. The keyword ask is the CTA and a resource has to be worth commenting for. |
+| `follow` | Steps 3.6.1, 3.6.2, 3.6.4. The CTA is the series' follow line, so there is no lead magnet and no keyword — resources still ship in the file for reference, they are just not promised out loud. |
+| `disagreement` | Step 3.6.4 only, and only its CTA half. Write the CTA the series describes, name the counter-position, and ask the people who hold it to argue. No resources, no keyword. |
+| *(none — `misc`)* | Skip the whole stage. No `**CTA**` heading, no resources block. |
+
+The goal behind comment-bait: give the viewer a reason to **comment**, and a payoff worth commenting for. Comments are the strongest algorithmic signal on Reels/Shorts, and "comment a keyword and I'll send the link" only works if the thing you're sending is genuinely worth getting.
 
 ### Step 3.6.1 — Brainstorm topic-specific resource ideas
 
-Think about what *this specific audience* (developers/builders watching a `SERIES` video on `TOPIC`) would actually want to do *next* after the video lands the `SPINE`. **Anchor on what the article itself names** — the specific technology, system, or company it's about, the source's own deeper write-ups, talks, or repos, or the source article itself.
+Think about what *this specific audience* (developers/builders watching a `SERIES` video on `TOPIC`) would actually want to do *next* after the video lands the `SPINE`. **Start from the kinds the series file asks for** — it already knows what its audience takes. Then **anchor on what the article itself names**: the specific technology, system, or company it's about, the source's own deeper write-ups, talks, or repos, or the source article itself.
 
 **Hard gate — every resource must be about a technology, system, paper, or company the article actually names.** Check the resource's subject against `FULL_CONTENT` the same way you check a claim: if the article says "a column-oriented key-value database" but never names Bigtable, you may **not** add a Bigtable paper — the article didn't cite it, so the tie is fabricated. Either find a resource for something the article *does* name (in this example the article does name "Direct Preference Optimization" and "LLM as a judge", so those are fair game), or generalise the resource so it doesn't claim a specific product the source never mentioned. A resource for tech the article doesn't name is not a go-deeper, it's an invented association. Reach for a generic third-party tool only when nothing article-named fits, and never in violation of this gate.
 
-Generate **3–4 candidate resources**, pulling from different categories so they diverge — don't return four of the same kind. Only one or two of these ship (see Step 3.6.4), so the spread exists to give you a real choice, not to fill a list:
+Generate **3–4 candidate resources**, pulling from different categories so they diverge — don't return four of the same kind. Only the series' allowance ships (Step 3.6.4), so the spread exists to give you a real choice, not to fill a list. The categories below are the menu; the series file says which of them belong in *its* videos:
 
 - **Steal-this asset** — a free template, cheatsheet, boilerplate, config, checklist, or diagram the viewer can copy and use today. Highest comment-bait pull ("I want that").
 - **Hands-on / try-it-yourself** — a playground, sandbox, interactive demo, or online tool that lets them *experience* the concept from the video themselves.
@@ -253,6 +276,8 @@ For each candidate, name the category, a one-line "why a viewer wants this," and
 
 ### Step 3.6.3 — Pick the lead magnet and write the CTA
 
+*Comment-bait series only. For `follow`, write the series' follow line as the CTA and go to Step 3.6.4. For `disagreement`, write the CTA the series describes and go to Step 3.6.4.*
+
 From the verified candidates, select the **single best lead magnet**: the one with the strongest "I want that" pull *and* the tightest tie to the article's actual topic (a steal-this asset, the source's own deeper material, or the article itself). Then write a comment-bait CTA:
 
 - A short, memorable, topic-tied **keyword** (one word, uppercase, e.g. `CACHE`, `SCALE`, `RAFT`).
@@ -268,12 +293,16 @@ Bad: `Want the AWS guide to running this same multi writer trick on S3 yourself?
 
 Write the CTA and the resources in **two** places, **no blank lines anywhere** (the linter blocks on them):
 
-1. Insert a `**CTA**` heading and the CTA line immediately **after** the `**CONCLUSION**` section and **before** `**REFERENCES:**`. This line is spoken, so it is prose-checked — keep it free of em dashes:
+1. Insert a `**CTA**` heading and the CTA line immediately **after** the `**CONCLUSION**` section and **before** `**REFERENCES:**`. This line is spoken, so it is prose-checked — keep it free of em dashes. Its shape follows the series' CTA type:
 
 ```
 **CTA**
-<Who made it> <has/have> a guide to <doing this yourself>. Comment "<KEYWORD>" and I'll send it over.
+<one line, in the shape below>
 ```
+
+- **comment-bait:** `<Who made it> <has/have> a guide to <doing this yourself>. Comment "<KEYWORD>" and I'll send it over.`
+- **follow:** the series' own follow line.
+- **disagreement:** name the counter-position and ask the people who hold it to make their case.
 
 2. Append the resources block to the **end** of the file, **after** the `**REFERENCES:**` section. One resource per pair of lines: a short label on the first line, the bare URL on the second. No blank lines anywhere (the linter still blocks on them):
 
@@ -287,9 +316,9 @@ Video reference article:
 <url>
 ```
 
-**Two resource links maximum**, plus the source article link(s), which always go last and don't count against the two. One resource followed by the article is a finished list. Add the second only when it covers ground the first doesn't; a second link that overlaps the first is worse than no second link. Everything else you verified stays out.
+**The series file sets the resource cap** — two, one, or none. The source article link(s) always go last and never count against the cap. One resource followed by the article is a finished list; add a second only when it covers ground the first doesn't, because a second link that overlaps the first is worse than no second link. Everything else you verified stays out.
 
-If the script drew on more than one source article, use `Video reference articles:` and list each URL under it, one per line.
+If the script drew on more than one source article, use `Video reference articles:` and list each URL under it, one per line. With `SOURCE_URLS: none` there is no reference line and, on a series that ships no resources, no `**VIEWER RESOURCES:**` block at all — end the file at `**REFERENCES:**` rather than writing an empty heading.
 
 **The resource the CTA promises goes first.** That position is the only marker it needs, so nothing in the file says `Lead Magnet` — that is your word for it, not the viewer's, and the viewer is the one reading this block.
 
@@ -313,6 +342,9 @@ Then re-run the linter and confirm it still passes:
 If it reports a blank-line error, the resources block introduced an empty line — remove it and re-run until clean.
 
 ## Stage 4 — Source Screenshots for Video
+
+*Skipped entirely when `SOURCE_URLS: none` — there is no page to screenshot.*
+
 ### Step 4.1: Choose what to back with on-screen evidence
 
 Screenshots exist to kill doubt: when the script makes a claim a viewer can't quite believe, a highlighted source line on screen proves you didn't invent it. So **start from the claims, not from the article** — don't go hunting for quotable phrases, work backwards from what the viewer disbelieves.
@@ -438,9 +470,10 @@ figure equivalent of the screenshot manifest — it records the *selection* and 
 
 Report to the user:
 
-- Prompt resolved as: [URL / file reference / phrase] → [TOPIC] ([SERIES])
+- Prompt resolved as: [URL / file reference / phrase / bare claim] → [TOPIC] ([SERIES])
 - Script saved to: [file path]
-- Viewer resources: the comment CTA line (keyword + lead magnet), and the shipped links (2 max, plus the source article) appended to the script file. Note any verified candidate you cut, in case the user wants a different lead magnet
+- CTA & resources: the CTA type the series called for and the line you wrote, plus the shipped links appended to the file. Note any verified candidate you cut, in case the user wants a different lead magnet
+- **If `SOURCE_URLS: none`:** say the source gate skipped Stages 0.4, 4, and 4b, so the video ships with no screenshots and no figures. Skip the four items below
 - Screenshots saved to: `assets/<slug>/`
 - Screenshot results: how many captured (with the exact/fuzzy breakdown), and explicitly list any snippets that were **not found** so the user knows which claims lack on-screen evidence
 - Figures: how many charts/diagrams were selected (with `kind` and the beat each supports), the count of candidates harvested vs. kept, and where they were saved (`assets/<slug>/figures/`, `figures.json`). Call out each figure **dropped by the span gate** and the span it fell short by — that means the body never got the sustained passage the diagram needed, and is worth a script edit. Say so if legibility was judged from metadata rather than from reading the images
