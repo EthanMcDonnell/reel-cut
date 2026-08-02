@@ -191,7 +191,7 @@ HOOK 3: <HOOK_3 text>
 ...
 ```
 
-Each hook must independently lead into the **same** body, so any split (hook N + the body) stands alone as a complete video. Keep the "why should I care" stakes sentence at the **start of `**SCRIPT**`**, not attached to any single hook, so it is shared across every variant. No blank lines.
+Each hook must independently lead into the **same** body, so any split (hook N + the body) stands alone as a complete video. If the body needs a "why should I care" stakes sentence (the `scripts` skill decides — a hook that already carries the stakes doesn't get one), it goes at the **start of `**SCRIPT**`**, not attached to any single hook, so it is shared across every variant. Judge it against the weakest hook in the set, since the body has to stand up behind all of them. No blank lines.
 
 **If `FIGURES_AVAILABLE` contains a `diagram`, the body must give it somewhere to live.** Write **one sustained walk-through passage** — several consecutive sentences, **25+ words**, staying on that one system the whole way — describing what the diagram shows. This is not a request to narrate the picture: never write "as you can see in this diagram" or otherwise point at it. The viewer should just be hearing the system explained for long enough that a diagram can sit on screen and be read while they listen. Absent this, Stage 4b has nothing to anchor to and the diagram gets dropped.
 

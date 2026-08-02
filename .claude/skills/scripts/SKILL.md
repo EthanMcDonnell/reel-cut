@@ -26,7 +26,7 @@ The default voice above is the polished explainer. When writing for a series, **
 - **One topic only:** don't cram multiple concepts. One thing, explained well.
 - **Technology first:** a term needs explaining when the series' `## Audience` doesn't already list it as known — that section sets the bar, and it is the only thing that does. Gloss it at first mention or replace it with plain language, and prefer replacing, it's usually cheaper ("Canva's front door servers" beats "the gateway, the servers every request hits first"). Glossing a term the audience already owns is its own failure: it reads as condescension and spends words the script needs elsewhere. Never swap the source's jargon for your own coinage; "durable copy" is no better than "fully durable configuration" if neither is explained.
   - **This rule outranks the word count.** An unexplained term is never what you cut to fit the cap. If you can't afford to explain a term, the script has too many mechanisms — cut a mechanism, not the explanation. If every remaining mechanism is load-bearing for a hook, that's the signal to split it into two scripts, one per hook.
-- **Learning payoff:** the viewer must walk away able to explain the core mechanism to someone else. Don't just surprise them — teach. Use analogies to make abstract concepts concrete and sticky.
+- **Payoff: the viewer walks away with something, and what that something is depends on the video.** When the video explains a mechanism, the bar is that they could re-explain it to someone else — don't just surprise them, teach, and use analogies to make abstract concepts concrete and sticky. When the video argues a position, the takeaway is the reason to believe it, and teaching is the wrong instinct: explaining a tool to people who use it daily is condescension, not payoff. When it reports news, the takeaway is what changed and what it costs them. Work out which of the three this video is before deciding what the viewer leaves with.
 - **Word count: the series file's `**Target length:**` is the cap, not a number written here.** The six series run from under 120 words to 230, so a single figure is wrong for five of them. Read `series/<slug>.md` and write to its range; the linter enforces that same number via `--series`. Only `misc`, which has no series file, falls back to a default of 190. Within the range, use only as many words as the topic needs — never pad. Shorter wins: the channel's 100k-view performers run ~175 words, so reach for the top of a series' range only when the topic genuinely needs the extra steps.
 
 ## Source Integrity (non-negotiable)
@@ -41,7 +41,7 @@ The default voice above is the polished explainer. When writing for a series, **
 ## Narrative & Retention
 Take the viewer on a journey of discovery, not a lecture — they should feel like they're figuring it out alongside you.
 
-- **The arc:** pose a compelling problem → build tension and curiosity → reveal the solution with satisfaction → land a reframe that changes how they see things.
+- **The arc:** pose a compelling problem → build tension and curiosity → reveal the solution with satisfaction → land a reframe that changes how they see things. **This is the shape for a video that explains something, which is most of them but not all.** A video that argues a position is shaped by its argument, and a news video by what changed; forcing either into problem→tension→reveal invents a problem the material doesn't have and makes the video sound engineered. Everything below this bullet — incremental logic, causality, one antecedent per pronoun, earning transitions — applies whatever the shape.
 - **Incremental logic:** each sentence follows from the last — don't skip steps or jump to an abstract conclusion. Reveal each piece only when it's needed; each step earns the next.
   - Good: "Encryption needs truly random numbers. Computers are only pseudo-random, following an algorithm from an initial seed. If the seed isn't random, nothing built from it is either."
   - Bad: "Computers are deterministic by nature." (too abstract, skips the journey)
@@ -75,7 +75,7 @@ Take the viewer on a journey of discovery, not a lecture — they should feel li
 - The solution is a resolution, not a tutorial — frame actionable steps as the answer the viewer has been waiting for, not a how-to guide.
 - Never reveal the HOW before the PAYOFF, explain the solution before building curiosity, or deliver a payoff too weak to earn the hook.
 
-**Open-loop phrases** — drop these in throughout SETUP and PAYOFF to hold tension:
+**Open-loop phrases** — for videos built on a reveal, where tension between the question and the answer is what holds the viewer. They are not a checklist to sprinkle through every script: in a first-person argument they read as stalling (there is no reveal being withheld, so the phrase promises something that never arrives), and under ~120 words there is no room to open a loop and still close it. Use one where the script genuinely has something withheld, and none where it doesn't. A canned phrase over a script with nothing to reveal is the loudest slop in this file.
 - Partial answers: answer the what, withhold the how
 - "But here's the part nobody talks about…"
 - "That's not even the clever part…"
@@ -85,7 +85,7 @@ Take the viewer on a journey of discovery, not a lecture — they should feel li
 - "So you might be wondering…" (before the payoff)
 
 ## Script Structure
-**HOOK** — comes first. Immediately follow with one sentence answering "why should I care?": who's affected, the scale of impact, or the concrete personal threat. Reveal the stakes, not the explanation.
+**HOOK** — comes first. **If the hook leaves "why should I care?" unanswered, the next sentence answers it** — who's affected, the scale of impact, or the concrete personal threat. Reveal the stakes, not the explanation. Check the hook first rather than writing this line by reflex: a hook that already names the stakes ("if you install this month's Windows update, it is likely bricking your PC") or that stakes a claim the viewer holds an opinion about has done this job, and a stakes sentence after it is a sentence about nothing. That is what "you push, pull and merge every single day, and that's what this is about" was — restating the hook's premise as if it were new. When the hook has covered it, open on the content instead.
 **SETUP** — why this matters. Build curiosity, open loops, delay the HOW.
 **EXTRA** — any prerequisite tech or context the viewer needs (only if required).
 **PAYOFF** — reveal HOW it works. Build genuine understanding; use analogies where helpful.

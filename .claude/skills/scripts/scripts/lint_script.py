@@ -40,7 +40,9 @@ ALL_HEADERS = REQUIRED_HEADERS + OPTIONAL_HEADERS
 NON_BODY_SECTIONS = {"**HOOK**", "**CTA**"}
 
 # Throat-clearing openers (banned). Deliberately narrow so it never catches the
-# skill-endorsed open-loop phrase "But here's the part nobody talks about".
+# open-loop phrase "But here's the part nobody talks about", which is legitimate
+# in a script that genuinely withholds a reveal. Whether this script is one is a
+# judgement the skill makes, not something to decide from the phrase alone.
 THROAT_CLEARING = [
     "here's the thing", "here's the problem", "here's what", "here's why",
     "here's how", "here's this", "here's that", "here's the interesting",
