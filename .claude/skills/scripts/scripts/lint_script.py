@@ -30,13 +30,20 @@ NON_BODY_SECTIONS = {"**HOOK**", "**CTA**"}
 THROAT_CLEARING = [
     "here's the thing", "here's the problem", "here's what", "here's why",
     "here's how", "here's this", "here's that", "here's the interesting",
+    "here's where", "here's when",
     "heres the thing", "heres the problem", "heres what", "heres why",
     "heres how", "heres this", "heres that", "heres the interesting",
+    "heres where", "heres when",
 ]
 
+# Lines that narrate the script's own structure instead of speaking its
+# content. A script written to a fixed beat shape keeps reading the beat
+# labels out loud ("Here's where the CLI wins" for the concession beat).
 META_BANNED = [
     "let that sink in", "plot twist", "let me walk you through",
     "here's what i mean", "heres what i mean",
+    "what this is about", "what this video is about",
+    "which brings me to", "that brings me to",
 ]
 
 # Unambiguous missing-apostrophe contractions. Every entry is a non-word in
@@ -70,6 +77,10 @@ WARN_PHRASES = [
     "let me be clear", "the lesson here", "the lesson is", "the takeaway",
     "deep dive", "game changer", "game-changer", "circle back",
     "at the end of the day", "needless to say",
+    # Swatting an imagined commenter. In an opinion script the honest version
+    # of this is the concession beat, stated as the writer's own position.
+    "before anyone says", "before you say", "i know what you're thinking",
+    "i know what youre thinking", "don't @ me", "dont @ me",
 ]
 
 # Percentages, multiples, and fractions — each is a comparison, so each needs
@@ -95,6 +106,18 @@ BASELINE_MARKER = re.compile(
     r"|\bold\b|\bformerly\b|\bonce\b",
     re.I,
 )
+
+
+def longest_shared_run(a, b, minimum):
+    """Longest run of `minimum`+ words appearing verbatim in both strings."""
+    wa = re.findall(r"[a-z0-9']+", a.lower())
+    wb = re.findall(r"[a-z0-9']+", b.lower())
+    for n in range(len(wa), minimum - 1, -1):
+        for i in range(len(wa) - n + 1):
+            run = wa[i:i + n]
+            if any(wb[j:j + n] == run for j in range(len(wb) - n + 1)):
+                return " ".join(run)
+    return ""
 
 
 def lint(lines):
@@ -200,7 +223,7 @@ def lint(lines):
     # tag, so both are excluded from the cap — only SCRIPT + CONCLUSION, the
     # shared body, counts. Also excludes headers and reference URLs.
     words, n_hooks = 0, 0
-    body = []
+    body, script_lines, conclusion_lines = [], [], []
     section, in_refs = None, False
     for s in stripped:
         if s == "**REFERENCES:**":
@@ -219,6 +242,7 @@ def lint(lines):
             continue
         words += len(s.split())
         body.append(s)
+        (script_lines if section == "**SCRIPT**" else conclusion_lines).append(s)
     if words > 190:
         note = f"body only, {n_hooks} hooks excluded" if n_hooks else "body only"
         warns.append((0, "word-count", f"{words} words of content ({note}; hard cap 190)"))
@@ -232,6 +256,16 @@ def lint(lines):
         n = len(sentence.split())
         if n > 25:
             warns.append((0, "sentence-length", f"{n}-word sentence; split it: \"{sentence}\""))
+
+    # Bookend echo. A conclusion that replays the opening line's exact words is
+    # template symmetry, not a landing, and it reads as machine-written out loud.
+    # A deliberate callback restates the idea in new words and won't trip this.
+    if script_lines and conclusion_lines:
+        opener = re.split(r"(?<=[.!?])\s+", script_lines[0])[0]
+        echo = longest_shared_run(opener, " ".join(conclusion_lines), 4)
+        if echo:
+            warns.append((0, "bookend",
+                          f'conclusion replays the opening line word for word ("{echo}"); land it in new words'))
 
     # Relative stats without a baseline. "cut memory by 87.5%" is unusable to a
     # viewer who was never told what the old number was, and the baseline is
