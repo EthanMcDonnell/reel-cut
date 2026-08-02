@@ -37,6 +37,8 @@ The default voice above is the polished explainer. When writing for a series, **
   - Pull specific numbers from your sources instead of vague modifiers — counts, percentages, timings, byte sizes, locations. Never fabricate them.
   - A stat must support the exact claim it's attached to, not just relate to the topic. A number that contradicts or is irrelevant to the claim is worse than none.
   - A stat that appears in one article doesn't belong in a script about another.
+  - **Credit the whole cause, not the nearest one.** When the source attributes an outcome to a system, a rollout, or a set of changes, the script may not pin it on whichever single component the video happens to be about. *"PGKeeper prevented more than 20 incidents"* covers admission control, connection rate limiting, pool warming and fair sharing; "the unfair queue stopped 20 outages" is a narrower, unsourced claim. Either name the real cause, or keep the component and restore the scope with the qualifier that makes it true — "one of the reasons", "part of why", "among other things".
+  - **Scope qualifiers outrank the word count.** The words that keep a claim honest — "among other things", "under heavy load", "one of four" — are never what you cut to fit the cap, any more than an unexplained term is. They cost two or three words and they are the difference between true and false. If the sentence won't fit with them, the stat comes out instead, or the words come from tightening elsewhere. Before saving, check every outcome number: does the source credit it to the same thing this sentence credits it to?
 
 ## Narrative & Retention
 Take the viewer on a journey of discovery, not a lecture — they should feel like they're figuring it out alongside you.
