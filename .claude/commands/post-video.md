@@ -24,6 +24,31 @@ If `$ARGUMENTS` is empty, ask the user which of the slugs above to use.
 
 Example: `/post-video spotify-wrapped-billion-ai-stories`
 
+## Optional: attach a comment automation
+
+If `assets/<slug>/automation.json` exists, each hook is also wired into a single
+comment automation server-side (comment keyword → auto DM/reply). All hooks of the
+slug share **one** flow: `automation.key` defaults to the slug, so the cockpit
+creates the flow on the first hook and appends every later hook to it — no
+duplicate flows, and re-posting is idempotent. No file = posts with no automation
+(unchanged behaviour). The dry run reports whether an automation will attach.
+
+`assets/<slug>/automation.json` (all fields except `trigger_keywords`/`config` optional):
+
+```json
+{
+  "trigger_keywords": ["GUIDE"],
+  "template_type": "comment_to_dm",
+  "config": {
+    "initial_message": "Here's the link: https://…",
+    "comment_replies": ["Sent 📩", "Check your DMs 🔗"]
+  }
+}
+```
+
+See `social-cockpit/docs/publish-with-automation.md` for the full config spec
+(`comment_to_dm` / `comment_to_reply` / `comment_to_follow_dm`).
+
 ## Prerequisites (set up once, outside this workflow)
 
 - **social-cockpit** dev server running on `{COCKPIT_URL}` (`http://localhost:3000`), exposing

@@ -35,6 +35,9 @@ load_dotenv(ROOT / ".env")
 COCKPIT = os.environ.get("COCKPIT_URL", "http://localhost:3000").rstrip("/")
 MIN_INTERVAL_S = 180     # 3 minutes
 MAX_INTERVAL_S = 420     # 7 minutes
+# When automation is attached the cockpit waits up to 5 min for the reel to
+# finish processing (so it can return a media_id and attach), so allow headroom.
+REQUEST_TIMEOUT_S = 360
 
 
 def captions_for(slug):
@@ -45,15 +48,35 @@ def captions_for(slug):
     return {e["slug"]: e["title"] for e in json.loads(path.read_text()) if e.get("slug")}
 
 
-def publish(video_path, caption):
+def automation_for(slug):
+    """Load the optional per-slug comment automation from assets/<slug>/automation.json.
+
+    Every hook of this slug is a variation of the same video, so they all share a
+    single automation flow: the ``key`` defaults to the slug, and the cockpit
+    creates the flow on the first hook and appends each later hook to it. Returns
+    the spec dict (with ``key`` defaulted), or None when the file is absent — in
+    which case hooks post exactly as before, with no automation.
+    """
+    path = ROOT / "assets" / slug / "automation.json"
+    if not path.exists():
+        return None
+    spec = json.loads(path.read_text())
+    spec.setdefault("key", slug)
+    return spec
+
+
+def publish(video_path, caption, automation=None):
+    payload = {
+        "video_path": str(video_path.resolve()),
+        "caption": caption,
+        "trial_params": {"graduation_strategy": "MANUAL"},
+    }
+    if automation:
+        payload["automation"] = automation
     r = requests.post(
         f"{COCKPIT}/api/publish/local",
-        json={
-            "video_path": str(video_path.resolve()),
-            "caption": caption,
-            "trial_params": {"graduation_strategy": "MANUAL"},
-        },
-        timeout=180,
+        json=payload,
+        timeout=REQUEST_TIMEOUT_S,
     )
     r.raise_for_status()
     return r
@@ -76,6 +99,7 @@ def main():
         sys.exit(f"No .mp4 files in {out_dir}")
 
     captions = captions_for(args.slug)
+    automation = automation_for(args.slug)
     log = ROOT / "output" / ".published"
     done = set(log.read_text().splitlines()) if log.exists() else set()
 
@@ -96,14 +120,30 @@ def main():
     for mp4, caption in to_post:
         print(f"  - {mp4.name}  ->  {caption!r}")
 
+    if automation:
+        kws = ", ".join(automation.get("trigger_keywords", [])) or "(none)"
+        print(f"\nAutomation: key={automation['key']!r} keywords=[{kws}] "
+              f"type={automation.get('template_type', 'comment_to_dm')} "
+              f"— all hooks share one flow (created on the first, appended after).")
+    else:
+        print("\nAutomation: none (no assets/"
+              f"{args.slug}/automation.json) — posting without an automation.")
+
     if args.dry_run:
         print("\n(dry run — nothing posted)")
         return
 
     for i, (mp4, caption) in enumerate(to_post):
         print(f"\n[{i+1}/{len(to_post)}] {mp4.name}")
-        publish(mp4, caption)
+        resp = publish(mp4, caption, automation)
         print(f"  published: {caption!r}")
+        if automation:
+            act = (resp.json().get("automation") or {})
+            if act.get("skipped"):
+                print(f"  ⚠ automation not attached: {act.get('reason')}")
+            else:
+                print(f"  automation {act.get('action')} -> flow {act.get('flow_id')} "
+                      f"({len(act.get('media_ids', []))} post(s) on it)")
         with log.open("a") as f:
             f.write(f"{args.slug}/{mp4.name}\n")
 
