@@ -16,8 +16,10 @@ You have 1.3–3 seconds to stop the scroll. A strong hook does two things simul
 The WHAT creates the stop. The missing HOW creates the stay.
 
 **Weak vs. strong:**
+Both examples below take the same subject, so the difference is structure alone and not a template to copy:
+
 - Weak: "Today I'll explain how Netflix streams to 250 million users." (reveals both — no tension)
-- Strong: "What is 42.zip and why is it so dangerous?" (reveals the WHAT — creates tension by withholding the HOW)
+- Strong: "Netflix doesn't stream most of what you watch from the cloud." (reveals the WHAT — creates tension by withholding the HOW)
 
 A surprising fact stops the scroll. An unresolved implication or personal threat makes them *stay*. Ask yourself: after hearing this hook, does the viewer *need* to know what comes next?
 
@@ -33,40 +35,16 @@ A surprising fact stops the scroll. An unresolved implication or personal threat
 8. **Make the threat personal when it applies to the viewer.** "Your data" beats a statistic about companies. Use "you/your" when the viewer is the one at risk.
 9. **Make bold declarative claims when the facts support it.** "X just killed Y" beats "X may be changing Y." If the claim is true, say it directly. Keep it short.
 
-## Proven Hook Patterns
-Use only if it fits the topic and the content of the video. Don't force a pattern if it doesn't fit.
+## Where Patterns Come From
 
-**Series-specific best hooks:** when a `SERIES` is known, read `series/<slug>.md` (indexed in `SERIES.md`) first — it records which patterns win for that audience and the hooks that have actually shipped or hit ~100k views. Slugs: `tbbt`, `updates`, `tech-in-one-breathe`, `interesting-tech`, `ai-fundamentals`.
+This skill is the craft. **Which pattern wins belongs to the audience, so it lives with that audience** — no pattern library here, and none carried from memory. Read both sources below before generating, every time:
 
-**Proven hooks (real analytics):** also read `.claude/voice/proven-hooks.md` if it exists — the user's own shipped hooks ranked by *real* engagement across all series, with the dominant winning patterns distilled (named tech in the first ~4 words; a specific number or second-person threat; the repeatable `"What is X and why was it so dangerous?"` and `"So [Company] literally [absurd action]"` templates; and comment-bait CTA as the biggest engagement lever). Refresh it with `/voice-profile`.
+1. **The series file.** When a `SERIES` is known, read `series/<slug>.md` — every slug is indexed in `SERIES.md`. Its `## Best Hooks` section is the source of truth for that series: which patterns win, the register the hook has to be spoken in, the hooks that have actually shipped, and their real numbers.
+2. **`.claude/voice/proven-hooks.md`**, if it exists — the creator's own shipped hooks across every series, ranked by real engagement, with the recurring templates distilled. Refresh it with `/voice-profile`.
 
-### Recent Update
-**Format:** "[Large Company/Researcher/Person] just [did X]."
-**Best for:** news, tech updates, security disclosures.
-**Seen working for:** justinbuilds.mov
-**Key rule:** The action itself must be the surprise — short, almost quirky. If you need to append "and [stat/consequence]" to make it land, the action isn't surprising enough. Rewrite the action. Target under 12 words.
-**Examples:**
-- "OpenAI just banned its own AI from talking about goblins."
-- "The FBI just stuck their fingers into encryped messages."
-- "Anthropic just made their pro and max plans worthless"
-- Anthropics co-founder just stood at the vatican and told the pope his own company cant be trused
+Use a pattern only if it fits the topic and the content of the video. Don't force one that doesn't.
 
-### Hidden Knowledge
-**Format:** "Everyone tells you to [do X] but no one tells you [the thing they miss]."
-**Best for:** Tool explainers, dev workflow, AI products.
-**Seen working for:** Own channel
-**Examples:**
-- "Everyone tells you to use Claude but no one tells you how the usage limits actually work."
-
-### What Is X
-**Format:** "What is [X] and why [consequence]?"
-**Best for:** tech concepts, obscure/something uknown but intersting
-**Seen working for:** Own channel
-**Examples:**
-- "What is 42.zip and why was it so dangerous?"
-
-
-
+**The series file outranks this skill.** These rules describe what usually works; a series file describes what has measurably worked for its audience. Where the two conflict, follow the series file and note the conflict rather than splitting the difference.
 
 ## Hook Quality Test
 
@@ -76,5 +54,5 @@ Before finalizing, run these three checks:
 2. **HOW test** — Does the hook withhold something the viewer now needs to know?
 3. **Promise test** — Does the video actually deliver what the hook implies?
 
-If any check fails, rewrite.
+If any check fails, rewrite. Where a series file sets its own bar for one of these, that bar replaces the check — a series whose hooks are required to state the claim outright is not failing the HOW test, it is running a different one.
 
