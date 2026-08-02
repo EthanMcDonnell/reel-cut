@@ -77,10 +77,6 @@ WARN_PHRASES = [
     "let me be clear", "the lesson here", "the lesson is", "the takeaway",
     "deep dive", "game changer", "game-changer", "circle back",
     "at the end of the day", "needless to say",
-    # Swatting an imagined commenter. In an opinion script the honest version
-    # of this is the concession beat, stated as the writer's own position.
-    "before anyone says", "before you say", "i know what you're thinking",
-    "i know what youre thinking", "don't @ me", "dont @ me",
 ]
 
 # Percentages, multiples, and fractions — each is a comparison, so each needs
