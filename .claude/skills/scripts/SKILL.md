@@ -55,8 +55,9 @@ Take the viewer on a journey of discovery, not a lecture — they should feel li
   - Good: "a booting pod only grabs the last 12 hours, since every cookie refreshes by then"
 - **Every relative stat names its baseline:** outcome numbers need no design reason — nobody chose 87.5% — but a percentage, a fraction, or a multiple is meaningless without the thing it's measured against. "87.5% smaller", "3x faster", "cut in half" all answer *compared to what?* in the same sentence, or they're just a number that sounds impressive. The source almost always states the baseline; dropping it is a comprehension bug, not a trim.
   - Bad: "That packing cut the cache's memory by 87.5%." (87.5% smaller than what?)
-  - Good: "Before, each revocation was a pile of separate objects in memory. Packed flat, the cache got 8 times smaller."
+  - Good: "Before, each revocation was several Java objects, and every object carries its own overhead. Packed flat, the cache got 8 times smaller."
   - Prefer the plainer form when the source gives both — "8 times smaller" lands in speech where "87.5%" makes the viewer do arithmetic.
+  - The baseline is a *mechanism*, not just a prior value. "Smaller than the old version" restates the stat; "several Java objects, each with its own overhead" tells the viewer why the new number is possible. Take the source's reason, not just its comparison.
 - **One antecedent per pronoun:** never open a sentence with It/They/This when the previous sentence introduced more than one noun. Name the thing instead.
 - **Transitions carry weight:** "then", "so", "and now" only earn their place when the previous sentence set up what follows. A bare "Then X started happening" after a present-tense standing fact has no moment to follow from — the connective fakes a causal link the script never made. Supply the hinge that makes the turn inevitable before you turn.
   - Bad: "…a deny-list every gateway keeps in memory. Then deploys started hurting."
