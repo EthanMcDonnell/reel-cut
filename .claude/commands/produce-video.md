@@ -299,6 +299,10 @@ DNS_NAME=$(tailscale status --json | jq -r '.Self.DNSName' | sed 's/\.$//')
 [ -n "$TS_HOST" ] && [ "$TS_HOST" = "$DNS_NAME" ] || {
   echo "serve vhost '$TS_HOST' != device name '$DNS_NAME' — re-run step 1 with operator rights"
   exit 1; }
+# This shell may not use the MagicDNS resolver even when the tailnet is healthy, so the
+# reachability check below pins the hostname to the tailnet IP. Without this it fails with
+# "Could not resolve host" and skips videos whose links are perfectly fine.
+TS_IP=$(tailscale ip -4)
 
 # 3. Post one link per hook video to the local Telegram bot API — the file-exchange topic.
 #    Scoped to THIS video's slug folder only, never other slugs' videos.
@@ -315,8 +319,9 @@ for f in "{PROJECT_ROOT}"/output/"${SLUG}"/*.mp4; do
   # Pretty caption: the title.json entry whose slug matches this file's stem; else the filename.
   caption=$(jq -r --arg s "${name%.mp4}" '(map(select(.slug == $s)) | .[0].title) // $s' "$TITLES" 2>/dev/null || echo "$name")
   url="https://${TS_HOST}/reels/${SLUG}/${name}"
-  # Never post a link that doesn't resolve — an unreachable URL must not be logged as notified.
-  curl -sfI --max-time 15 "$url" >/dev/null \
+  # Never post a link the serve config doesn't actually answer — an unreachable URL must not
+  # be logged as notified. --resolve pins DNS to the tailnet IP (see TS_IP note above).
+  curl -sfI --max-time 15 --resolve "${TS_HOST}:443:${TS_IP}" "$url" >/dev/null \
     || { echo "UNREACHABLE, not notifying: $url"; continue; }
   PAYLOAD=$(jq -n --arg c "🎬 ${caption} is ready: ${url}" '{content: $c, topic: "file-exchange"}')
   curl -sf {TELEGRAM_API}/telegram/send -H 'Content-Type: application/json' -d "$PAYLOAD" \
