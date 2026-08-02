@@ -10,7 +10,7 @@ channel right now rather than in what seems interesting. Each idea is a **hook**
 winning pattern, plus the **angle** it has to deliver, plus (where the series requires one) a
 **verified source**.
 
-This command does not write scripts. Its output is an idea bank that `/produce-script` consumes.
+This command does not write scripts. Its output is a dated idea bank at the **repo root** (Stage 7), which is where `/produce-script` looks when a prompt names an idea rather than a URL. Keep the bank at the root and keep the `## <series-slug> — <Series Name>` headings intact: `/produce-script` reads the series straight off the heading of the entry it matches.
 
 **Paths:** `{TOKEN}` references are machine-specific paths defined in [glossary.md](glossary.md) —
 resolve each before running. Repo-relative paths (`scrape/…`, `series/…`, `.claude/…`) are
@@ -214,7 +214,11 @@ Structure:
 2. **"What the analytics actually say"** — the top-performer table (views / engagement / saved /
    comments / shares) and the three Stage 2 findings. This is why the batch looks the way it
    does; a reader must be able to check the reasoning.
-3. **One section per series** — its pattern restated in one italic line, then the ideas.
+3. **One section per series** — heading `## <series-slug> — <Series Name> (<count>)`, its pattern
+   restated in one italic line, then the numbered ideas. Each idea is a bolded hook, a paragraph
+   of angle and detail, and a `- **Source:** [title](url)` line where the series requires one.
+   `/produce-script` resolves against exactly this shape — it reads the series off the heading
+   and the source off that line — so keep the slug in the heading and the format steady.
 4. **Recommended production order** — the top ~5 across all series, ranked, each with a
    one-line reason. Freshness-sensitive ideas rank higher; the best idea in the weakest series
    does not.

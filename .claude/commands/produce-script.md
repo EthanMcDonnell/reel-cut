@@ -1,11 +1,13 @@
 ---
 name: produce-script
-description: Produce a single video script from a user-supplied prompt (URL, phrase, Obsidian video idea reference, or a bare contested claim)
+description: Produce a single video script from a user-supplied prompt (URL, phrase, idea-bank reference, or a bare contested claim)
 tools: Read, Glob, Edit, Bash, WebFetch, WebSearch, Agent
 model: opus
 permissionMode: default
 ---
-Produces a complete, validated video script from a user-supplied prompt. The prompt may be a URL (engineering blog post, article), a phrase or topic idea, a reference to an existing file in the Obsidian Video Ideas folder (`{VAULT_VIDEO_IDEAS}`), or a bare contested claim (a `hot-takes` opinion with no source).
+Produces a complete, validated video script from a user-supplied prompt. The prompt may be a URL (engineering blog post, article), a phrase or topic idea, a reference to an idea in a repo-root idea bank (`*VIDEO_IDEA*.md`, written by `/video-ideas`) or an older note in the Obsidian Video Ideas folder (`{VAULT_VIDEO_IDEAS}`), or a bare contested claim (a `hot-takes` opinion with no source).
+
+**Ideas come from the repo root; the finished script goes to the vault.** `/video-ideas` writes its banks here, Stage 0 resolves against them, and Stage 3.5 saves the script to `{VAULT_VIDEOS_TODO}`.
 
 **Paths:** `{TOKEN}` references below are machine-specific absolute paths defined in [glossary.md](glossary.md) — resolve each to its value before running. Repo-relative paths (`scrape/…`, `assets/…`, `.claude/…`) are written inline as-is. Run everything from the project root (`{PROJECT_ROOT}`).
 
@@ -19,12 +21,17 @@ Determine the prompt type and resolve it to **source URLs** (branches 1–2) or 
 
 The URL is the source. Note it and go to the fetch step.
 
-### 2. If the prompt references a file (path, filename, or Obsidian note title)
+### 2. If the prompt references a video idea (a hook, a topic, an idea-bank entry, or a note title)
 
-- Search for a matching `.md` file in `{VAULT_VIDEO_IDEAS}` using Glob.
-- Read the matched file. Extract topic, angle, and any URLs listed in the file.
-- The first URL it lists, if any, is the source. Most idea notes have none — that is normal, and the source gate below handles it.
-- **Work out which series the note belongs to** and set `SERIES` to it. The note's frontmatter tags and its subject usually make this obvious; judge it against the series identities rather than defaulting. Fall back to `misc` only when the note genuinely fits no series.
+Idea banks live at the **repo root** — that is where `/video-ideas` writes them and where this command looks first. The Obsidian vault holds an older backlog of one-idea-per-file notes; check it only if the root turns up nothing.
+
+**First, the root idea banks.** `Glob` `*VIDEO_IDEA*.md` at the repo root and read the matches (the set grows every time `/video-ideas` runs, so search them all, newest first). A dated bank groups ideas under `## <series-slug> — <Series Name>` headings, and each idea is a numbered entry: a bolded hook, a paragraph of angle and detail, and a `- **Source:** [title](url)` line. Match the prompt against the hooks and topics, and when one entry fits:
+
+- `SERIES` is the **enclosing heading's slug**, when the file uses them — take it from there rather than inferring. Some older one-topic banks have no series headings and instead name the series in prose; use what the file says. Judge it yourself only when nothing in the file states it.
+- The entry's paragraph is the angle; carry it into `KEY_DISCUSSION_POINTS`.
+- The URL on its `**Source:**` line is the source. An entry with no source line resolves to no source, and the source gate below handles it.
+
+**Otherwise, the vault notes.** `Glob` `{VAULT_VIDEO_IDEAS}` for a matching `.md` and read it. Extract topic and angle; the first URL it lists, if any, is the source (most of these notes have none, which is normal). These notes carry no series heading, so **work out which series the note belongs to** from its frontmatter tags and subject, judging against the series identities rather than defaulting. Fall back to `misc` only when the note genuinely fits no series.
 
 ### 3. If the prompt is a bare claim (an opinion with no source)
 
@@ -215,7 +222,7 @@ After the script is written, save it:
 
 Wait for the saved file path before continuing.
 
-**If the prompt resolved to a video-idea file** (Stage 0 branch 2), update that file's `status:` frontmatter from `new` to `done` using the Edit tool. Prompts from the other branches have no idea file to mark.
+**If the prompt resolved to a vault note** (Stage 0 branch 2, the fallback half), update that note's `status:` frontmatter from `new` to `done` using the Edit tool. Leave the root idea banks alone — they are a dated record of what was proposed, and `/video-ideas` already dedups against the scripts saved in `{VAULT_VIDEOS_TODO}`, so a produced idea drops out on its own without editing the bank.
 
 ## Stage 3.6 — CTA & Viewer Resources
 
