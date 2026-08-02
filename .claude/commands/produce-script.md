@@ -215,10 +215,12 @@ After the script is written, save it:
 5. **Run the deterministic QC linter and block on it.** It catches mechanical defects (em dashes, banned throat-clearing openers, missing apostrophes, format and blank-line violations) that self-review keeps missing:
 
    ```bash
-   .venv/bin/python .claude/skills/scripts/scripts/lint_script.py "<saved_file_path>"
+   .venv/bin/python .claude/skills/scripts/scripts/lint_script.py "<saved_file_path>" --series <SERIES>
    ```
 
-   If it exits non-zero, fix every reported blocking error, re-save, and re-run until it passes. Warnings are advisory — review them, but they don't block. The word-count warning may fire because the extra hooks count toward content length; that is expected here (the hooks get split across separate videos), so judge the body's length on its own. Do not continue to Stage 4 until the linter passes.
+   **Always pass `--series`** (omit it only for `misc`, which has no series file). The word cap comes from that series' own `**Target length:**` line, so without the flag the linter falls back to a series-agnostic default that is too loose for the short series and too tight for `tbbt`.
+
+   If it exits non-zero, fix every reported blocking error, re-save, and re-run until it passes. Warnings are advisory — review them, but they don't block. The word-count warning already excludes the `**HOOK**` and `**CTA**` blocks, so it is measuring the shared body against the series' real ceiling. Do not continue to Stage 4 until the linter passes.
 
 Wait for the saved file path before continuing.
 
@@ -320,7 +322,7 @@ Bad: `Lead Magnet (AWS Storage Blog, building multi writer applications on S3 wi
 Then re-run the linter and confirm it still passes:
 
 ```bash
-.venv/bin/python .claude/skills/scripts/scripts/lint_script.py "<saved_file_path>"
+.venv/bin/python .claude/skills/scripts/scripts/lint_script.py "<saved_file_path>" --series <SERIES>
 ```
 
 If it reports a blank-line error, the resources block introduced an empty line — remove it and re-run until clean.

@@ -8,13 +8,27 @@ subjective judgement stays with the stop-slop review.
 
 Usage:
     .venv/bin/python .claude/skills/scripts/scripts/lint_script.py <script.md>
+    .venv/bin/python .claude/skills/scripts/scripts/lint_script.py <script.md> --series tbbt
     cat script.md | .venv/bin/python .claude/skills/scripts/scripts/lint_script.py -
+
+Pass --series so the word cap comes from that series' own target length in
+`series/<slug>.md`. Without it the cap falls back to a series-agnostic default,
+which is too loose for the short series and too tight for the long ones.
 
 Exit 0 = no blocking errors (warnings are advisory). Exit 1 = blocking error(s).
 """
 import argparse
 import re
 import sys
+from pathlib import Path
+
+# Repo root, from .claude/skills/scripts/scripts/lint_script.py
+PROJECT_ROOT = Path(__file__).resolve().parents[4]
+
+# Fallback only — used for `misc` and for callers that pass no --series. Every
+# real series states its own length in series/<slug>.md; this number belongs to
+# no series and is deliberately loose.
+DEFAULT_WORD_CAP = 190
 
 REQUIRED_HEADERS = ["**HOOK**", "**SCRIPT**", "**CONCLUSION**", "**REFERENCES:**"]
 # Optional headers, allowed but not required. **CTA**, when present, holds the
@@ -105,6 +119,32 @@ BASELINE_MARKER = re.compile(
 )
 
 
+# The series file's Voice Profile owns the length. Three shapes are in use:
+# an explicit "hard cap N", a "A–B words" range, and "under N words".
+TARGET_LENGTH = re.compile(r"\*\*Target length:\*\*(.+)", re.I)
+HARD_CAP = re.compile(r"hard cap\s+(\d+)", re.I)
+LENGTH_RANGE = re.compile(r"(\d+)\s*[‐-―-]\s*(\d+)\s*words", re.I)
+LENGTH_UNDER = re.compile(r"under\s+(\d+)\s*words", re.I)
+
+
+def series_word_cap(slug):
+    """Word cap for `slug`, read from series/<slug>.md. (cap, label) or (None, why)."""
+    path = PROJECT_ROOT / "series" / f"{slug}.md"
+    if not path.is_file():
+        return None, f"no series file at series/{slug}.md"
+    line = TARGET_LENGTH.search(path.read_text(encoding="utf-8"))
+    if not line:
+        return None, f"series/{slug}.md has no **Target length:** line"
+    text = line.group(1)
+    # "hard cap N" is the series stating its ceiling outright, so it wins over a
+    # range on the same line ("150-230 words (...; hard cap 230)").
+    for pattern, group in ((HARD_CAP, 1), (LENGTH_RANGE, 2), (LENGTH_UNDER, 1)):
+        found = pattern.search(text)
+        if found:
+            return int(found.group(group)), f"{slug} cap {found.group(group)}"
+    return None, f"could not read a number from {slug}'s target length"
+
+
 def longest_shared_run(a, b, minimum):
     """Longest run of `minimum`+ words appearing verbatim in both strings."""
     wa = re.findall(r"[a-z0-9']+", a.lower())
@@ -117,8 +157,9 @@ def longest_shared_run(a, b, minimum):
     return ""
 
 
-def lint(lines):
+def lint(lines, cap=DEFAULT_WORD_CAP, cap_label=None):
     errors, warns = [], []
+    cap_label = cap_label or f"no series given, default cap {cap}"
     stripped = [l.strip() for l in lines]
     joined = "\n".join(lines)
 
@@ -240,9 +281,9 @@ def lint(lines):
         words += len(s.split())
         body.append(s)
         (script_lines if section == "**SCRIPT**" else conclusion_lines).append(s)
-    if words > 190:
+    if words > cap:
         note = f"body only, {n_hooks} hooks excluded" if n_hooks else "body only"
-        warns.append((0, "word-count", f"{words} words of content ({note}; hard cap 190)"))
+        warns.append((0, "word-count", f"{words} words of content ({note}; {cap_label})"))
 
     # Per-sentence length. A spoken sentence past ~25 words has chained one
     # clause too many, burying the reveal under its own qualifiers. Across the
@@ -281,7 +322,16 @@ def lint(lines):
 def main():
     ap = argparse.ArgumentParser(description="Deterministic QC linter for ReelCut scripts.")
     ap.add_argument("path", help="path to the script .md file, or - for stdin")
+    ap.add_argument("--series", help="series slug; sets the word cap from series/<slug>.md")
     args = ap.parse_args()
+
+    cap, cap_label = DEFAULT_WORD_CAP, None
+    if args.series:
+        found, label = series_word_cap(args.series)
+        if found:
+            cap, cap_label = found, label
+        else:
+            print(f"lint_script: {label}; falling back to default cap {cap}", file=sys.stderr)
 
     try:
         content = sys.stdin.read() if args.path == "-" else open(args.path, encoding="utf-8").read()
@@ -293,7 +343,7 @@ def main():
     if lines and lines[-1] == "":  # drop the trailing empty from a final newline
         lines = lines[:-1]
 
-    errors, warns = lint(lines)
+    errors, warns = lint(lines, cap, cap_label)
 
     def show(items):
         for ln, code, msg in sorted(items):
