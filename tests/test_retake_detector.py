@@ -484,6 +484,60 @@ def test_real_clip_snap_does_not_swallow_kept_sentence_between_clusters():
     assert not swallowed, f"kept sentence swallowed by cut(s): {swallowed}"
 
 
+# ---------------------------------------------------------------------------
+# Real-clip regression: the START back-snap must not absorb a preamble the keeper
+# take has no counterpart for.
+# ---------------------------------------------------------------------------
+
+# Exact words + timestamps from the canva-session-revocations-s3 clip
+# (856D0E66-E505-4529-9AC1-E30DCF76FFDC, debug.5.timeline), 66.0s–100.0s.
+# Three takes of the "older ones don't matter" beat. The FIRST take opens with a
+# scripted sentence that is never re-said — "A booting gateway grabs only the last
+# 12 hours," — spoken straight into the matched core with only a 0.58s breath, so
+# "older" @76.895 is not a take boundary and the back-snap walks to "A" @73.261.
+_CANVA_TWELVE_HOURS_REGION = [
+    ('So', 66.82, 66.921), ("here's", 66.961, 67.162), ('the', 67.182, 67.262), ('clever', 67.282, 67.543),
+    ('part,', 67.563, 67.824), ('they', 68.225, 68.406), ('moved', 68.466, 68.727), ('the', 68.747, 68.847),
+    ('list', 68.908, 69.168), ('into', 69.309, 69.49), ('S3,', 69.771, 70.292), ('chopped', 70.674, 70.975),
+    ('into', 71.015, 71.195), ('timestamp', 71.296, 71.978), ('chunks.', 72.078, 72.48), ('A', 73.261, 73.301),
+    ('booting', 73.381, 73.763), ('gateway', 73.843, 74.265), ('grabs', 74.405, 74.706), ('only', 74.807, 74.988),
+    ('the', 75.048, 75.128), ('last', 75.168, 75.449), ('12', 75.44, 75.8), ('hours,', 75.911, 76.313),
+    ('older', 76.895, 77.116), ('ones', 77.236, 77.437), ("don't", 77.578, 77.799), ('matter.', 77.879, 78.14),
+    ('Older', 82.786, 82.988), ('ones', 83.11, 83.312), ("don't", 83.434, 83.656), ('matter.', 83.738, 83.94),
+    ('Since', 84.421, 84.622), ('every', 84.844, 85.066), ('cookie', 85.167, 85.53), ('refreshes', 85.631, 86.216),
+    ('by', 86.297, 86.458), ('then.', 86.519, 86.66), ('Older', 90.971, 91.172), ('ones', 91.252, 91.412),
+    ("don't", 91.453, 91.653), ('matter,', 91.673, 91.994), ('since', 92.215, 92.435), ('every', 92.596, 92.816),
+    ('cookie', 92.896, 93.277), ('usually', 93.759, 94.16), ('refreshes', 94.24, 94.761), ('by', 94.821, 94.962),
+    ('then,', 95.022, 95.243), ('and', 95.784, 95.884), ('refreshes', 95.944, 96.466), ('get', 96.546, 96.707),
+    ('checked', 96.807, 97.128), ('against', 97.168, 97.469), ('the', 97.549, 97.629), ('database.', 97.669, 97.97),
+    ('Each', 99.32, 99.461), ('revocation', 99.521, 100.062),
+]
+
+
+def test_real_clip_snap_does_not_absorb_preamble_keeper_never_re_said():
+    """Regression (canva-session-revocations-s3): keep the LAST take — but the cut for
+    it must not reach back over a sentence that take never re-said.
+
+    Three takes of "older ones don't matter…"; the last is the keeper (correct). The
+    first opens with "A booting gateway grabs only the last 12 hours," — a scripted
+    sentence present in no other take. The keeper begins exactly on the matched core
+    ("Older ones don't matter"), so it has no head of its own for those words to be a
+    divergent restatement OF; absorbing them deletes the 12-hour window outright and
+    strands "Older ones" without a referent.
+    """
+    words = [_w(t, s, e) for t, s, e in _CANVA_TWELVE_HOURS_REGION]
+    ranges, _ = detect_retakes(
+        words, min_retake_words=3, max_retake_gap_s=12.0, min_match_ratio=0.5,
+        max_retake_bridge_s=1.0, max_retake_span_s=60.0, min_reword_overlap=0.6,
+    )
+    assert len(ranges) == 1
+    cut_start, cut_end = ranges[0]
+    assert cut_start == pytest.approx(76.895)   # cut opens at "older", NOT "A" @73.261
+    assert cut_end == pytest.approx(90.971)     # …and ends on the keeper's first word
+    # the unique lead-in survives in full
+    assert not any(s < 76.3 and e > 73.2 for s, e in ranges)
+
+
 def test_real_clip_first_reworded_take_is_cut():
     """Regression (billion-laughs): the first take of the cluster is a REWORDED failed
     take and must still be cut.

@@ -345,6 +345,16 @@ def _snap_to_take_boundaries(
         # the whole keeper take. Snapping back would swallow that kept lead-in, stranding
         # the keeper as a subjectless fragment. So bail when the preamble being absorbed
         # spans more words than the keeper itself.
+        #
+        # Length alone is not enough, because a unique lead-in can also be SHORTER than
+        # the keeper. The failed take's head is only a divergent restatement worth
+        # absorbing when the keeper has a head of its own for it to diverge FROM
+        # ("with no particular virus…" → "see there was no virus…": both takes open with
+        # unmatched words before the shared core). When the keeper instead begins exactly
+        # on the matched core, nothing in it corresponds to those leading words — they are
+        # content that was never re-said, and snapping back deletes it outright ("A booting
+        # gateway grabs only the last 12 hours, older ones don't matter." → "Older ones
+        # don't matter, since…", where the 12-hour window survives in no other take).
         if ci < n and not boundary[ci]:
             k = ci
             while k > 0 and not boundary[k]:
@@ -352,10 +362,16 @@ def _snap_to_take_boundaries(
             ke = cj + 1
             while ke < n and not boundary[ke]:
                 ke += 1
+            # Walk back from the keeper's first word to ITS take boundary. Zero means the
+            # keeper take opens on the match point and has no counterpart head.
+            kb = min(cj, n - 1)
+            while kb > 0 and not boundary[kb]:
+                kb -= 1
             preamble_words = ci - k        # boundary → cut start (failed take's head)
             keeper_words = ke - cj         # keeper's first word → its take boundary
+            keeper_head = cj - kb if cj < n else 0   # keeper's own unmatched head
             if (boundary[k] and t_start - words[k].start <= max_reach_s
-                    and preamble_words <= keeper_words):
+                    and preamble_words <= keeper_words and keeper_head > 0):
                 t_start = words[k].start
 
         # END: cut closes mid-take → push forward to the next take's first word
