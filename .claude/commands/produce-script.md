@@ -241,7 +241,13 @@ For each candidate, name the category, a one-line "why a viewer wants this," and
 From the verified candidates, select the **single best lead magnet**: the one with the strongest "I want that" pull *and* the tightest tie to the article's actual topic (a steal-this asset, the source's own deeper material, or the article itself). Then write a comment-bait CTA:
 
 - A short, memorable, topic-tied **keyword** (one word, uppercase, e.g. `CACHE`, `SCALE`, `RAFT`).
-- A one-line CTA the creator can pin or say: `Want <what the resource is>? Comment "<KEYWORD>" and I'll send it over.`
+- A one-line CTA the creator can pin or say: `<Who made it> <has/have> a guide to <doing this yourself>. Comment "<KEYWORD>" and I'll send it over.`
+
+**State the resource as a fact, then ask for the comment.** The CTA is the last thing the viewer hears, so it has to sound like the creator mentioning something in passing, not a pitch. Never open it with `Want`, `Wanna`, `Want to know`, `Do you want`, `Ever wondered`, or any other question about what the viewer desires — that is the shape of an ad, and it breaks the video's voice on the final line. Name who made the resource and what it does, in the same plain register as the body, then make the ask.
+
+Good: `AWS have their own guide to setting up S3 this same way. Comment "S3" and I'll send it over.`
+
+Bad: `Want the AWS guide to running this same multi writer trick on S3 yourself? Comment "S3" and I'll send it over.` — the question opener sells instead of tells, and `trick` hypes a resource that can speak for itself.
 
 ### Step 3.6.4 — Append to the saved script file
 
@@ -251,7 +257,7 @@ Write the CTA and the resources in **two** places, **no blank lines anywhere** (
 
 ```
 **CTA**
-Want <resource>? Comment "<KEYWORD>" and I'll send it over.
+<Who made it> <has/have> a guide to <doing this yourself>. Comment "<KEYWORD>" and I'll send it over.
 ```
 
 2. Append the resources block to the **end** of the file, **after** the `**REFERENCES:**` section. One resource per pair of lines: a short label on the first line, the bare URL on the second. No blank lines anywhere (the linter still blocks on them):
