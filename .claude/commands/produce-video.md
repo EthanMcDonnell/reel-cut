@@ -279,15 +279,26 @@ rendered hooks. The Telegram caption uses the pretty Instagram title from `title
 
 **Prerequisites** (set up once, outside this workflow):
 - Tailscale installed and this machine joined to the tailnet (`tailscale up`).
+- **Operator rights granted**, so `tailscale serve` runs without root:
+  `sudo tailscale set --operator=$USER`. Without this, step 1 below fails with
+  `401 Unauthorized: must be root` on *every* render and the serve config silently goes stale.
 - The local Telegram bot API server running on `{TELEGRAM_API}` (same server used by
   `scrape/telegram.py`).
 
 ```bash
-# 1. Serve the output directory over Tailscale (idempotent — safe to re-run every render)
-tailscale serve --bg --set-path /reels "{PROJECT_ROOT}/output"
+# 1. Serve the output directory over Tailscale (idempotent — safe to re-run every render).
+#    Abort on failure: a broken serve config must not be papered over by notifying anyway.
+tailscale serve --bg --set-path /reels "{PROJECT_ROOT}/output" \
+  || { echo "tailscale serve failed — see Prerequisites (operator rights)"; exit 1; }
 
-# 2. Base tailnet URL
-TS_HOST=$(tailscale status --json | jq -r '.Self.DNSName' | sed 's/\.$//')
+# 2. Base tailnet URL — read from the SERVE CONFIG, not just .Self.DNSName. Renaming this
+#    machine leaves the serve handler keyed to the OLD vhost while .Self.DNSName reports the
+#    new one, so links built from .Self.DNSName point at a host the serve config never answers.
+TS_HOST=$(tailscale serve status --json | jq -r '.Web | keys[0]' | sed 's/:443$//')
+DNS_NAME=$(tailscale status --json | jq -r '.Self.DNSName' | sed 's/\.$//')
+[ -n "$TS_HOST" ] && [ "$TS_HOST" = "$DNS_NAME" ] || {
+  echo "serve vhost '$TS_HOST' != device name '$DNS_NAME' — re-run step 1 with operator rights"
+  exit 1; }
 
 # 3. Post one link per hook video to the local Telegram bot API — the file-exchange topic.
 #    Scoped to THIS video's slug folder only, never other slugs' videos.
@@ -303,7 +314,11 @@ for f in "{PROJECT_ROOT}"/output/"${SLUG}"/*.mp4; do
   grep -qxF "$key" "$SENT_LOG" && continue   # already notified — skip
   # Pretty caption: the title.json entry whose slug matches this file's stem; else the filename.
   caption=$(jq -r --arg s "${name%.mp4}" '(map(select(.slug == $s)) | .[0].title) // $s' "$TITLES" 2>/dev/null || echo "$name")
-  PAYLOAD=$(jq -n --arg c "🎬 ${caption} is ready: https://${TS_HOST}/reels/${SLUG}/${name}" '{content: $c, topic: "file-exchange"}')
+  url="https://${TS_HOST}/reels/${SLUG}/${name}"
+  # Never post a link that doesn't resolve — an unreachable URL must not be logged as notified.
+  curl -sfI --max-time 15 "$url" >/dev/null \
+    || { echo "UNREACHABLE, not notifying: $url"; continue; }
+  PAYLOAD=$(jq -n --arg c "🎬 ${caption} is ready: ${url}" '{content: $c, topic: "file-exchange"}')
   curl -sf {TELEGRAM_API}/telegram/send -H 'Content-Type: application/json' -d "$PAYLOAD" \
     && echo "$key" >> "$SENT_LOG"
 done
@@ -319,3 +334,8 @@ Notes:
 - `output/.notified` records the basename of every hook video already posted. To re-send a
   link, delete its line (or the whole file). `curl -sf` only logs a video as notified when
   the POST returns 2xx, so a failed send is retried on the next run.
+- **Renaming this Mac breaks `/reels`.** The serve handler stays keyed to the old
+  `<name>.<tailnet>.ts.net:443` vhost, which MagicDNS stops resolving (NXDOMAIN), so every
+  link 404s while `tailscale status` still reports a healthy node. Step 2's vhost-vs-DNSName
+  check catches this; the fix is re-running step 1 (needs operator rights). If the stale key
+  lingers, `tailscale serve reset` then re-run step 1.
