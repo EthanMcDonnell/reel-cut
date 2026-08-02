@@ -40,7 +40,7 @@ A prompt that states a contested position about how to build software — "GitHu
 There is no article to fetch, so the material has to come from the user:
 
 1. **Ask for the mechanism.** The body of a hot take is *why the user believes it, from real use*. You cannot supply this — inventing lived experience for a first-person video is the one thing this branch must never do. Ask the user directly: what happened when they did it, what broke, what they tried instead. Keep asking until there is a concrete mechanism rather than a preference.
-2. **Ask for the strongest counter-argument** and where they concede it wins. The series structure requires this and it is also the user's opinion to give, not yours.
+2. **Ask for the strongest counter-argument** and where they concede it wins. The series requires a concession and it is also the user's opinion to give, not yours.
 
 Build the `topic_package` with `SOURCE_URLS: none` and `FULL_CONTENT: none`, putting the user's own reasoning in `HOW_IT_WAS_SOLVED` and the claim in `MOST_SURPRISING_FACT`. There is nothing to fetch, so skip the fetch step below.
 
