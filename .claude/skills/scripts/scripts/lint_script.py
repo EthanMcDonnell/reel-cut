@@ -30,11 +30,12 @@ NON_BODY_SECTIONS = {"**HOOK**", "**CTA**"}
 THROAT_CLEARING = [
     "here's the thing", "here's the problem", "here's what", "here's why",
     "here's how", "here's this", "here's that", "here's the interesting",
-    "here's where", "here's when",
     "heres the thing", "heres the problem", "heres what", "heres why",
     "heres how", "heres this", "heres that", "heres the interesting",
-    "heres where", "heres when",
 ]
+# Deliberately absent: "here's where/when". Those clauses carry the claim
+# ("Here's where the CLI wins"), so they are a spoken hinge, not the
+# contentless deferral the entries above are.
 
 # Lines that narrate the script's own structure instead of speaking its
 # content. A script written to a fixed beat shape keeps reading the beat
