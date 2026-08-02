@@ -30,6 +30,7 @@ A surprising fact stops the scroll. An unresolved implication or personal threat
 7. **Lead with the most compelling raw element.** Before writing, identify the strongest hook element in the topic: a name, a number, a stat, a reversal. Make sure it survives into the final hook. Do not abstract it away.
 8. **Make the threat personal when it applies to the viewer.** "Your data" beats a statistic about companies. Use "you/your" when the viewer is the one at risk.
 9. **Make bold declarative claims when the facts support it.** "X just killed Y" beats "X may be changing Y." If the claim is true, say it directly. Keep it short.
+10. **A fact is not a hook, and neither is a big number on its own.** "Company X handles N sessions with Y" is information: the name and the number only qualify the viewer, they don't stop the scroll. The number needs something riding on it — an absurd action ("by downloading a file"), a reversal ("and the fix was the opposite"), a cost ("and it took down their own database"), or the viewer's own stake ("when *you* log out"). State the tension, not the spec.
 
 ## Where Patterns Come From
 
@@ -44,11 +45,12 @@ Use a pattern only if it fits the topic and the content of the video. Don't forc
 
 ## Hook Quality Test
 
-Before finalizing, run these three checks:
+Before finalizing, run these four checks:
 
 1. **Scroll test** — Would someone scrolling fast pause here? (If it sounds like a blog post title, the answer is no.)
 2. **HOW test** — Does the hook withhold something the viewer now needs to know?
 3. **Promise test** — Does the video actually deliver what the hook implies?
+4. **Statement test** — Could this sentence sit unchanged inside the source article without anyone noticing? Then it's a fact, not a hook. Rewrite until it couldn't.
 
 If any check fails, rewrite. Where a series file sets its own bar for one of these, that bar replaces the check — a series whose hooks are required to state the claim outright is not failing the HOW test, it is running a different one.
 
