@@ -57,6 +57,13 @@ RESOURCE_BANNED_LABELS = [
     "ultimate", "everything you need",
 ]
 
+# CTA openers that sell instead of tell. The line has to sound like the creator
+# mentioning the resource, not an ad asking what the viewer wants.
+CTA_BANNED_OPENERS = [
+    "want ", "wanna ", "want to ", "do you want", "if you want",
+    "ever wondered", "curious ", "need ",
+]
+
 # Softer banned phrases — surfaced, but not blocking.
 WARN_PHRASES = [
     "it turns out", "the truth is", "the reality is", "make no mistake",
@@ -154,6 +161,15 @@ def lint(lines):
             errors.append((cta + 1, "cta-order", "**CTA** must come after **CONCLUSION**"))
         if "**REFERENCES:**" in pos and cta > pos["**REFERENCES:**"]:
             errors.append((cta + 1, "cta-order", "**CTA** must come before **REFERENCES:**"))
+        # The CTA states the resource as a fact, then asks for the comment. A
+        # question about what the viewer wants reads as an ad on the last line.
+        for i in range(cta + 1, len(stripped)):
+            if stripped[i] in ALL_HEADERS:
+                break
+            first = stripped[i].lower().lstrip("\"'")
+            for opener in CTA_BANNED_OPENERS:
+                if first.startswith(opener):
+                    errors.append((i + 1, "cta-opener", f'CTA opens with "{opener}"; state the resource as a fact, then ask for the comment'))
 
     # Body word count for the cap. The HOOK block holds every hook variant
     # (recorded once, then split into separate videos) and the CTA is an appended
