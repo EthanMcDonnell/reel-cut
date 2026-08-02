@@ -15,11 +15,7 @@ You have 1.3–3 seconds to stop the scroll. A strong hook does two things simul
 
 The WHAT creates the stop. The missing HOW creates the stay.
 
-**Weak vs. strong:**
-Both examples below take the same subject, so the difference is structure alone and not a template to copy:
-
-- Weak: "Today I'll explain how Netflix streams to 250 million users." (reveals both — no tension)
-- Strong: "Netflix doesn't stream most of what you watch from the cloud." (reveals the WHAT — creates tension by withholding the HOW)
+**Weak vs. strong:** a hook that announces the subject and its explanation together has spent its tension before the viewer has stopped ("Today I'll explain how *X* works"). A hook that states the surprising thing and leaves the reason unsaid keeps it. Same subject either way — the difference is only which half you withhold.
 
 A surprising fact stops the scroll. An unresolved implication or personal threat makes them *stay*. Ask yourself: after hearing this hook, does the viewer *need* to know what comes next?
 
