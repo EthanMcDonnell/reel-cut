@@ -7,12 +7,12 @@
 body + ~3s different hook) *not* get clustered as near-duplicates by Instagram, so each gets
 independent reach instead of being throttled.
 
-**Blunt summary before you read further:** 6 of the 8 techniques below are the *exact*
-transformations Meta's SSCD copy-detector and its audio fingerprinter are trained to see through.
-Building them into the pipeline is mostly wasted effort. This doc exists to (a) prove that
-technique-by-technique so we stop reconsidering it, (b) isolate the 1–2 places where there *is*
-real leverage, and (c) point at the levers that actually work. It is deliberately not a
-"here's how to wire up all 8 tricks" doc — that plan would fail.
+**Blunt summary before you read further:** 7 of the 9 techniques below are the *exact*
+transformations Meta's SSCD copy-detector and its audio fingerprinter are trained to see through —
+and #9 is now measured, not estimated. Building them into the pipeline is mostly wasted effort.
+This doc exists to (a) prove that technique-by-technique so we stop reconsidering it, (b) isolate
+the 1–2 places where there *is* real leverage, and (c) point at the levers that actually work. It
+is deliberately not a "here's how to wire up all 9 tricks" doc — that plan would fail.
 
 ---
 
@@ -50,6 +50,7 @@ content-based SSCD (visual) + audio fingerprinting. So "beats file hash" ≈ "be
 | 6 | Trim frames start/end + light color | naive frame-diff | ~0 on SSCD | trivial | Free hygiene, not the answer |
 | 7 | Alter audio (swap/tweak track) | — | **Only technique with real headroom** — but capped hard by the identical voiceover (see below) | low–medium | Worthwhile *only* as a genuine, prominent music swap; tweaks are dead |
 | 8 | Compress differently before upload | file hash only | ~0 | trivial | Same as #1 |
+| 9 | Per-cut ±ms jitter on every EDL boundary | file hash only | **0 — measured, see below** | medium (caption/image resync + clipped-onset risk) | **Rejected on data** |
 
 ### Why #7 is the only interesting one — and why it's still capped
 A genuinely **different, prominently-mixed music bed per variant** does change the audio
@@ -62,13 +63,73 @@ needs ≥3 distinct tracks in `assets/audio/`, which is currently a user decisio
 
 ---
 
+## Measured — technique #9, per-cut ms jitter (tested 2026-07-27)
+
+The one technique in this table with first-party numbers rather than a reasoned estimate. The
+proposal: jitter *every* keep-segment boundary by ±N ms, so cumulative drift makes each variant
+un-alignable. Tested on `database-split-brain` (21 keep segments, 83.5s) — identical source,
+identical segment order, identical encode; the only variable is the boundary jitter.
+Harness + full write-up: `scratchpad/jitter_test/` (`RESULTS.md`).
+
+**The premise is sound.** Drift does accumulate; variants are not a global time-shift:
+2 ms jitter → −15.1 ms total, 50 ms → −377.7 ms.
+
+**Video — it never changes.** Comparing decoded frames (grayscale MAE, 0–255):
+
+| jitter | same-index MAE | nearest-frame MAE | frames re-matched | slide needed |
+|--------|---------------:|------------------:|------------------:|-------------:|
+| 2 ms   | 1.329 | 0.427 | 100.0% | 1 frame |
+| 5 ms   | 4.025 | 0.470 | 100.0% | 2 |
+| 15 ms  | 5.717 | 0.379 |  99.8% | 3 |
+| 50 ms  | 11.680 | 0.637 |  99.8% | 10 |
+
+Every jittered frame is a baseline frame that slid. This is why the folklore is persuasive —
+same-index diff *does* rise (1.3 → 11.7), so a naive check "sees a change" — and why it's wrong.
+Note SSCD was never needed: the **weakest possible matcher** (raw grayscale nearest-frame)
+re-aligns 100%. A descriptor trained for crop/flip invariance can only do better.
+
+**Audio — the fingerprint survives.** Landmark constellation hashes + offset voting, with controls:
+
+| variant | hash recall | top-offset votes | offset peaks |
+|---------|------------:|-----------------:|-------------:|
+| **SELF (control)** | 100.0% | **21714** | 1 |
+| 2 ms  | 34.2% | 5842 | 2 |
+| 5 ms  | 45.2% | 5789 | 3 |
+| 15 ms | 42.4% | 4525 | 2 |
+| 50 ms | 36.5% | 1445 | 7 |
+| **DIFFERENT (control)** | 2.0% | **6** | 48 |
+
+`DIFFERENT` = another render, same speaker/mic/room, different words — the genuinely-different pole.
+
+Raw hash recall *does* fall to ~34–45%, because moving a segment shifts its phase against the STFT
+frame grid. That is not the decision variable. A landmark matcher declares confident identity on
+*tens* of consistent landmarks; 2 ms jitter yields **5842** against a null of **6** (~970×), and
+50 ms still yields 1445 (~240×). The 2–7 offset peaks are the per-segment alignment jitter creates,
+which is the routine case for clip reuse and compilations, not a matcher failure.
+
+**Why:** keep segments are sentence-length (median 3.16s). Jitter moves 21 seams and leaves 83
+seconds of identical speech between them.
+
+**The trap to remember:** 21714 → 5842 *looks* like 73% progress. The decision is thresholded, not
+linear — the bar is ~tens, so it is 0% progress. No jitter value on that curve arrives, which is why
+sweeping to 25× the proposal didn't help. Nor do these stack: 6 of the 8 techniques above are inside
+SSCD's training augmentation set, and combining transforms a model is invariant to yields invariance.
+
+---
+
 ## What actually moves the needle (tiered)
 
-### Tier 0 — Free render hygiene (implement; ~0 IG effect but costless)
+### Tier 0 — Free render hygiene (**implemented**; ~0 IG effect but costless)
 Vary per-variant **encoder settings** (bitrate, codec/container), **trim a few frames**, and
 **vary metadata**. This defeats any naive hash/perceptual-hash clustering. IG doesn't lead with
 that, so treat this as cheap insurance and completeness, **not** the fix. Do it because it's free,
 don't expect it to change reach.
+
+Shipped as `output.encode_variation` (`config.yaml`, `renderer.py:_encode_variation`): per-hook CRF
+(libx264) or bitrate (videotoolbox) jitter, keyframe-interval jitter, and a varying metadata tag,
+all deterministically seeded by output filename so re-renders stay reproducible. Verified to produce
+3/3 distinct files on both codec paths. Deliberately touches **only** the encoder — no cut-boundary
+changes, so no clipped word onsets and no caption/image resync (the cost that sank #9).
 
 ### Tier 1 — Posting strategy (the durable answer — no code)
 Per the research doc this is where de-clustering actually happens:
