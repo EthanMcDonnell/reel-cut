@@ -101,8 +101,9 @@ If no usable content can be resolved from the prompt, abort with: "Could not res
 
 Once `SERIES` is resolved (and it is not `misc`), **read `series/<SERIES>.md`** — that file is the source of truth for this series, and it outranks the defaults written into this command. It drives Stage 0.5 (spine), Stage 1 (hooks), Stage 3 (voice), and Stage 3.6 (CTA and resources). The canonical slugs are `tbbt`, `updates`, `tech-in-one-breathe`, `interesting-tech`, `ai-fundamentals`, `hot-takes`; `misc` has no file and uses the `scripts` skill's default voice, no CTA, and no resources.
 
-Two of its sections replace this command's defaults outright rather than adding to them:
+Three of its sections replace the defaults written into this command and the `scripts` skill outright, rather than adding to them:
 
+- **`## Audience`** (always present) — the series owns who is watching, what they already know, and what needs explaining. This sets the jargon bar for Stage 3; there is no channel-wide default, and the six audiences differ enough that assuming one is the main way a script ends up pitched at the wrong viewer.
 - **`## Structure`** (when present) — the series has a fixed body shape, so it *is* the spine; Stage 0.5 fills in its beats instead of choosing a shape.
 - **`## CTA & Resources`** (always present) — the series owns its CTA type, how many resources ship, and what kind. Stage 3.6 does what it says.
 
