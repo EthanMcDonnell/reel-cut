@@ -79,10 +79,19 @@ MAX_ASPECT = 5.0    # wider/taller than this is a banner/rule/divider
 _JS_HARVEST = r"""
 (args) => {
   const { selectors } = args;
+  // Taking the first selector that has text picks the wrong node whenever a page carries a
+  // stub <article> (a teaser or related-post card) alongside the real body: the stub has
+  // text, so it wins on specificity, and every figure in <main> goes unseen. Specificity
+  // order is right for extracting prose, which is what single_scrape needs; a figure
+  // harvester wants whichever candidate actually holds the figures.
   let container = null;
+  let best = -1;
   for (const sel of selectors) {
-    const el = document.querySelector(sel);
-    if (el && (el.innerText || '').trim().length > 200) { container = el; break; }
+    for (const el of document.querySelectorAll(sel)) {
+      if ((el.innerText || '').trim().length <= 200) continue;
+      const n = el.querySelectorAll('img,svg').length;
+      if (n > best) { best = n; container = el; }  // ties keep the earlier, more specific selector
+    }
   }
   container = container || document.body;
 
@@ -148,10 +157,14 @@ _JS_HARVEST = r"""
   };
 
   container.querySelectorAll('figure').forEach((fig) => {
-    const img = fig.querySelector('img');
+    // A lazy <figure> carries both a blur-up placeholder and the real image. Taking the
+    // first one records the figure at placeholder size, so it fails the MIN_SIDE gate and
+    // its figcaption (the strongest signal we have) is lost with it. Take the biggest.
+    const imgs = [...fig.querySelectorAll('img')];
+    const img = imgs.sort((a, b) => (b.naturalWidth || 0) - (a.naturalWidth || 0))[0] || null;
     const svg = fig.querySelector('svg');
     if (!img && !svg) return;
-    if (img) seen.add(img);
+    imgs.forEach((i) => seen.add(i));
     if (svg) seen.add(svg);
     record(fig, img, svg, fig);
   });
@@ -218,6 +231,39 @@ def _ext_for(content_type: str, src: str) -> str:
     return "png"
 
 
+# Figures below the fold are lazy-loaded on most modern blog CDNs (Sanity, Next.js
+# <Image>, Contentful): until they scroll into view the real <img> reports naturalWidth 0
+# and sits behind a ~20px blur-up placeholder. Both then fail the MIN_SIDE gate in _score
+# and get dropped as icons before scoring ever reads their alt text, so the whole page
+# harvests as "no figures" with no error. Walking them into view forces them to fetch,
+# which has to happen before _JS_HARVEST measures anything.
+_JS_SETTLE_LAZY = """
+async () => {
+  // Paging down by viewport height is not enough: these loaders want their own element
+  // in view for a moment, so a fast page-scroll skips straight past them. Walking image
+  // by image is what actually trips them (8/8 real figures on the page that motivated
+  // this, versus 0 for paging). Only visit images that are still placeholder-sized but
+  // lay out large, which skips real icons and already-loaded figures.
+  const imgs = Array.from(document.images);
+  const pending = imgs.filter(
+    (i) => i.naturalWidth < 200 && i.getBoundingClientRect().width >= 100
+  );
+  for (let i = 0; i < pending.length && i < 60; i++) {
+    pending[i].scrollIntoView({ block: 'center' });
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  window.scrollTo(0, 0);
+  await Promise.all(imgs.map((img) => img.complete
+    ? Promise.resolve()
+    : new Promise((r) => {
+        img.addEventListener('load', r, { once: true });
+        img.addEventListener('error', r, { once: true });
+        setTimeout(r, 3000);
+      })));
+}
+"""
+
+
 async def _prepare(ctx, url: str):
     """Open a desktop-viewport page, load the URL, dismiss overlays, expand truncations."""
     sys.path.insert(0, str(ROOT / "scrape"))
@@ -236,6 +282,11 @@ async def _prepare(ctx, url: str):
             await step(page)
         except Exception:
             pass
+    # Last, so overlays are gone and truncated sections are expanded before we scroll.
+    try:
+        await page.evaluate(_JS_SETTLE_LAZY)
+    except Exception:
+        pass
     return page
 
 
@@ -298,7 +349,8 @@ async def harvest(url: str, output_dir: Path, max_figures: int = 8,
 
     sys.path.insert(0, str(ROOT / "scrape"))
     from playwright_utils import (
-        STEALTH_ARGS, is_bot_block, stealth_context, stealth_persistent_context,
+        BOT_BLOCK_RETRIES, STEALTH_ARGS, is_bot_block, stealth_context,
+        stealth_persistent_context,
     )
     from single_scrape import CAPTCHA_PROFILE
 
@@ -307,22 +359,37 @@ async def harvest(url: str, output_dir: Path, max_figures: int = 8,
     figures_dir.mkdir(parents=True, exist_ok=True)
 
     async with async_playwright() as pw:
-        browser = None
-        if solve_captcha:
-            # Shares the profile primed by `single_scrape.py --solve-captcha`.
-            ctx = await stealth_persistent_context(pw, str(CAPTCHA_PROFILE), device_scale_factor=2)
-        else:
-            browser = await pw.chromium.launch(headless=True, args=STEALTH_ARGS)
-            ctx = await stealth_context(browser, device_scale_factor=2)
+        browser = ctx = page = None
 
         async def _close():
-            await (browser.close() if browser else ctx.close())
+            if browser:
+                await browser.close()
+            elif ctx:
+                await ctx.close()
 
-        try:
-            page = await _prepare(ctx, url)
-        except Exception as exc:
-            await _close()
-            return {"dir": str(output_dir), "candidates": [], "skipped": f"page load failed: {exc}"}
+        # A wall is a per-request dice roll that never clears on its own, so the only retry
+        # that helps is a brand new context. --solve-captcha gets one attempt: tearing the
+        # browser down would close the window the human is solving in.
+        attempts = 1 if solve_captcha else BOT_BLOCK_RETRIES
+        for attempt in range(1, attempts + 1):
+            if solve_captcha:
+                # Shares the profile primed by `single_scrape.py --solve-captcha`.
+                ctx = await stealth_persistent_context(pw, str(CAPTCHA_PROFILE), device_scale_factor=2)
+            else:
+                browser = await pw.chromium.launch(headless=True, args=STEALTH_ARGS)
+                ctx = await stealth_context(browser, device_scale_factor=2)
+            try:
+                page = await _prepare(ctx, url)
+            except Exception as exc:
+                await _close()
+                return {"dir": str(output_dir), "candidates": [], "skipped": f"page load failed: {exc}"}
+            if not is_bot_block(await page.content()):
+                break
+            if attempt < attempts:
+                print(f"Anti-bot wall hit (attempt {attempt}/{attempts}) — retrying with a "
+                      f"fresh browser context...", file=sys.stderr, flush=True)
+                await _close()
+                browser = ctx = None
 
         if is_bot_block(await page.content()):
             if solve_captcha:
@@ -335,8 +402,9 @@ async def harvest(url: str, output_dir: Path, max_figures: int = 8,
             if is_bot_block(await page.content()):
                 await _close()
                 return {"dir": str(output_dir), "candidates": [],
-                        "skipped": "blocked by anti-bot protection — no figures harvested. "
-                                   "Retry with --solve-captcha to clear it by hand."}
+                        "skipped": f"blocked by anti-bot protection after {attempts} attempt(s) "
+                                   f"— no figures harvested. Re-running often clears it; "
+                                   f"otherwise use --solve-captcha to clear it by hand."}
 
         raw = await page.evaluate(_JS_HARVEST, {"selectors": ARTICLE_SELECTORS})
         kept = sorted(

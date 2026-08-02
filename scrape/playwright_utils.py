@@ -37,6 +37,13 @@ def is_bot_block(html: str) -> bool:
     return any(marker in html for marker in _BLOCK_MARKERS)
 
 
+# Whether a request gets walled is decided per request, not per source: the same URL and
+# the same stealth profile can sail through one attempt and get challenged on the next.
+# The interstitial never resolves on its own (polled one for 15s, the HTML never changed),
+# so waiting longer is useless and only a fresh context gets another roll of the dice.
+BOT_BLOCK_RETRIES = 3
+
+
 _CONTEXT_OPTS = dict(
     viewport={"width": 1920, "height": 1080},
     user_agent=_USER_AGENT,

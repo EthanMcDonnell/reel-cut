@@ -215,30 +215,41 @@ async def fetch_playwright_content(
         raise RuntimeError("playwright not installed: pip install playwright && playwright install chromium")
 
     from playwright_utils import (
-        STEALTH_ARGS, is_bot_block, stealth_context, stealth_persistent_context,
+        BOT_BLOCK_RETRIES, STEALTH_ARGS, is_bot_block, stealth_context,
+        stealth_persistent_context,
     )
     async with async_playwright() as pw:
-        browser = None
-        if solve_captcha:
-            ctx = await stealth_persistent_context(pw, str(CAPTCHA_PROFILE))
-            page = ctx.pages[0] if ctx.pages else await ctx.new_page()
-        else:
-            browser = await pw.chromium.launch(headless=not headed, args=STEALTH_ARGS)
-            ctx = await stealth_context(browser)
-            page = await ctx.new_page()
-        await page.goto(url, wait_until="domcontentloaded", timeout=60000)
-        if solve_captcha:
-            html = await _wait_for_human(page, is_bot_block, solve_timeout)
-        else:
-            await page.wait_for_timeout(2000)
-            html = await page.content()
-        await (browser.close() if browser else ctx.close())
+        # A wall is a per-request dice roll that never clears on its own, so the only retry
+        # that helps is a brand new context. --solve-captcha gets one attempt: tearing the
+        # browser down would close the window the human is solving in.
+        attempts = 1 if solve_captcha else BOT_BLOCK_RETRIES
+        for attempt in range(1, attempts + 1):
+            browser = None
+            if solve_captcha:
+                ctx = await stealth_persistent_context(pw, str(CAPTCHA_PROFILE))
+                page = ctx.pages[0] if ctx.pages else await ctx.new_page()
+            else:
+                browser = await pw.chromium.launch(headless=not headed, args=STEALTH_ARGS)
+                ctx = await stealth_context(browser)
+                page = await ctx.new_page()
+            await page.goto(url, wait_until="domcontentloaded", timeout=60000)
+            if solve_captcha:
+                html = await _wait_for_human(page, is_bot_block, solve_timeout)
+            else:
+                await page.wait_for_timeout(2000)
+                html = await page.content()
+            await (browser.close() if browser else ctx.close())
+            if not is_bot_block(html):
+                break
+            if attempt < attempts:
+                print(f"Anti-bot wall hit (attempt {attempt}/{attempts}) — retrying with a "
+                      f"fresh browser context...", file=sys.stderr, flush=True)
     if is_bot_block(html):
         raise RuntimeError(
             f"Blocked by anti-bot protection (CAPTCHA/challenge page returned instead of the "
-            f"article): {url} — the page cannot be fetched automatically. Retry with "
-            f"--solve-captcha to clear the challenge by hand in a visible browser, or paste the "
-            f"article text manually to continue."
+            f"article) after {attempts} attempt(s): {url}. Re-running often clears it, since the "
+            f"wall is decided per request. Otherwise retry with --solve-captcha to clear the "
+            f"challenge by hand in a visible browser, or paste the article text manually."
         )
     return html
 

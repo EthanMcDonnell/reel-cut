@@ -323,7 +323,8 @@ async def capture(url: str, output_dir: Path, snippets: list[str | dict] | None 
 
     sys.path.insert(0, str(ROOT / "scrape"))
     from playwright_utils import (
-        STEALTH_ARGS, is_bot_block, stealth_context, stealth_persistent_context,
+        BOT_BLOCK_RETRIES, STEALTH_ARGS, is_bot_block, stealth_context,
+        stealth_persistent_context,
     )
     from single_scrape import CAPTCHA_PROFILE
 
@@ -331,23 +332,38 @@ async def capture(url: str, output_dir: Path, snippets: list[str | dict] | None 
     source_dir = output_dir / _url_prefix(url)
     source_dir.mkdir(parents=True, exist_ok=True)
     async with async_playwright() as pw:
-        browser = None
-        if solve_captcha:
-            # Reuses the profile primed by `single_scrape.py --solve-captcha`, so a wall
-            # already cleared for this source usually needs no interaction here.
-            ctx = await stealth_persistent_context(pw, str(CAPTCHA_PROFILE), device_scale_factor=2)
-        else:
-            browser = await pw.chromium.launch(headless=True, args=STEALTH_ARGS)
-            ctx = await stealth_context(browser, device_scale_factor=2)
+        browser = ctx = main_page = None
 
         async def _close():
-            await (browser.close() if browser else ctx.close())
+            if browser:
+                await browser.close()
+            elif ctx:
+                await ctx.close()
 
-        try:
-            main_page = await _prepare_page(ctx, url)
-        except Exception as exc:
-            await _close()
-            return {"dir": str(output_dir), "files": [], "skipped": f"page load failed: {exc}"}
+        # A wall is a per-request dice roll that never clears on its own, so the only retry
+        # that helps is a brand new context. --solve-captcha gets one attempt: tearing the
+        # browser down would close the window the human is solving in.
+        attempts = 1 if solve_captcha else BOT_BLOCK_RETRIES
+        for attempt in range(1, attempts + 1):
+            if solve_captcha:
+                # Reuses the profile primed by `single_scrape.py --solve-captcha`, so a wall
+                # already cleared for this source usually needs no interaction here.
+                ctx = await stealth_persistent_context(pw, str(CAPTCHA_PROFILE), device_scale_factor=2)
+            else:
+                browser = await pw.chromium.launch(headless=True, args=STEALTH_ARGS)
+                ctx = await stealth_context(browser, device_scale_factor=2)
+            try:
+                main_page = await _prepare_page(ctx, url)
+            except Exception as exc:
+                await _close()
+                return {"dir": str(output_dir), "files": [], "skipped": f"page load failed: {exc}"}
+            if not is_bot_block(await main_page.content()):
+                break
+            if attempt < attempts:
+                print(f"Anti-bot wall hit (attempt {attempt}/{attempts}) — retrying with a "
+                      f"fresh browser context...", file=sys.stderr, flush=True)
+                await _close()
+                browser = ctx = None
 
         if is_bot_block(await main_page.content()):
             if solve_captcha:
@@ -361,8 +377,9 @@ async def capture(url: str, output_dir: Path, snippets: list[str | dict] | None 
                 # Without this the CAPTCHA page itself gets screenshotted as "evidence".
                 await _close()
                 return {"dir": str(output_dir), "files": [],
-                        "skipped": "blocked by anti-bot protection — no screenshots captured. "
-                                   "Retry with --solve-captcha to clear it by hand."}
+                        "skipped": f"blocked by anti-bot protection after {attempts} attempt(s) "
+                                   f"— no screenshots captured. Re-running often clears it; "
+                                   f"otherwise use --solve-captcha to clear it by hand."}
 
         # --- Load snippet-targeting JS helpers ---
         # bytes([95,115,115,95,42,46,106,115]) == b'_ss_*.js'
