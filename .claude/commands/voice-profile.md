@@ -98,7 +98,8 @@ because the cockpit data is not tagged by series and these files are hand-curate
    the canonical slugs: `tbbt` (how big tech solved an engineering problem),
    `updates` (timely news/price/release), `tech-in-one-breathe` (one tool, ~30s),
    `interesting-tech` (mystery artifact / "what is X"), `ai-fundamentals`
-   (practical AI concept the viewer is confused about today).
+   (practical AI concept the viewer is confused about today), `hot-takes`
+   (first-person contested opinion, no source article).
 2. **Show the user the inferred mapping** (hook → series → metric) and ask them to
    confirm or correct it before writing anything.
 3. On confirmation, for each affected `series/<slug>.md`, **add or refresh a single

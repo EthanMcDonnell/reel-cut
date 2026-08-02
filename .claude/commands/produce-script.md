@@ -5,7 +5,7 @@ tools: Read, Glob, Edit, Bash, WebFetch, WebSearch, Agent
 model: opus
 permissionMode: default
 ---
-Produces a complete, validated video script from a user-supplied prompt. The prompt may be a URL (engineering blog post, article), a phrase or topic idea, a reference to an article in `scrape/db/`, or a reference to an existing file in the Obsidian Video Ideas folder (`{VAULT_VIDEO_IDEAS}`).
+Produces a complete, validated video script from a user-supplied prompt. The prompt may be a URL (engineering blog post, article), a phrase or topic idea, a reference to an article in `scrape/db/`, a reference to an existing file in the Obsidian Video Ideas folder (`{VAULT_VIDEO_IDEAS}`), or a bare contested claim (a `hot-takes` opinion with no source).
 
 **Paths:** `{TOKEN}` references below are machine-specific absolute paths defined in [glossary.md](glossary.md) — resolve each to its value before running. Repo-relative paths (`scrape/…`, `assets/…`, `.claude/…`) are written inline as-is.
 
@@ -60,6 +60,19 @@ Determine the prompt type and resolve it to a `topic_package`. Try each check in
 - If URLs are present, fetch the first one for additional research.
 - Set `series` to `misc`.
 
+### 4. If the prompt is a bare claim (an opinion with no source)
+
+A prompt that states a contested position about how to build software — "GitHub Desktop is better than the git CLI", "long Claude skills are worse than no skill" — is a **hot take**, not a topic to research. Set `SERIES` to `hot-takes` and read `series/hot-takes.md` before going further.
+
+There is no article to fetch, so the material has to come from the user:
+
+1. **Ask for the mechanism.** The body of a hot take is *why the user believes it, from real use*. You cannot supply this — inventing lived experience for a first-person video is the one thing this branch must never do. Ask the user directly: what happened when they did it, what broke, what they tried instead. Keep asking until there is a concrete mechanism rather than a preference.
+2. **Ask for the strongest counter-argument** and where they concede it wins. The series structure requires this and it is also the user's opinion to give, not yours.
+3. **Take gate.** Judge whether the claim is actually contested — would a competent engineer argue the other side? If nothing opposes it, say so plainly: it is a recommendation, not a take, and this series' own data says recommendations draw no comments. Record `STORY_STRENGTH: thin` with that reason and let the user reframe or proceed.
+
+Build the `topic_package` with `SOURCE_URLS: none` and `FULL_CONTENT: none`, putting the user's own reasoning in `HOW_IT_WAS_SOLVED` and the claim in `MOST_SURPRISING_FACT`. Skip the Source Access Check and the story gate below — the take gate replaces them. With no source URLs, Stage 0.4 has nothing to harvest: record `FIGURES_AVAILABLE: none` and skip Stage 4b.
+
+If the take rests on a specific fact, number, or attribution, research **that** and only that (`WebSearch` / `single_scrape.py`), and add what you verify to `FULL_CONTENT` so Stage 3 can trace it.
 
 ### Reddit — Linked Article Fetch
 
@@ -79,7 +92,7 @@ We then want to collate all information as well as provide some summarisation an
 Build the following `topic_package` once resolved:
 
 ```
-SERIES: <tbbt | updates | tech-in-one-breathe | interesting-tech | ai-fundamentals | misc>
+SERIES: <tbbt | updates | tech-in-one-breathe | interesting-tech | ai-fundamentals | hot-takes | misc>
 MOST_SURPRISING_FACT: <the single most counterintuitive fact across the sources, and the assumption the viewer probably holds that it overturns>
 HOW_IT_WAS_SOLVED: <the solution-side material — the methods, the core mechanism, the tradeoff, and any reversal/irony in how it was done>
 STORY_STRENGTH: <strong | thin — the story-gate judgement in one line, and why>
@@ -95,7 +108,7 @@ If no usable content can be resolved from the prompt, abort with: "Could not res
 
 ### Load the series profile
 
-Once `SERIES` is resolved (and it is not `misc`), **read `series/<SERIES>.md`** — that file is the source of truth for this series' identity, voice profile (register, target length, CTA), and best hooks. It drives Stage 0.5 (spine), Stage 1 (hooks), and Stage 3 (voice). The canonical slugs are `tbbt`, `updates`, `tech-in-one-breathe`, `interesting-tech`, `ai-fundamentals`; `misc` has no file and uses the `scripts` skill's default voice.
+Once `SERIES` is resolved (and it is not `misc`), **read `series/<SERIES>.md`** — that file is the source of truth for this series' identity, voice profile (register, target length, CTA), and best hooks. It drives Stage 0.5 (spine), Stage 1 (hooks), and Stage 3 (voice). The canonical slugs are `tbbt`, `updates`, `tech-in-one-breathe`, `interesting-tech`, `ai-fundamentals`, `hot-takes`; `misc` has no file and uses the `scripts` skill's default voice.
 
 ### Fix the video slug
 
@@ -191,6 +204,8 @@ For every claim, stat, or quote that will appear in the script:
 4. **Articles often contain third-party quotes.** A blog post may include testimonials, customer quotes, or researcher statements. A claim inside a quoted block belongs to the quoted person — not the publication. Do not write "[Company] says X" if X came from a quoted third party inside their article.
 
 Any claim that cannot be traced to a specific sentence in `FULL_CONTENT` is cut, not paraphrased from memory.
+
+**`hot-takes` exception.** This series has no article, so the opinion itself and the user's own account of their experience are traced to *the user*, not to `FULL_CONTENT` — use them as given and never embellish them into specifics they didn't say. Every **factual claim, number, or attribution** in the script still meets the bar above against whatever was verified into `FULL_CONTENT` in Stage 0 branch 4. An unverifiable stat is cut and the mechanism argued without it.
 
 ## Stage 3.5 — Save & QC Gate
 After the script is written, save it:

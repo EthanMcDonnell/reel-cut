@@ -1,6 +1,6 @@
 ---
 name: video-ideas
-description: Generate a fresh, source-verified batch of video ideas across the five series, driven by live social-cockpit analytics and deduped against every existing idea bank.
+description: Generate a fresh, source-verified batch of video ideas across the six series, driven by live social-cockpit analytics and deduped against every existing idea bank.
 tools: Read, Glob, Grep, Write, Bash, WebFetch, WebSearch
 model: opus
 permissionMode: default
@@ -17,10 +17,10 @@ resolve each before running. Repo-relative paths (`scrape/…`, `series/…`, `.
 written inline. Run all `.venv/bin/…` commands from `{PROJECT_ROOT}`.
 
 The user's prompt (optional) is: `$ARGUMENTS` — it may narrow the run. Honour any of:
-- **a series slug** (`tbbt`, `updates`, `tech-in-one-breathe`, `interesting-tech`, `ai-fundamentals`) → only that series
+- **a series slug** (`tbbt`, `updates`, `tech-in-one-breathe`, `interesting-tech`, `ai-fundamentals`, `hot-takes`) → only that series
 - **a count** ("5 per series", "20 ideas") → override the defaults in Stage 5
 - **a focus** ("only shareable", "lean into ai-fundamentals", "no news") → weight selection accordingly
-Default with no arguments: **all five series, ~5–6 ideas each**.
+Default with no arguments: **all six series, ~5–6 ideas each**.
 
 ---
 
@@ -51,8 +51,8 @@ Read the pulled data and answer three questions in writing. These drive every se
 downstream, so be concrete and quantified.
 
 1. **Which series is over-performing, and by how much?** Map each top performer to a series
-   (`tbbt`, `updates`, `tech-in-one-breathe`, `interesting-tech`, `ai-fundamentals`) from its
-   caption and transcript. A series carrying an outlier deserves disproportionate ideas even in
+   (`tbbt`, `updates`, `tech-in-one-breathe`, `interesting-tech`, `ai-fundamentals`, `hot-takes`)
+   from its caption and transcript. A series carrying an outlier deserves disproportionate ideas even in
    an even-spread run.
 2. **Which shape drives which action?** Compare `shares` against `saved` per video. They are
    different intents — breakages, price hikes, and "this affects you" news get *shared*;
@@ -88,7 +88,7 @@ Record the exclusion set. Every idea in the final file must clear it.
 
 ## Stage 4 — Harvest source material per series
 
-The five series have different sourcing rules — follow each series file, don't apply one
+The six series have different sourcing rules — follow each series file, don't apply one
 standard to all.
 
 ### tbbt and updates — the article DB
@@ -137,6 +137,25 @@ citation is expected. Two rules instead:
 For `ai-fundamentals` specifically: the series file allows a "confused right now" flavour, and
 that is where the channel's top performer came from. Pegging an idea to something published in
 the last two weeks is unusual for this series and worth doing when the peg is real.
+
+### hot-takes — mined from the user, never invented
+
+No DB and no research: the material is the user's own opinions, and **you cannot generate those
+for them**. Do not write a take the user has not expressed — a first-person video asserting a
+belief they don't hold is the one failure mode this series cannot absorb.
+
+Mine candidates instead, from two places, and label where each came from:
+
+- **Their own transcripts** (already pulled in Stage 1). Opinions get voiced in passing inside
+  other videos and buried there — e.g. "I spend days on some skills only to find out using no
+  skill at all provided better outputs", said as tip #1 in a listicle. A take the user has
+  already stated on camera is proven to be theirs; quote it back verbatim as the candidate.
+- **The `Queued` list** in `series/hot-takes.md`.
+
+Present every hot-takes idea as a **candidate for the user to confirm, edit, or reject**, with
+the quote or queue entry it came from — not as a finished idea. Flag any where you can see the
+opposing case is weak: per the series file, an uncontested take is a recommendation and draws no
+comments.
 
 ## Stage 5 — Generate and select
 
