@@ -1,55 +1,32 @@
 ---
 name: produce-script
-description: Produce a single video script from a user-supplied prompt (URL, phrase, DB article ID/title, or Obsidian video idea reference)
+description: Produce a single video script from a user-supplied prompt (URL, phrase, Obsidian video idea reference, or a bare contested claim)
 tools: Read, Glob, Edit, Bash, WebFetch, WebSearch, Agent
 model: opus
 permissionMode: default
 ---
-Produces a complete, validated video script from a user-supplied prompt. The prompt may be a URL (engineering blog post, article), a phrase or topic idea, a reference to an article in `scrape/db/`, a reference to an existing file in the Obsidian Video Ideas folder (`{VAULT_VIDEO_IDEAS}`), or a bare contested claim (a `hot-takes` opinion with no source).
+Produces a complete, validated video script from a user-supplied prompt. The prompt may be a URL (engineering blog post, article), a phrase or topic idea, a reference to an existing file in the Obsidian Video Ideas folder (`{VAULT_VIDEO_IDEAS}`), or a bare contested claim (a `hot-takes` opinion with no source).
 
-**Paths:** `{TOKEN}` references below are machine-specific absolute paths defined in [glossary.md](glossary.md) — resolve each to its value before running. Repo-relative paths (`scrape/…`, `assets/…`, `.claude/…`) are written inline as-is.
-
-## DB Access
-
-Articles and rejected topics are stored in `scrape/db/influencer.db` (SQLite). Use the query CLI via Bash:
-
-- List tbbt articles: `.venv/bin/python scrape/query.py articles tbbt --limit 10 --tier passing --status viewed`
-- List updates articles: `.venv/bin/python scrape/query.py articles updates --limit 5 --status viewed`
-- Search by keyword: `.venv/bin/python scrape/query.py articles tbbt --search "keyword"`
-- Mark as viewed: `.venv/bin/python scrape/query.py mark-viewed <series> <url>`
-- Mark as done: `.venv/bin/python scrape/query.py mark-done <series> <url>`
-- Check rejected topics: `.venv/bin/python scrape/query.py rejected --series <series>`
-
-All commands output JSON. Run from the project root (`{PROJECT_ROOT}`).
+**Paths:** `{TOKEN}` references below are machine-specific absolute paths defined in [glossary.md](glossary.md) — resolve each to its value before running. Repo-relative paths (`scrape/…`, `assets/…`, `.claude/…`) are written inline as-is. Run everything from the project root (`{PROJECT_ROOT}`).
 
 ## Stage 0 — Resolve Prompt
 
 The user's prompt is: `$ARGUMENTS`
 
-Determine the prompt type and resolve it to **source URLs** (branches 1–3) or to no source at all (branch 4). Try each check in order; branches 1–3 all end at the shared fetch step below.
+Determine the prompt type and resolve it to **source URLs** (branches 1–2) or to no source at all (branch 3). Try each check in order; branches 1–2 both end at the shared fetch step below.
 
 ### 1. If the prompt looks like a URL
 
 The URL is the source. Note it and go to the fetch step.
 
-### 2. If the prompt looks like a DB reference (article ID, title fragment, or `db:<keyword>`)
-
-- Search both series tables using the Bash tool:
-  - `.venv/bin/python scrape/query.py articles tbbt --search "<keyword>"`
-  - `.venv/bin/python scrape/query.py articles updates --search "<keyword>"`
-- Match against `id` (exact) or `title` (case-insensitive substring) across both results.
-- If multiple matches, pick the one with the highest `relevance_score`. If scores are tied, prefer the most recent `published_date`.
-- Use the matched article's `url`, `title`, `description`, and `company` to build the research base. Its `url` is the source.
-- **Mark as read:** `.venv/bin/python scrape/query.py mark-done <series> "<url>"`
-
-### 3. If the prompt references a file (path, filename, or Obsidian note title)
+### 2. If the prompt references a file (path, filename, or Obsidian note title)
 
 - Search for a matching `.md` file in `{VAULT_VIDEO_IDEAS}` using Glob.
 - Read the matched file. Extract topic, angle, and any URLs listed in the file.
-- The first URL it lists, if any, is the source.
-- Set `series` to `misc`.
+- The first URL it lists, if any, is the source. Most idea notes have none — that is normal, and the source gate below handles it.
+- **Work out which series the note belongs to** and set `SERIES` to it. The note's frontmatter tags and its subject usually make this obvious; judge it against the series identities rather than defaulting. Fall back to `misc` only when the note genuinely fits no series.
 
-### 4. If the prompt is a bare claim (an opinion with no source)
+### 3. If the prompt is a bare claim (an opinion with no source)
 
 A prompt that states a contested position about how to build software — "GitHub Desktop is better than the git CLI", "long Claude skills are worse than no skill" — is a **hot take**, not a topic to research. Set `SERIES` to `hot-takes` and read `series/hot-takes.md` before going further.
 
@@ -62,7 +39,7 @@ Build the `topic_package` with `SOURCE_URLS: none` and `FULL_CONTENT: none`, put
 
 If the take rests on a specific fact, number, or attribution, research **that** and only that (`WebSearch` / `single_scrape.py`), and add what you verify to `FULL_CONTENT` so Stage 3 can trace it.
 
-### Fetch the sources (branches 1–3)
+### Fetch the sources (branches 1–2)
 
 Fetch each resolved URL with the Bash tool:
 
@@ -76,7 +53,7 @@ This picks the right fetch method (rss/scrape/playwright/reddit) from the source
 
 **Source access check.** If a source returned an error or empty content, stop: "⚠️ Couldn't fetch `<url>` directly — research is from search snippets only. Paste the article text to continue, or type 'proceed' to write from secondary sources."
 
-### Mine the material (branches 1–3)
+### Mine the material (branches 1–2)
 
 We then want to collate all information as well as provide some summarisation and insight for future steps: what are the key points across sources that could be used. Mine two kinds of raw material, because a video needs both a reason to stop and a reason to stay:
 
@@ -238,7 +215,7 @@ After the script is written, save it:
 
 Wait for the saved file path before continuing.
 
-**If the prompt resolved to a video-idea file** (Stage 0 branch 3), update that file's `status:` frontmatter from `new` to `done` using the Edit tool. Prompts from the other branches have no idea file to mark.
+**If the prompt resolved to a video-idea file** (Stage 0 branch 2), update that file's `status:` frontmatter from `new` to `done` using the Edit tool. Prompts from the other branches have no idea file to mark.
 
 ## Stage 3.6 — CTA & Viewer Resources
 
