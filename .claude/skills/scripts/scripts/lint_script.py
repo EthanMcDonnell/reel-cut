@@ -159,7 +159,7 @@ def longest_shared_run(a, b, minimum):
     return ""
 
 
-def lint(lines, cap=DEFAULT_WORD_CAP, cap_label=None):
+def lint(lines, cap=DEFAULT_WORD_CAP, cap_label=None, slug=None):
     errors, warns = [], []
     cap_label = cap_label or f"no series given, default cap {cap}"
     stripped = [l.strip() for l in lines]
@@ -202,7 +202,10 @@ def lint(lines, cap=DEFAULT_WORD_CAP, cap_label=None):
         for p in META_BANNED:
             if p in low:
                 errors.append((i, "meta", f'banned phrase "{p}"'))
-        if re.search(r"\betc\b", low):
+        # hot-takes trails off on purpose ("git status, git diff etc etc") to make a
+        # list sound tedious rather than considered, so "etc" is a device there, not
+        # an unfinished thought. Everywhere else it's a drafting leftover.
+        if slug != "hot-takes" and re.search(r"\betc\b", low):
             errors.append((i, "etc", '"etc" leftover; write the full thought or cut it'))
         for w in APOSTROPHE:
             if re.search(rf"\b{w}\b", low):
@@ -345,7 +348,7 @@ def main():
     if lines and lines[-1] == "":  # drop the trailing empty from a final newline
         lines = lines[:-1]
 
-    errors, warns = lint(lines, cap, cap_label)
+    errors, warns = lint(lines, cap, cap_label, args.series)
 
     def show(items):
         for ln, code, msg in sorted(items):
