@@ -1,29 +1,36 @@
 #!/usr/bin/env python3
-"""Publish a slug's rendered hook reels to the social-cockpit publish endpoint.
+"""Publish one rendered hook reel to the social-cockpit publish endpoint.
 
-For each ``output/<slug>/*.mp4`` this POSTs the local file path to social-cockpit's
+POSTs a local ``output/<slug>/*.mp4`` path to social-cockpit's
 ``/api/publish/local``, which manages the whole chain server-side (read file ->
-upload to R2 -> presign -> call Instagram -> reclaim the object). Each hook is
-captioned from ``assets/<slug>/title.json`` and posted as a trial reel. One post
-per hook variant, spaced by a random 3-7 minute interval so they don't all fire
-at once.
+upload to R2 -> presign -> call Instagram -> reclaim the object). The hook is
+captioned from ``assets/<slug>/title.json`` and posted as a trial reel.
 
-Already-published hooks are recorded in ``output/.published`` and skipped on
-re-run, so publishing to Instagram is never accidentally repeated.
+**Exactly one hook is posted per invocation.** Every hook of a slug shares an
+identical body and a byte-identical voiceover, so posting them close together
+gets the later ones clustered as near-duplicates and throttled to ~no reach
+(see ``INSTAGRAM_DEDUP_EVASION_PLAN.md``). ``--min-gap-days`` enforces the
+spacing: if the last post went out more recently than that, this exits without
+posting — so it is safe to run on a daily schedule, with the gap check deciding
+when a hook is actually due.
+
+With no slug it drains the global queue — the oldest unpublished hook across
+all of ``output/``. Published hooks are recorded in ``output/.published`` as
+``<slug>/<file>.mp4<TAB><iso8601>`` and skipped on re-run, so publishing to
+Instagram is never accidentally repeated.
 
 Env (read from the repo-root ``.env``):
   COCKPIT_URL   optional, default http://localhost:3000
 
 Usage:
-  .venv/bin/python scrape/post_video.py <slug> [--dry-run]
+  .venv/bin/python scrape/post_video.py [<slug>] [--dry-run] [--min-gap-days N]
 """
 
 import argparse
 import json
 import os
-import random
 import sys
-import time
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import requests
@@ -33,8 +40,9 @@ ROOT = Path(__file__).parent.parent
 load_dotenv(ROOT / ".env")
 
 COCKPIT = os.environ.get("COCKPIT_URL", "http://localhost:3000").rstrip("/")
-MIN_INTERVAL_S = 180     # 3 minutes
-MAX_INTERVAL_S = 420     # 7 minutes
+# Days between posts. Two near-identical hooks landing closer than this is what
+# tanks the second one's reach.
+DEFAULT_MIN_GAP_DAYS = 2
 # When automation is attached the cockpit waits up to 5 min for the reel to
 # finish processing (so it can return a media_id and attach), so allow headroom.
 REQUEST_TIMEOUT_S = 360
@@ -65,6 +73,52 @@ def automation_for(slug):
     return spec
 
 
+def read_published(log):
+    """Parse output/.published -> (set of published keys, datetime of last post).
+
+    Lines are ``<slug>/<file>.mp4<TAB><iso8601>``. Lines written before
+    timestamping was added have no tab and no date; they still count as
+    published, they just can't date the last post (so they never hold up the
+    gap check).
+    """
+    if not log.exists():
+        return set(), None
+    keys, last = set(), None
+    for line in log.read_text().splitlines():
+        if not line.strip():
+            continue
+        key, _, stamp = line.partition("\t")
+        keys.add(key)
+        if not stamp:
+            continue
+        try:
+            when = datetime.fromisoformat(stamp)
+        except ValueError:
+            continue
+        if last is None or when > last:
+            last = when
+    return keys, last
+
+
+def pending(slug, done):
+    """Unpublished hooks as (slug, mp4) pairs, oldest render first.
+
+    Ordering is by mtime so a backlog drains in the order it was rendered. A
+    slug's hooks are all written by one render-hooks run, so they stay
+    contiguous; the name is a tiebreak to keep the order stable.
+    """
+    out = ROOT / "output"
+    dirs = [out / slug] if slug else sorted(p for p in out.iterdir() if p.is_dir())
+    hooks = [
+        (d.name, mp4)
+        for d in dirs
+        for mp4 in sorted(d.glob("*.mp4"))
+        if f"{d.name}/{mp4.name}" not in done
+    ]
+    hooks.sort(key=lambda pair: (pair[1].stat().st_mtime, pair[1].name))
+    return hooks
+
+
 def publish(video_path, caption, automation=None):
     payload = {
         "video_path": str(video_path.resolve()),
@@ -85,40 +139,45 @@ def publish(video_path, caption, automation=None):
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("slug", help="video slug (an output/<slug>/ folder of rendered hooks)")
+    ap.add_argument("slug", nargs="?",
+                    help="video slug (an output/<slug>/ folder of rendered hooks). "
+                         "Omit to post the oldest unpublished hook across all slugs.")
     ap.add_argument("--dry-run", action="store_true",
                     help="show what would be posted without publishing")
+    ap.add_argument("--min-gap-days", type=float, default=DEFAULT_MIN_GAP_DAYS,
+                    help=f"minimum days since the last post (default {DEFAULT_MIN_GAP_DAYS}); "
+                         "exits without posting if the gap isn't met")
+    ap.add_argument("--ignore-gap", action="store_true",
+                    help="post now even if the minimum gap hasn't elapsed")
     args = ap.parse_args()
 
-    out_dir = ROOT / "output" / args.slug
-    if not out_dir.is_dir():
-        sys.exit(f"No rendered output for slug '{args.slug}' (missing {out_dir})")
+    if args.slug and not (ROOT / "output" / args.slug).is_dir():
+        sys.exit(f"No rendered output for slug '{args.slug}' "
+                 f"(missing {ROOT / 'output' / args.slug})")
 
-    mp4s = sorted(out_dir.glob("*.mp4"))
-    if not mp4s:
-        sys.exit(f"No .mp4 files in {out_dir}")
-
-    captions = captions_for(args.slug)
-    automation = automation_for(args.slug)
     log = ROOT / "output" / ".published"
-    done = set(log.read_text().splitlines()) if log.exists() else set()
+    done, last_post = read_published(log)
 
-    to_post = []
-    for mp4 in mp4s:
-        key = f"{args.slug}/{mp4.name}"
-        if key in done:
-            print(f"skip (already published): {key}")
-            continue
-        to_post.append((mp4, captions.get(mp4.stem, mp4.stem)))
-
-    if not to_post:
-        print("Nothing to publish — every hook is already in output/.published.")
+    queue = pending(args.slug, done)
+    if not queue:
+        where = f"for '{args.slug}'" if args.slug else "anywhere in output/"
+        print(f"Nothing to publish {where} — every hook is already in output/.published.")
         return
 
-    print(f"Will publish {len(to_post)} hook(s) for '{args.slug}', "
-          f"random {MIN_INTERVAL_S//60}-{MAX_INTERVAL_S//60} min apart:")
-    for mp4, caption in to_post:
-        print(f"  - {mp4.name}  ->  {caption!r}")
+    if last_post and not args.ignore_gap:
+        due = last_post + timedelta(days=args.min_gap_days)
+        if datetime.now() < due:
+            print(f"Last post was {last_post:%Y-%m-%d %H:%M}; next hook is due "
+                  f"{due:%Y-%m-%d %H:%M} (min gap {args.min_gap_days}d). Nothing posted.")
+            print(f"{len(queue)} hook(s) waiting — next up: {queue[0][0]}/{queue[0][1].name}")
+            return
+
+    slug, mp4 = queue[0]
+    caption = captions_for(slug).get(mp4.stem, mp4.stem)
+    automation = automation_for(slug)
+
+    print(f"Will publish 1 hook ({len(queue) - 1} more queued after it):")
+    print(f"  - {slug}/{mp4.name}  ->  {caption!r}")
 
     if automation:
         kws = ", ".join(automation.get("trigger_keywords", [])) or "(none)"
@@ -126,33 +185,30 @@ def main():
               f"type={automation.get('template_type', 'comment_to_dm')} "
               f"— all hooks share one flow (created on the first, appended after).")
     else:
-        print("\nAutomation: none (no assets/"
-              f"{args.slug}/automation.json) — posting without an automation.")
+        print(f"\nAutomation: none (no assets/{slug}/automation.json) "
+              "— posting without an automation.")
 
     if args.dry_run:
         print("\n(dry run — nothing posted)")
         return
 
-    for i, (mp4, caption) in enumerate(to_post):
-        print(f"\n[{i+1}/{len(to_post)}] {mp4.name}")
-        resp = publish(mp4, caption, automation)
-        print(f"  published: {caption!r}")
-        if automation:
-            act = (resp.json().get("automation") or {})
-            if act.get("skipped"):
-                print(f"  ⚠ automation not attached: {act.get('reason')}")
-            else:
-                print(f"  automation {act.get('action')} -> flow {act.get('flow_id')} "
-                      f"({len(act.get('media_ids', []))} post(s) on it)")
-        with log.open("a") as f:
-            f.write(f"{args.slug}/{mp4.name}\n")
+    resp = publish(mp4, caption, automation)
+    print(f"\n  published: {caption!r}")
+    if automation:
+        act = (resp.json().get("automation") or {})
+        if act.get("skipped"):
+            print(f"  ⚠ automation not attached: {act.get('reason')}")
+        else:
+            print(f"  automation {act.get('action')} -> flow {act.get('flow_id')} "
+                  f"({len(act.get('media_ids', []))} post(s) on it)")
+    with log.open("a") as f:
+        f.write(f"{slug}/{mp4.name}\t{datetime.now().isoformat(timespec='seconds')}\n")
 
-        if i < len(to_post) - 1:
-            wait = random.uniform(MIN_INTERVAL_S, MAX_INTERVAL_S)
-            print(f"  waiting {wait/60:.1f} min before the next post…")
-            time.sleep(wait)
-
-    print(f"\nDone — published {len(to_post)} hook(s).")
+    if len(queue) > 1:
+        nxt = datetime.now() + timedelta(days=args.min_gap_days)
+        print(f"\nDone. {len(queue) - 1} hook(s) left; next due {nxt:%Y-%m-%d %H:%M}.")
+    else:
+        print("\nDone — queue is empty.")
 
 
 if __name__ == "__main__":
