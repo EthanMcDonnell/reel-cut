@@ -174,6 +174,8 @@ If the title is empty (the stub state from `prepare-video`), generate the headin
 
 Use `\n` in `title` for line breaks (2 lines usually reads better on mobile). Keep each title short enough to read in 2–3 seconds.
 
+**A card may compress the claim but never contradict it.** The card is burned in, so an error here can only be fixed by re-rendering and re-uploading. Before proposing, check each card against the spoken body from the Step 1 timeline and against the source article: every number, count, and singular/plural in the card has to survive that check. If the body says "chunks", the card may not say "one file". The failure mode to watch for is a card that states the approach the source *rejected* — it will read as the most striking option precisely because it's wrong. See rule 10 in the `hooks` skill.
+
 **The subtitle stays constant across all cards** — it carries the series branding, so keep it identical for every hook (varying the big gold title is what makes the cards visually distinct; the subtitle keeps the brand recognisable):
 - *tbbt*: `Tech Behind Big Tech Day {n:tbbt}` (the literal words "Tech Behind Big Tech Day" followed by the episode number — not `#`, and never just `Day {n:tbbt}` on its own)
 - *updates*: `Tech & AI Updates #{n:updates}` (the series name followed by the episode number)
@@ -212,6 +214,7 @@ Read `assets/<video-slug>/title.json`. If the first entry has a non-empty `title
 - **short & sharp** — roughly 4–8 words
 - **no em dashes.** `->`, `w/`, `&`, `/` are fine — that quirky shorthand register is the point
 - **quirky and scroll-stopping over informative.** Lead with attitude, understatement, meme energy, or a sneaky reframe — a title that makes someone stop mid-scroll beats one that neatly summarises. It does **not** have to explain (or even literally describe) the video; intrigue is the job. Avoid the flat "how X did Y" / "why X did Y" template unless it's carrying a genuine twist.
+- **never assert what the video denies.** A title doesn't have to describe the video (above), but it may not contradict it. Check every number, count, and singular/plural against the spoken script and the source article before proposing — a title that states the approach the source *rejected* is the trap, since it reads as the punchiest option for exactly the reason it's false. Same check as the Step 4b cards and rule 10 in the `hooks` skill.
 
 Examples of the register: `the cloud? never heard of it` · `dropbox unsubscribed from amazon` · `big tech hates this one weird trick: owning your servers 🤫` · `turns out the cloud was just amazon's computers ☁️`
 
