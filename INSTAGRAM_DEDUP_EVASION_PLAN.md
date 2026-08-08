@@ -45,7 +45,7 @@ content-based SSCD (visual) + audio fingerprinting. So "beats file hash" ≈ "be
 | 1 | Re-encode (res/bitrate/codec) | file/perceptual hash only | ~0 — SSCD & audio-fp unaffected | trivial | Free hygiene, not the answer |
 | 2 | Crop / zoom 2–5% | naive frame-diff | ~0 — SSCD trained through **large** crops | trivial | Pointless alone |
 | 3 | Overlays / filters / color grade | naive frame-diff | **Light:** ~0 (trained through color/tone + watermark/overlay insertion). **Heavy** (large screen fraction, whole runtime): real — but that *is* "different body" (Tier 3) | light: trivial / heavy: high | Light useless; heavy = the real visual lever |
-| 4 | Horizontal flip / mirror | naive frame-diff | **Exactly 0** — SSCD explicitly trained on flips. Also mirrors burned-in captions/title → looks broken | trivial | **Never do this** |
+| 4 | Horizontal flip / mirror | naive frame-diff | **Exactly 0** — SSCD explicitly trained on flips | trivial | **Built anyway** (see below) — costs nothing, expect nothing |
 | 5 | Speed / frame-rate change | naive frame-diff | ~0 — audio-fp sees through tempo; desyncs captions, changes duration, feels off | medium (caption resync) | Skip — risk > reward |
 | 6 | Trim frames start/end + light color | naive frame-diff | ~0 on SSCD | trivial | Free hygiene, not the answer |
 | 7 | Alter audio (swap/tweak track) | — | **Only technique with real headroom** — but capped hard by the identical voiceover (see below) | low–medium | Worthwhile *only* as a genuine, prominent music swap; tweaks are dead |
@@ -131,6 +131,23 @@ all deterministically seeded by output filename so re-renders stay reproducible.
 3/3 distinct files on both codec paths. Deliberately touches **only** the encoder — no cut-boundary
 changes, so no clipped word onsets and no caption/image resync (the cost that sank #9).
 
+### Tier 0b — Horizontal flip (**implemented** on request; ~0 IG effect)
+Shipped as `output.flip` (`config.yaml`, `renderer.py` `_final_encode`, `cli.py` `_flip_plan`).
+`mode` selects which hooks are mirrored (`off` / `alternate` / `all`) and `apply` decides whether a
+flipped render replaces that hook's video (`in_place`) or is written beside it (`duplicate` — so
+`all` + `duplicate` turns 3 hooks into 6 files).
+
+Two things to be clear about, since this table's row #4 says never:
+
+- **The "it mirrors the captions" objection is solved, not ignored.** The `hflip` is applied to the
+  footage *before* the caption/title/image PNG sequence is composited, so on-screen text renders
+  normally. `tests/test_flip_render.py` renders a real clip and asserts exactly that. What still
+  mirrors is anything physically in shot — background text, a logo on clothing, gesture handedness.
+- **The 0-effect verdict is unchanged.** SSCD's training augmentation includes horizontal flips, so
+  a mirrored copy still matches its original. `duplicate` mode is worth having as a way to get a
+  *second post* out of one hook (see Tier 1 — spacing is what earns the reach), not because the
+  mirror hides it.
+
 ### Tier 1 — Posting strategy (the durable answer — no code)
 Per the research doc this is where de-clustering actually happens:
 - **Space posts days apart** rather than back-to-back on the same account.
@@ -175,7 +192,6 @@ Injection points (all already load per-slug config, so per-variant params are a 
 ---
 
 ## Do NOT build
-- **#4 horizontal flip** — 0 effect and it mirrors the burned-in captions/title. Actively broken.
 - **#2/#6 small crop/trim, #5 speed, light #3 filters, #1/#8 re-encode-for-hash** as *IG evasion* —
   they don't move SSCD/audio-fp. (Tier 0 keeps #1/#6/#8 only as free hash hygiene, not as the fix.)
 - **Audio pitch/tempo/EQ "tweaks"** — defeated by the fingerprinter.
