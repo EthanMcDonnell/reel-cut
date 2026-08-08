@@ -244,6 +244,13 @@ outputs are grouped in a per-slug folder and named by their Instagram title (Ste
 `title.json` is empty). Music, captions, and the title card behave exactly as in a normal
 render; there is no concatenation.
 
+**More files than hooks?** That is `output.flip` in `config.yaml`. With `apply: duplicate` a
+flipped hook is written *twice* — `<title-slug>.mp4` plus `<title-slug><suffix>.mp4` (default
+suffix `-flipped`) — so `mode: all` turns 3 hooks into 6 files; with `apply: in_place` the count
+is unchanged and the selected hooks are simply mirrored. The mirror is applied to the footage
+only, never to the captions or title card. `/post-video` picks the extra files up automatically
+and captions each flipped copy from the hook it mirrors.
+
 Report all output paths when done.
 
 *(To render the old single combined video instead — all hooks in sequence — use

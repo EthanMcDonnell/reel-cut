@@ -91,6 +91,20 @@ output:
                                     # SSCD or audio fingerprinting (see INSTAGRAM_DEDUP_EVASION_PLAN.md).
     crf_jitter: 1                   # libx264: +/- CRF steps around 23. Raise for more spread (visible above ~2).
     bitrate_jitter: 0.08            # videotoolbox: +/- fraction of the 8000k base bitrate
+  flip:                             # horizontal mirror of the footage. Captions/title cards are
+                                    # composited AFTER the flip, so on-screen text is never mirrored
+                                    # — but anything physically in shot is (background text, logos
+                                    # on clothing, which hand you gesture with).
+    mode: "off"                     # off | alternate | all — which hooks get a flipped render.
+                                    #   alternate = every second hook (3 hooks -> the middle one)
+                                    # QUOTE "off" — bare off is a YAML boolean.
+    apply: duplicate                # in_place | duplicate — a flipped render either REPLACES that
+                                    #   hook's video (3 hooks -> 3 files) or is written ALONGSIDE it
+                                    #   (3 hooks + mode:all -> 6 files).
+    suffix: "-flipped"              # filename suffix for duplicate flipped outputs only
+                                    # NOTE: not a proven IG dedup lever — SSCD is trained on flips
+                                    # (INSTAGRAM_DEDUP_EVASION_PLAN.md #4). Cheap, but don't expect
+                                    # a mirrored copy to de-cluster from its original.
 
 audio:
   enabled: true

@@ -79,6 +79,32 @@ class ZoomConfig(BaseModel):
     max: float = 1.0
 
 
+class FlipConfig(BaseModel):
+    # Horizontally mirrors the camera image. The flip is applied to the footage BEFORE the
+    # caption / title-card / image overlay is composited, so burned-in text is never mirrored —
+    # only what the camera saw (which does mirror anything physically in shot: on-screen text
+    # behind you, a logo on a shirt, which hand you gesture with).
+    #
+    # `mode` — which hooks get a flipped render:
+    #   "off"       no flipping (default)
+    #   "alternate" every second hook (hooks 2, 4, 6…) — 3 hooks → the middle one flipped
+    #   "all"       every hook
+    # `apply` — what a flipped render does to the output set:
+    #   "in_place"  the hook's one video IS the flipped one (3 hooks → 3 videos)
+    #   "duplicate" the hook also gets an extra flipped file (3 hooks + mode:all → 6 videos)
+    #
+    # NOT a proven Instagram dedup lever: SSCD is explicitly trained on horizontal flips, so a
+    # mirrored copy still matches its original (INSTAGRAM_DEDUP_EVASION_PLAN.md, technique #4).
+    mode: Literal["off", "alternate", "all"] = "off"
+    apply: Literal["in_place", "duplicate"] = "duplicate"
+    suffix: str = "-flipped"   # appended to the filename of *duplicate* flipped outputs only
+
+    @field_validator("mode", mode="before")
+    @classmethod
+    def _yaml_off_is_false(cls, v):
+        return "off" if v is False else v  # bare `mode: off` parses as the YAML boolean False
+
+
 class EncodeVariationConfig(BaseModel):
     # Per-hook encoder settings, deterministically seeded by output filename, so the three
     # hooks are distinct *files* (different bitstream, different hash). Tier 0 render
@@ -102,6 +128,7 @@ class OutputConfig(BaseModel):
     render_workers: int = 8
     zoom: ZoomConfig = Field(default_factory=ZoomConfig)
     encode_variation: EncodeVariationConfig = Field(default_factory=EncodeVariationConfig)
+    flip: FlipConfig = Field(default_factory=FlipConfig)
 
     @field_validator("resolution")
     @classmethod

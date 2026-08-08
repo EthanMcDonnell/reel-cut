@@ -42,12 +42,15 @@ def render(
     config: ReelCutConfig,
     output_path: str | Path | None = None,
     audio_tracks: list[dict] | None = None,
+    flip: bool = False,
 ) -> Path:
     """Render final video from EDL keep-segments with optional caption overlay.
 
     - Reads only `keep=True` EDL entries.
     - Concatenates segments via FFmpeg.
     - Burns in caption PNG overlay frames.
+    - `flip` mirrors the footage horizontally (overlays are composited after, so text
+      is not mirrored).
     - Warns if output exceeds max_duration_s.
     - Returns path to the output MP4.
     """
@@ -94,7 +97,7 @@ def render(
                 caption_seq = _prepare_caption_sequence(caption_frames, config, tmpdir)
 
             progress.update(task, description="Encoding final output…")
-            _final_encode(concat_path, output_path, config, caption_seq, audio_tracks)
+            _final_encode(concat_path, output_path, config, caption_seq, audio_tracks, flip)
 
         progress.update(task, description=f"Done → {output_path}", completed=1, total=1)
 
@@ -288,6 +291,7 @@ def _final_encode(
     config: ReelCutConfig,
     caption_seq: tuple[Path, int] | None = None,
     audio_tracks: list[dict] | None = None,
+    flip: bool = False,
 ) -> None:
     """Re-encode to final output spec, optionally overlaying caption frames in the same pass."""
     w, h = config.output.resolution
@@ -305,6 +309,11 @@ def _final_encode(
         # (in _extract_segments) causes cumulative A/V drift when -shortest clips
         # differing video/audio durations at each segment boundary.
         video = main.video.filter("fps", fps=fps)
+        if flip:
+            # Mirror the footage only. This must stay ahead of the caption overlay below —
+            # flipping the composited frame instead would mirror the burned-in captions and
+            # title card, which is what makes a naive hflip look broken.
+            video = video.filter("hflip")
         # async resampling keeps audio locked to video PTS after the fps conversion.
         audio = main.audio.filter("aresample", **{"async": 1000})
         audio = _mix_audio_tracks(audio, audio_tracks)

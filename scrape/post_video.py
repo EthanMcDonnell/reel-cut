@@ -56,6 +56,20 @@ def captions_for(slug):
     return {e["slug"]: e["title"] for e in json.loads(path.read_text()) if e.get("slug")}
 
 
+def caption_for(slug, stem):
+    """Caption for one rendered file, from its title.json entry.
+
+    A flipped duplicate (``output.flip.apply: duplicate``) is written as the hook's title
+    slug plus a suffix, so an exact miss falls back to the longest title slug the filename
+    starts with — the flipped copy posts with the same caption as the hook it mirrors.
+    """
+    titles = captions_for(slug)
+    if stem in titles:
+        return titles[stem]
+    matches = [k for k in titles if stem.startswith(k)]
+    return titles[max(matches, key=len)] if matches else stem
+
+
 def automation_for(slug):
     """Load the optional per-slug comment automation from assets/<slug>/automation.json.
 
@@ -173,7 +187,7 @@ def main():
             return
 
     slug, mp4 = queue[0]
-    caption = captions_for(slug).get(mp4.stem, mp4.stem)
+    caption = caption_for(slug, mp4.stem)
     automation = automation_for(slug)
 
     print(f"Will publish 1 hook ({len(queue) - 1} more queued after it):")

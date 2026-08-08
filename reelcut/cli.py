@@ -157,6 +157,21 @@ def render(
             images_path=cap_path.parent / "images.json", audio_path=cap_path.parent / "audio.json")
 
 
+def _flip_plan(n: int, flip_cfg) -> list[list[tuple[str, bool]]]:
+    """Per-hook output plan: `[(filename_suffix, flip), …]` for each of the `n` hooks.
+
+    `mode` picks which hooks are flipped (none / every second one / all); `apply` decides
+    whether a flipped render *replaces* that hook's video or is emitted *alongside* it under
+    a suffixed name. See FlipConfig.
+    """
+    if flip_cfg.mode == "off":
+        return [[("", False)] for _ in range(n)]
+    flipped = [flip_cfg.mode == "all" or i % 2 == 1 for i in range(n)]
+    if flip_cfg.apply == "in_place":
+        return [[("", f)] for f in flipped]
+    return [[("", False), (flip_cfg.suffix, True)] if f else [("", False)] for f in flipped]
+
+
 # ---------------------------------------------------------------------------
 # reelcut render-hooks  (Phase 2 — one video per hook)
 # ---------------------------------------------------------------------------
@@ -218,13 +233,14 @@ def render_hooks(
     audio_path = assets_dir / "audio.json"
 
     n = len(hook_windows)
-    console.print(f"[bold]{n} hook video(s) to render[/bold]\n")
+    plan = _flip_plan(n, cfg.output.flip)
+    n_videos = sum(len(p) for p in plan)
+    console.print(f"[bold]{n_videos} video(s) to render from {n} hook(s)[/bold]\n")
     all_warnings: list[str] = []
     for i in range(n):
         card = cards[i]
         stem = safe_slug(titles[i].slug or titles[i].title) if i < len(titles) else ""
-        output_path = out_dir / f"{stem or f'hook{i + 1}'}.mp4"
-        console.rule(f"[bold]Hook {i + 1}/{n}[/bold] → {output_path.name}")
+        stem = stem or f"hook{i + 1}"
 
         new_edl, hook_dur, drop_intervals = build_hook_edl(doc.edl, hook_windows, i)
         new_doc = CaptionsDoc(
@@ -248,11 +264,17 @@ def render_hooks(
         save_images(drop_covered(images, drop_intervals), tmp_images)
 
         try:
-            all_warnings.extend(_phase2(
-                cfg, new_doc, output_path, verbose,
-                headings_path=tmp_headings, images_path=tmp_images, audio_path=audio_path,
-                reset_logos_per_section=False,
-            ))
+            # One or two renders per hook — the second is the flipped duplicate when
+            # output.flip is set to duplicate. Both share this hook's overlay stubs.
+            for suffix, flip in plan[i]:
+                output_path = out_dir / f"{stem}{suffix}.mp4"
+                label = "flipped" if flip else "normal"
+                console.rule(f"[bold]Hook {i + 1}/{n}[/bold] ({label}) → {output_path.name}")
+                all_warnings.extend(_phase2(
+                    cfg, new_doc, output_path, verbose,
+                    headings_path=tmp_headings, images_path=tmp_images, audio_path=audio_path,
+                    reset_logos_per_section=False, flip=flip,
+                ))
         finally:
             tmp_headings.unlink(missing_ok=True)
             tmp_images.unlink(missing_ok=True)
@@ -672,13 +694,16 @@ def _phase1(cfg, clips: list[str], output_dir: Path, verbose: bool):
 
 def _phase2(cfg, doc, output_path: Path, verbose: bool, headings_path: Path | None = None,
             images_path: Path | None = None, audio_path: Path | None = None,
-            reset_logos_per_section: bool = True) -> list[str]:
+            reset_logos_per_section: bool = True, flip: bool = False) -> list[str]:
     """Render final video from a CaptionsDoc. Returns warnings.
 
     `reset_logos_per_section` clears logo dedup at each heading-card edge so a brand
     re-mentioned in a later section re-fires its logo. render-hooks passes False: a
     per-hook video is one hook + the shared body, and a company named in both should
     pop its logo only once, on first mention.
+
+    `flip` mirrors the footage horizontally; overlays are composited after the flip, so
+    captions and title cards read normally (see output.flip in config).
     """
     from .caption import render_caption_frames
     from .image_spec import load_images
@@ -808,7 +833,7 @@ def _phase2(cfg, doc, output_path: Path, verbose: bool, headings_path: Path | No
         encoder = "h264_videotoolbox (hardware)" if _USE_VIDEOTOOLBOX else "libx264 (software)"
         console.print(f"[bold]Step 6c/6[/bold] Rendering final video… encoder: [cyan]{encoder}[/cyan]")
         t = time.perf_counter()
-        out = do_render(edl, caption_frames, cfg, output_path, audio_tracks=audio_tracks)
+        out = do_render(edl, caption_frames, cfg, output_path, audio_tracks=audio_tracks, flip=flip)
         console.print(f"\n[green bold]Done![/green bold] → {out}  ({time.perf_counter() - t:.1f}s)")
 
     return warnings
