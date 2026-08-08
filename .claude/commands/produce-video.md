@@ -249,7 +249,8 @@ flipped hook is written *twice* — `<title-slug>.mp4` plus `<title-slug><suffix
 suffix `-flipped`) — so `mode: all` turns 3 hooks into 6 files; with `apply: in_place` the count
 is unchanged and the selected hooks are simply mirrored. The mirror is applied to the footage
 only, never to the captions or title card. `/post-video` picks the extra files up automatically
-and captions each flipped copy from the hook it mirrors.
+and captions each flipped copy from the hook it mirrors. A duplicate is cheap — it shares the
+hook's overlay frames and segment extraction (~80% of a render) and repeats only the encode.
 
 Report all output paths when done.
 

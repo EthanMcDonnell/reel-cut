@@ -153,7 +153,7 @@ def render(
     output_path = out_dir / f"{slug}.mp4"
 
     console.rule(f"[bold]Rendering → {output_path}[/bold]")
-    _phase2(cfg, doc, output_path, verbose, headings_path=cap_path.parent / "headings.json",
+    _phase2(cfg, doc, [(output_path, False)], verbose, headings_path=cap_path.parent / "headings.json",
             images_path=cap_path.parent / "images.json", audio_path=cap_path.parent / "audio.json")
 
 
@@ -263,18 +263,20 @@ def render_hooks(
         tmp_images = assets_dir / f".render-hook{i + 1}.images.json"
         save_images(drop_covered(images, drop_intervals), tmp_images)
 
+        # One or two outputs per hook — the second is the flipped duplicate when
+        # output.flip is set to duplicate. They go through _phase2 together so the shared
+        # work (overlay frames, segment extraction, concat) is done once per hook.
+        variants = [(out_dir / f"{stem}{suffix}.mp4", flip) for suffix, flip in plan[i]]
+        console.rule(
+            f"[bold]Hook {i + 1}/{n}[/bold] → " + ", ".join(p.name for p, _ in variants)
+        )
+
         try:
-            # One or two renders per hook — the second is the flipped duplicate when
-            # output.flip is set to duplicate. Both share this hook's overlay stubs.
-            for suffix, flip in plan[i]:
-                output_path = out_dir / f"{stem}{suffix}.mp4"
-                label = "flipped" if flip else "normal"
-                console.rule(f"[bold]Hook {i + 1}/{n}[/bold] ({label}) → {output_path.name}")
-                all_warnings.extend(_phase2(
-                    cfg, new_doc, output_path, verbose,
-                    headings_path=tmp_headings, images_path=tmp_images, audio_path=audio_path,
-                    reset_logos_per_section=False, flip=flip,
-                ))
+            all_warnings.extend(_phase2(
+                cfg, new_doc, variants, verbose,
+                headings_path=tmp_headings, images_path=tmp_images, audio_path=audio_path,
+                reset_logos_per_section=False,
+            ))
         finally:
             tmp_headings.unlink(missing_ok=True)
             tmp_images.unlink(missing_ok=True)
@@ -338,7 +340,7 @@ def run(
                 console.print(f"[yellow]--dry-run:[/yellow] skipping render. Captions → {cap_path}")
                 continue
 
-            warnings = _phase2(cfg, doc, out_path, verbose, headings_path=cap_path.parent / "headings.json",
+            warnings = _phase2(cfg, doc, [(out_path, False)], verbose, headings_path=cap_path.parent / "headings.json",
                                images_path=cap_path.parent / "images.json", audio_path=cap_path.parent / "audio.json")
             all_warnings.extend(warnings)
         except Exception as exc:
@@ -692,18 +694,20 @@ def _phase1(cfg, clips: list[str], output_dir: Path, verbose: bool):
 # Phase 2 — render core
 # ---------------------------------------------------------------------------
 
-def _phase2(cfg, doc, output_path: Path, verbose: bool, headings_path: Path | None = None,
+def _phase2(cfg, doc, outputs: list[tuple[Path, bool]], verbose: bool, headings_path: Path | None = None,
             images_path: Path | None = None, audio_path: Path | None = None,
-            reset_logos_per_section: bool = True, flip: bool = False) -> list[str]:
-    """Render final video from a CaptionsDoc. Returns warnings.
+            reset_logos_per_section: bool = True) -> list[str]:
+    """Render one or more videos from a CaptionsDoc. Returns warnings.
+
+    `outputs` is one `(path, flip)` pair per file — a hook and its flipped duplicate are one
+    call, so the caption/image/heading frames and the segment extraction are done once and
+    only the final encode repeats. `flip` mirrors the footage; overlays are composited after
+    the flip, so captions and title cards read normally (see output.flip in config).
 
     `reset_logos_per_section` clears logo dedup at each heading-card edge so a brand
     re-mentioned in a later section re-fires its logo. render-hooks passes False: a
     per-hook video is one hook + the shared body, and a company named in both should
     pop its logo only once, on first mention.
-
-    `flip` mirrors the footage horizontally; overlays are composited after the flip, so
-    captions and title cards read normally (see output.flip in config).
     """
     from .caption import render_caption_frames
     from .image_spec import load_images
@@ -713,7 +717,6 @@ def _phase2(cfg, doc, output_path: Path, verbose: bool, headings_path: Path | No
     from .transcriber import WordTimestamp
 
     warnings: list[str] = []
-    output_dir = output_path.parent
 
     # Convert EdlEntry (captions_doc) → EDLEntry (edl module) for renderer
     edl = [
@@ -831,10 +834,13 @@ def _phase2(cfg, doc, output_path: Path, verbose: bool, headings_path: Path | No
         # Final render
         from .renderer import _USE_VIDEOTOOLBOX
         encoder = "h264_videotoolbox (hardware)" if _USE_VIDEOTOOLBOX else "libx264 (software)"
-        console.print(f"[bold]Step 6c/6[/bold] Rendering final video… encoder: [cyan]{encoder}[/cyan]")
+        n_out = f"{len(outputs)} videos" if len(outputs) > 1 else "final video"
+        console.print(f"[bold]Step 6c/6[/bold] Rendering {n_out}… encoder: [cyan]{encoder}[/cyan]")
         t = time.perf_counter()
-        out = do_render(edl, caption_frames, cfg, output_path, audio_tracks=audio_tracks, flip=flip)
-        console.print(f"\n[green bold]Done![/green bold] → {out}  ({time.perf_counter() - t:.1f}s)")
+        written = do_render(edl, caption_frames, cfg, outputs, audio_tracks=audio_tracks)
+        console.print(f"\n[green bold]Done![/green bold] ({time.perf_counter() - t:.1f}s)")
+        for p in written:
+            console.print(f"  → {p}")
 
     return warnings
 

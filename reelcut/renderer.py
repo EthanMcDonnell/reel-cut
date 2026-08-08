@@ -40,22 +40,28 @@ def render(
     edl: list[EDLEntry],
     caption_frames: list[CaptionFrame],
     config: ReelCutConfig,
-    output_path: str | Path | None = None,
+    outputs: list[tuple[str | Path, bool]] | None = None,
     audio_tracks: list[dict] | None = None,
-    flip: bool = False,
-) -> Path:
-    """Render final video from EDL keep-segments with optional caption overlay.
+) -> list[Path]:
+    """Render one or more output files from EDL keep-segments with optional caption overlay.
 
     - Reads only `keep=True` EDL entries.
     - Concatenates segments via FFmpeg.
     - Burns in caption PNG overlay frames.
-    - `flip` mirrors the footage horizontally (overlays are composited after, so text
-      is not mirrored).
     - Warns if output exceeds max_duration_s.
-    - Returns path to the output MP4.
+    - Returns the paths written, in order.
+
+    `outputs` is one `(path, flip)` pair per file to write, where `flip` mirrors the footage
+    horizontally (the overlay is composited after the flip, so text is not mirrored). Every
+    entry shares a single segment-extraction, concat and caption-sequence pass — they differ
+    only in the final encode — so a flipped duplicate costs one encode, not a whole render.
+    Segment extraction is ~80% of a render, so this is the difference between 2x and ~1.1x.
     """
-    output_path = Path(output_path) if output_path else Path(config.output.location) / "output.mp4"
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    if not outputs:
+        outputs = [(Path(config.output.location) / "output.mp4", False)]
+    out_specs = [(Path(p), flip) for p, flip in outputs]
+    for path, _ in out_specs:
+        path.parent.mkdir(parents=True, exist_ok=True)
 
     keep_entries = [e for e in edl if e.keep]
     if not keep_entries:
@@ -96,12 +102,21 @@ def render(
                 progress.update(task, description="Preparing captions…")
                 caption_seq = _prepare_caption_sequence(caption_frames, config, tmpdir)
 
-            progress.update(task, description="Encoding final output…")
-            _final_encode(concat_path, output_path, config, caption_seq, audio_tracks, flip)
+            # Auto-level background tracks against the measured voice loudness. Once per
+            # render, not once per output: the voice is the same concat file for all of them.
+            if audio_tracks:
+                progress.update(task, description="Leveling audio…")
+                _level_audio_tracks(concat_path, audio_tracks, config.audio.ducking_lufs)
 
-        progress.update(task, description=f"Done → {output_path}", completed=1, total=1)
+            for n, (path, flip) in enumerate(out_specs, 1):
+                pos = f" ({n}/{len(out_specs)})" if len(out_specs) > 1 else ""
+                progress.update(task, description=f"Encoding {path.name}{pos}…")
+                _final_encode(concat_path, path, config, caption_seq, audio_tracks, flip)
 
-    return output_path
+        written = [path for path, _ in out_specs]
+        progress.update(task, description=f"Done → {written[-1]}", completed=1, total=1)
+
+    return written
 
 
 # ---------------------------------------------------------------------------
@@ -298,10 +313,9 @@ def _final_encode(
     fps = config.output.fps
     zoom_frac = _zoom_fraction(output_path.stem, config)
 
-    # Auto-level background tracks relative to the measured voice loudness. Done once here
-    # (not in _build_streams, which can run twice on the videotoolbox→libx264 fallback).
-    if audio_tracks:
-        _level_audio_tracks(input_path, audio_tracks, config.audio.ducking_lufs)
+    # Background tracks are expected to be pre-leveled by the caller (`render`), which does it
+    # once per concat rather than once per output — and never inside `_build_streams`, which
+    # can run twice on the videotoolbox→libx264 fallback.
 
     def _build_streams() -> tuple:
         main = ffmpeg.input(str(input_path))
