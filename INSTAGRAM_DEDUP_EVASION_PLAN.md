@@ -148,6 +148,12 @@ Two things to be clear about, since this table's row #4 says never:
   *second post* out of one hook (see Tier 1 — spacing is what earns the reach), not because the
   mirror hides it.
 
+A duplicate does **not** cost a second render. Measured on `canva-session-revocations-s3`: segment
+extraction is ~5:00 of a ~6:00 render (~80%) and depends only on the EDL, which is identical for a
+hook and its mirror. `render()` therefore takes a list of `(path, flip)` outputs and shares one
+extraction + concat + caption-sequence pass across all of them, repeating only `_final_encode`.
+The first cut of this shipped without that and re-extracted all 26 segments for the duplicate.
+
 ### Tier 1 — Posting strategy (the durable answer — no code)
 Per the research doc this is where de-clustering actually happens:
 - **Space posts days apart** rather than back-to-back on the same account.
