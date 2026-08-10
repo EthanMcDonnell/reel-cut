@@ -179,6 +179,32 @@ def test_expand_still_grows_to_sentence_bounds():
     assert exp_end == pytest.approx(1.2)     # forward to "fox."
 
 
+def test_expand_hard_cap_snaps_back_to_a_word_boundary():
+    """Regression: the 20s cap severed 'or' (37.680-39.260) mid-word, so the word was
+    replaced out of the transcript while Whisper only saw its opening 260ms — the word
+    vanished. The capped end must land on a word boundary, never inside a word."""
+    words = [
+        W("I", 0.0, 0.5),
+        W("know", 0.5, 36.460),   # long filler run standing in for the real sentence
+        W("guess", 36.460, 37.680),   # the last word ending inside the cap
+        W("or", 37.680, 39.260),  # straddles the 20.0s cap at 20.0
+    ]
+    exp_start, exp_end, hard_capped = _expand_to_sentence(
+        words, win_start=0.0, win_end=39.260, max_duration_s=20.0,
+    )
+    assert hard_capped
+    # No word may straddle the returned end.
+    assert not any(w.start < exp_end < w.end for w in words)
+
+
+def test_expand_uncapped_window_is_not_snapped():
+    """The snap-back only applies when the cap binds; normal windows keep their end."""
+    words = [W("The", 0.0, 0.3), W("quick", 0.3, 0.6), W("fox.", 0.6, 1.2)]
+    _, exp_end, hard_capped = _expand_to_sentence(words, win_start=0.0, win_end=0.6)
+    assert not hard_capped
+    assert exp_end == pytest.approx(1.2)
+
+
 # ---------------------------------------------------------------------------
 # _words_to_whisperx_segments
 # ---------------------------------------------------------------------------
@@ -316,6 +342,49 @@ def test_reconcile_passes_confident_words_unchanged():
     assert kept[0].word == "system"
     assert kept[0].confidence == 0.72
     assert rescued == []
+
+
+def test_reconcile_reverts_confidence_regression():
+    """Regression: short sub-clips turned confident words into different, weaker ones —
+    'Like'@0.78 → 'Lie.'@0.20 and 'API?'@0.86 → 'IPL.'@0.64 both shipped in the transcript.
+    Same word count means position i is comparable, so both revert to the original."""
+    original = [_wt("Like", 12.30, 12.64, 0.78), _wt("API?", 16.30, 16.72, 0.86)]
+    retrans  = [_wt("Lie.", 12.30, 12.64, 0.20), _wt("IPL.", 16.30, 16.72, 0.64)]
+
+    kept, rescued = _reconcile_retranscribed(
+        retrans, original, win_end=17.0, conf_threshold=0.10, regression_margin=0.20
+    )
+
+    assert [w.word for w in kept] == ["Like", "API?"]
+    assert [w.confidence for w in kept] == [0.78, 0.86]
+    assert kept[0].start == pytest.approx(12.30)   # retrans timestamps preserved
+    assert len(rescued) == 2
+
+
+def test_reconcile_keeps_retranscription_improvements():
+    """The guard is one-directional: a retranscribed word more confident than the
+    original is exactly what retranscription is for and must survive untouched."""
+    original = [_wt("but", 24.09, 24.19, 0.21)]
+    retrans  = [_wt("but", 24.09, 24.19, 0.90)]
+
+    kept, _ = _reconcile_retranscribed(
+        retrans, original, win_end=25.0, conf_threshold=0.10, regression_margin=0.20
+    )
+
+    assert kept[0].confidence == 0.90
+
+
+def test_reconcile_regression_guard_needs_matching_word_counts():
+    """Positional comparison is only sound when both passes returned the same number of
+    words; a differing count (a recovered false start) leaves the guard disarmed."""
+    original = [_wt("guess", 37.12, 37.68, 0.89)]
+    retrans  = [_wt("I", 37.12, 37.30, 0.40), _wt("Guest.", 37.30, 37.68, 0.33)]
+
+    kept, _ = _reconcile_retranscribed(
+        retrans, original, win_end=38.0, conf_threshold=0.10, regression_margin=0.20
+    )
+
+    assert [w.word for w in kept] == ["I", "Guest."]
 
 
 # ---------------------------------------------------------------------------
@@ -475,3 +544,30 @@ def test_monotonic_guard_restores_single_overlapping_word():
     result = _enforce_monotonic_timestamps(collapsed, expansion)
     assert (result[1].start, result[1].end) == (1.2, 1.4)
     assert (result[0].start, result[2].start) == (1.0, 1.4)
+
+
+def test_monotonic_guard_restores_predecessor_aligned_too_late():
+    """Regression: 'I know, it's not great...' came out as 'know, I it's not great'.
+
+    Alignment pushed 'I' *later* than 'know'. Falling back only the later word
+    ('know', to its correct 18.510-18.790) still leaves it behind 'I' at the
+    corrupted 18.692, so the pair stays inverted. The predecessor must fall back
+    too.
+    """
+    expansion = [
+        _exp("I", 18.430, 18.510, 0.95),
+        _exp("know,", 18.510, 18.790, 0.82),
+        _exp("it's", 18.990, 19.230, 0.94),
+    ]
+    collapsed = [
+        _w("I", 18.692, 18.793, 0.75),      # aligned too late — the real culprit
+        _w("know,", 18.510, 18.790, 0.82),
+        _w("it's", 19.095, 19.216, 0.85),
+    ]
+
+    result = _enforce_monotonic_timestamps(collapsed, expansion)
+
+    assert [w.word for w in result] == ["I", "know,", "it's"]
+    starts = [w.start for w in result]
+    assert starts == sorted(starts)
+    assert (result[0].start, result[0].end) == (18.430, 18.510)   # predecessor restored

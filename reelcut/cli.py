@@ -505,6 +505,7 @@ def _phase1(cfg, clips: list[str], output_dir: Path, verbose: bool):
                 words, wav, whisper_cfg,
                 conf_threshold=cfg.cuts.min_retrans_word_confidence,
                 rescue_floor=cfg.cuts.retrans_rescue_floor,
+                regression_margin=cfg.cuts.retrans_regression_margin,
                 clips_dir=clips_dir,
                 silence_threshold_db=cfg.cuts.silence_threshold_db,
                 min_silence_ms=cfg.cuts.min_silence_ms,

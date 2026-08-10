@@ -64,6 +64,13 @@ class CutsConfig(BaseModel):
                                                # pass found the same word at or above this confidence.
                                                # Two passes agreeing on a word is corroborating evidence
                                                # even when both scores are low (e.g. sub-clip boundaries).
+    retrans_regression_margin: float = 0.20   # regression guard: when both passes return the same word
+                                               # count, a retranscribed word whose confidence falls this
+                                               # far below the original at the same position is reverted
+                                               # to the original word. Short sub-clips lack the context
+                                               # Whisper needs, so it can turn a confident word into a
+                                               # different, weaker one. Raise to trust retranscription
+                                               # more; lower to revert more aggressively.
     low_confidence_threshold: float = 0.8
     low_confidence_min_gap_ms: int = 500
     preserve_start_s: float = 0.0

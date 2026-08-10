@@ -276,6 +276,7 @@ def _reconcile_retranscribed(
     win_end: float,
     conf_threshold: float,
     rescue_floor: float = 0.05,
+    regression_margin: float = 0.20,
 ) -> tuple[list["WordTimestamp"], list["WordTimestamp"]]:
     """Filter retranscribed words, rescuing below-floor words that both passes agreed on.
 
@@ -284,6 +285,14 @@ def _reconcile_retranscribed(
     (case-insensitive) at >= rescue_floor. Two independent passes agreeing is corroborating
     evidence even when both scores are low (e.g. words at sub-clip boundaries). Adopt the
     original's text + confidence while keeping the retrans timestamp. Returns (kept, rescued).
+
+    Regression guard: retranscription exists to *improve* a suspicious region, but a short
+    sub-clip strips the surrounding context Whisper needs and it can return a confident
+    original as a different, less confident word ("Like"@0.78 → "Lie."@0.20, "API?"@0.86 →
+    "IPL."@0.64). Where both passes produced the same word count — so position i in each
+    refers to the same utterance — a retranscribed word that falls regression_margin below
+    its original is reverted to the original's text + confidence, keeping the retrans
+    timestamp exactly as the agreement rescue does. Improvements are never touched.
     """
     original_words = {
         w.word.lower(): w for w in words_replaced if w.confidence >= rescue_floor
@@ -301,6 +310,13 @@ def _reconcile_retranscribed(
             w.confidence = orig.confidence
             kept.append(w)
             rescued.append(w)
+
+    if len(kept) == len(words_replaced):
+        for w, orig in zip(kept, words_replaced):
+            if orig.confidence - w.confidence >= regression_margin:
+                w.word = orig.word
+                w.confidence = orig.confidence
+                rescued.append(w)
     return kept, rescued
 
 
@@ -310,6 +326,7 @@ def retranscribe_suspicious_regions(
     config: WhisperConfig,
     conf_threshold: float = 0.5,
     rescue_floor: float = 0.05,
+    regression_margin: float = 0.20,
     clips_dir: Path | None = None,
     silence_threshold_db: float = -40.0,
     min_silence_ms: int = 200,
@@ -618,7 +635,8 @@ def retranscribe_suspicious_regions(
             # from clip isolation can depress the score without reflecting true
             # acoustic uncertainty.
             found, found_rescued = _reconcile_retranscribed(
-                found, words_replaced, win_end, conf_threshold, rescue_floor
+                found, words_replaced, win_end, conf_threshold, rescue_floor,
+                regression_margin,
             )
 
         # Derive dropped words from found_raw (clip-relative timestamps, before offset).
@@ -805,12 +823,23 @@ def _enforce_monotonic_timestamps(
     Wherever a word starts before the previous word ends, fall it back to its
     pre-align (Whisper) timestamp, which is monotonic by construction. `collapsed`
     is 1:1 with `expansion`, so each word's original is `exp.orig_word`.
+
+    Falling back only the later word cannot fix an inversion caused by the
+    *earlier* word being aligned too late — the restored original then sits
+    before a predecessor that keeps its corrupted timestamp, leaving the pair out
+    of order. So walk back over any predecessor still ahead of the fallback and
+    restore its original too; originals are monotonic by construction, so the run
+    is ordered once the walk stops.
     """
     result: list[WordTimestamp] = []
     prev_end = float("-inf")
-    for w, exp in zip(collapsed, expansion):
+    for i, (w, exp) in enumerate(zip(collapsed, expansion)):
         if w.start < prev_end:
             w = exp.orig_word
+            j = i - 1
+            while j >= 0 and w.start < result[j].end:
+                result[j] = expansion[j].orig_word
+                j -= 1
         result.append(w)
         prev_end = w.end
     return result
@@ -1070,6 +1099,17 @@ def _expand_to_sentence(
     natural_end = max(words[sent_end_idx].end, win_end)
     hard_capped = natural_end > exp_start + max_duration_s
     exp_end = min(natural_end, exp_start + max_duration_s)
+
+    # The cap can land mid-word. retranscribe_suspicious_regions replaces every
+    # word whose *start* falls inside the window, so a word straddling exp_end is
+    # deleted from the transcript while Whisper only ever sees its opening
+    # fragment — the word is lost outright. Snap the cap back to the last word
+    # that fits entirely, which pushes the straddler's start to exp_end and out
+    # of the replaced range.
+    if hard_capped:
+        fits = [w.end for w in words if exp_start < w.end <= exp_end]
+        if fits:
+            exp_end = max(fits)
 
     return exp_start, exp_end, hard_capped
 
