@@ -374,17 +374,43 @@ def test_reconcile_keeps_retranscription_improvements():
     assert kept[0].confidence == 0.90
 
 
-def test_reconcile_regression_guard_needs_matching_word_counts():
-    """Positional comparison is only sound when both passes returned the same number of
-    words; a differing count (a recovered false start) leaves the guard disarmed."""
-    original = [_wt("guess", 37.12, 37.68, 0.89)]
-    retrans  = [_wt("I", 37.12, 37.30, 0.40), _wt("Guest.", 37.30, 37.68, 0.33)]
+def test_reconcile_regression_guard_survives_a_dropped_filler():
+    """Regression: retranscription shed the filler 'like', so every later word sat one
+    index off its original and an index-by-index guard went blind — 'guess'@0.89 shipped
+    as 'Guest.'@0.33. Aligning the passes keeps the guard armed across the deletion, and
+    the deliberately dropped filler stays dropped."""
+    original = [
+        _wt("usage", 30.73, 31.05, 0.85),
+        _wt("like", 33.25, 33.95, 0.59),   # filler the retranscription drops
+        _wt("know", 35.63, 36.03, 0.80),
+        _wt("guess", 37.12, 37.68, 0.89),
+    ]
+    retrans = [
+        _wt("usage?", 30.73, 31.05, 0.85),
+        _wt("know", 35.63, 36.03, 0.80),
+        _wt("Guest.", 37.12, 37.68, 0.33),
+    ]
 
     kept, _ = _reconcile_retranscribed(
         retrans, original, win_end=38.0, conf_threshold=0.10, regression_margin=0.20
     )
 
-    assert [w.word for w in kept] == ["I", "Guest."]
+    assert [w.word for w in kept] == ["usage?", "know", "guess"]
+    assert kept[2].confidence == 0.89
+
+
+def test_reconcile_regression_guard_ignores_inserted_words():
+    """A word retranscription genuinely recovered aligns to no original, so it is left
+    alone rather than being overwritten by a neighbouring original."""
+    original = [_wt("brokers", 5.0, 5.4, 0.90)]
+    retrans  = [_wt("to", 4.6, 4.8, 0.30), _wt("brokers", 5.0, 5.4, 0.88)]
+
+    kept, _ = _reconcile_retranscribed(
+        retrans, original, win_end=6.0, conf_threshold=0.10, regression_margin=0.20
+    )
+
+    assert [w.word for w in kept] == ["to", "brokers"]
+    assert kept[0].confidence == 0.30   # untouched — no original to compare against
 
 
 # ---------------------------------------------------------------------------

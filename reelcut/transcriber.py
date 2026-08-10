@@ -289,10 +289,12 @@ def _reconcile_retranscribed(
     Regression guard: retranscription exists to *improve* a suspicious region, but a short
     sub-clip strips the surrounding context Whisper needs and it can return a confident
     original as a different, less confident word ("Like"@0.78 → "Lie."@0.20, "API?"@0.86 →
-    "IPL."@0.64). Where both passes produced the same word count — so position i in each
-    refers to the same utterance — a retranscribed word that falls regression_margin below
-    its original is reverted to the original's text + confidence, keeping the retrans
-    timestamp exactly as the agreement rescue does. Improvements are never touched.
+    "IPL."@0.64). The two passes are aligned word-for-word, and any retranscribed word that
+    falls regression_margin below the original it lines up with is reverted to the
+    original's text + confidence, keeping the retrans timestamp exactly as the agreement
+    rescue does. Improvements are never touched, and words the retranscription legitimately
+    added or dropped (a recovered false start, a shed filler) align to nothing and are left
+    alone — which is why this aligns rather than comparing by index.
     """
     original_words = {
         w.word.lower(): w for w in words_replaced if w.confidence >= rescue_floor
@@ -311,13 +313,41 @@ def _reconcile_retranscribed(
             kept.append(w)
             rescued.append(w)
 
-    if len(kept) == len(words_replaced):
-        for w, orig in zip(kept, words_replaced):
-            if orig.confidence - w.confidence >= regression_margin:
-                w.word = orig.word
-                w.confidence = orig.confidence
-                rescued.append(w)
+    for w, orig in _align_passes(kept, words_replaced):
+        if orig.confidence - w.confidence >= regression_margin:
+            w.word = orig.word
+            w.confidence = orig.confidence
+            rescued.append(w)
     return kept, rescued
+
+
+def _normalise_for_match(word: str) -> str:
+    """Reduce a word to its comparable core: lowercase, no surrounding punctuation."""
+    return word.strip(".,!?;:…\"'").lower()
+
+
+def _align_passes(
+    kept: list["WordTimestamp"],
+    words_replaced: list["WordTimestamp"],
+) -> list[tuple["WordTimestamp", "WordTimestamp"]]:
+    """Pair each retranscribed word with the original word it corresponds to.
+
+    A plain index-by-index comparison breaks as soon as retranscription adds or drops a
+    word — shedding one filler shifts every later position onto the wrong original. Diff
+    the two normalised word sequences instead: 'equal' runs pair off directly, and a
+    'replace' run pairs positionally only when both sides are the same length (an
+    unambiguous n-for-n substitution). Insertions, deletions and ragged replacements yield
+    no pairs, so the caller leaves those words untouched.
+    """
+    import difflib
+
+    a = [_normalise_for_match(w.word) for w in kept]
+    b = [_normalise_for_match(w.word) for w in words_replaced]
+    pairs: list[tuple[WordTimestamp, WordTimestamp]] = []
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(a=a, b=b, autojunk=False).get_opcodes():
+        if tag == "equal" or (tag == "replace" and i2 - i1 == j2 - j1):
+            pairs.extend(zip(kept[i1:i2], words_replaced[j1:j2]))
+    return pairs
 
 
 def retranscribe_suspicious_regions(

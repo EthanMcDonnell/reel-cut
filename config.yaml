@@ -195,7 +195,7 @@ whisper:
   language: en                     # default: en
   beam_size: 4                     # default: 1  |  1 = greedy/fastest but error-prone; higher = beam search,
                                    # considers multiple candidates — reduces errors on numbers and proper nouns.
-  initial_prompt: "Hello. Software engineering. AI for 12 months. Claude, GPT, the API, context window, 200k tokens."
+  initial_prompt: "Hello. Software engineering. AI for 12 months. Claude, GPT, the API, context window, 200k tokens"
                                    # default: null  |  primes Whisper toward expected vocabulary. Update to match content.
   condition_on_previous_text: false # default: false  |  true = segments share context (more fluent but
                                    # hallucinations can cascade); false = each segment decoded independently.
