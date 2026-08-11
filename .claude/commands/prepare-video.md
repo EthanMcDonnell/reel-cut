@@ -63,7 +63,7 @@ Summarise:
 
 Take the Step 3 anomalies and split them into **CERTAIN-FIX** vs **REPORT-ONLY**. Only the certain ones get applied here; everything else stays reported for the human.
 
-**The only file you edit to apply a fix is `captions.json`, and only its `edl` array.** The `edl` is a flat list of contiguous `{source_clip, start, end, keep, reason}` spans. A fix is a **surgical in-place edit to one span** — flip its `keep` flag. Leave every other span, and `words` / `source_clips`, byte-for-byte untouched. Never alter the `start`/`end` of a kept-speech span. Do **not** re-run `transcribe` to "refresh" anything — that recomputes the whole `edl` and discards these fixes.
+**The only file you edit to apply a fix is `captions.json`, and only its `edl` and `words` arrays.** The `edl` is a flat list of contiguous `{source_clip, start, end, keep, reason}` spans. An `edl` fix is a **surgical in-place edit to one span** — flip its `keep` flag. A `words` fix edits **only the `word` text** of one entry — never its `start`/`end`/`source_clip`, never insert or delete entries (the render and the `edl` are timed off these). Leave `source_clips` byte-for-byte untouched. Never alter the `start`/`end` of a kept-speech span. Do **not** re-run `transcribe` to "refresh" anything — that recomputes the whole `edl` and discards these fixes.
 
 Auto-fix **only** these (if a fix needs guessing which take the user wants, or a boundary you can't read straight off word timings, do **not** touch it):
 
@@ -73,8 +73,10 @@ Auto-fix **only** these (if a fix needs guessing which take the user wants, or a
 | Clear over-cut: a `keep: false` span (`reason` silence/noise) that actually contains real words present in `words` | flip → `keep: true` |
 | Micro keep-segment that is a bare fragment (no full word) | flip → `keep: false` |
 | Missed cut sitting *inside* a keep span, where the digest names the exact dead words | split that one span into three at the surrounding word boundaries (from `words`), middle sub-span → `keep: false` |
+| Misheard word, where the surrounding sentence makes the intended word unambiguous (e.g. "never miss is **riding** commit messages" → `writing`; "**AR** whips up a commit message" → `AI`) | rewrite that `words[i].word` text |
+| Mid-sentence full stop or spurious capital that splits/mangles a caption line | rewrite that `words[i].word` text |
 
-**Never auto-fix** (report only): alternate hook takes (user picks one), low-confidence survivors that are the *correct* word, large kept gaps / ambiguous boundaries that need a human listen, and hard-cap hits.
+**Never auto-fix** (report only): alternate hook takes (user picks one), low-confidence survivors that are the *correct* word, word swaps where you'd be guessing what was actually said or the swap changes the claim, large kept gaps / ambiguous boundaries that need a human listen, and hard-cap hits.
 
 After editing, recompute keep/cut totals from the edited `edl`, then write the fix log to `assets/<slug>/<clip-stem>.debug.7.fixlog.txt` (same `<clip-stem>` as the other `.debug.*` files; `7` sorts it last). Format:
 
@@ -84,16 +86,16 @@ run: <ISO timestamp>   clip: <stem>
 keep/cut duration:  before <k>s / <c>s  →  after <k>s / <c>s   (Δ <±>s kept)
 
 FIXES APPLIED (n)
-  [1] <mm:ss>  <category>   edl[<i>] keep <old>→<new>
+  [1] <mm:ss>  <category>   edl[<i>] keep <old>→<new>   |   words[<i>] '<old>' → '<new>'
       <one-line reason>. (digest line <n>)
 
 LEFT FOR HUMAN (n)
   - <mm:ss>  <category> — <why not auto-fixed>
 ```
 
-If there were no certain fixes, write the file with `FIXES APPLIED (0)` and change nothing in `edl`.
+If there were no certain fixes, write the file with `FIXES APPLIED (0)` and change nothing in `edl` or `words`.
 
-In the chat summary, state: N auto-fixed + N left for human, and that `.debug.7.fixlog.txt` holds the record (each applied line carries `edl[i]` before→after so it's trivial to revert by flipping back).
+In the chat summary, state: N auto-fixed + N left for human, and that `.debug.7.fixlog.txt` holds the record (each applied line carries `edl[i]` / `words[i]` before→after so it's trivial to revert).
 
 - Next step: `/produce-video <slug>`
 
