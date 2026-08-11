@@ -83,10 +83,17 @@ def generate_scriptless_edl(
                 # push cut_start forward so the word has a minimum audible window.
                 # WhisperX can assign < 50 ms to sub-tokens of compound words (e.g.
                 # "-2026" in "CVE-2026-31431"), making them inaudible even when kept.
+                #
+                # This is a FLOOR, never a ceiling: gap.speech_end may already sit past
+                # curr.start + min_keep_ms, because the audio scan found the word's real
+                # speech running well beyond its aligned end. Assigning the floor there
+                # would drag the cut back inside the word and clip the audible remainder
+                # ("API?" aligned to 122 ms while the spoken word ran 900 ms — the floor
+                # cut it at "A-p"). max() keeps whichever boundary is later.
                 curr_dur_ms = (curr.end - curr.start) * 1000
                 if curr_dur_ms < min_keep_ms:
                     extended = curr.start + min_keep_ms / 1000.0
-                    cut_start = min(extended, cut_end - 0.010)
+                    cut_start = min(max(cut_start, extended), cut_end - 0.010)
 
                 if cut_end > cut_start + 0.010:          # only cut if ≥10 ms remains
                     entries.append(EDLEntry(
