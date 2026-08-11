@@ -1,13 +1,10 @@
 ---
 name: prepare-video
-description: Wire footage path into config, run reelcut transcription, then review EDL anomalies (bad cuts, multiple takes, silence issues) in captions.json and report findings.
+description: Wire footage path into config, run reelcut transcription, then review captions.json for EDL anomalies (bad cuts, multiple takes, silence issues) and caption errors — auto-fixing the unambiguous ones and reporting the rest.
 argument-hint: "<video-slug>"
-tools: Read, Bash
-model: sonnet
-permissionMode: default
 ---
 
-Runs reelcut transcription for a video slug, then reviews the resulting captions.json for anomalies and reports them for the user to fix.
+Runs reelcut transcription for a video slug, then reviews the resulting captions.json for anomalies: the unambiguous ones you fix here (Step 4), everything else you report for the user to decide.
 
 Arguments: `$ARGUMENTS` — expected format: `<video-slug>`
 
@@ -48,18 +45,20 @@ This auto-rewrites each screenshot's `script_context` to the closest verbatim li
 
 If no `manifest.json` exists, skip this step.
 
-## Step 3 — Report
+## Step 3 — Assess
+
+Work out the anomalies here, apply the certain ones in Step 4, then report — so the numbers you quote are post-fix.
 
 **Hook takes are intentional.** The user deliberately records several alternate openers back-to-back at the top of the clip (often fully reworded, e.g. "Reddit moved a petabyte…" then "Reddit swapped Kafka onto Kubernetes…"). The retake detector won't cut these because they share little verbatim wording. Do **not** flag them as anomalies or bad cuts — just list the alternate hooks. Only a *truncated false start* (a cut-off opener like "…brokers to re…" immediately followed by its clean completion) is a real anomaly worth flagging as such.
 
-Summarise:
+Summarise (after Step 4 has run):
 - Manifest reconciliation results (if run): contexts re-aligned, and any orphaned screenshots / unsupported claims for the user to action
 - Keep / cut duration after fixes
-- Anomalies found and recommended fix for each (for the user to apply)
+- Anomalies found, split into those auto-fixed in Step 4 and those left for the user to apply (with the recommended fix for each)
 - Any remaining issues that need a human listen (ambiguous takes, uncertain boundaries)
 - `headings.json`, `images.json`, and `title.json` stubs were auto-created in the slug folder — optionally add a title card / image overlays / Instagram title later by filling them in (covered in `/produce-video`)
 
-## Step 4 — Auto-fix the certain anomalies, then log
+## Step 4 — Apply the certain fixes, then log
 
 Take the Step 3 anomalies and split them into **CERTAIN-FIX** vs **REPORT-ONLY**. Only the certain ones get applied here; everything else stays reported for the human.
 
