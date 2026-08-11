@@ -1,0 +1,75 @@
+# Inter-word gaps for casual-talking-head, as detect_gaps() computed them on the real clip audio.
+#
+# assets/ is gitignored, so the audio cannot travel with the test. speech_end is the
+# only field that needs the waveform (it is where _find_trailing_speech_end found the
+# word's real end, past a truncated alignment), so the gaps are pinned instead of the wav.
+#
+# Regenerate with the clip present in assets/<slug>/:
+#   .venv/bin/python tests/fixtures/edl/regen_gaps.py <tmpdir>
+#
+# start      end        effective  speech_end  type      cut
+1.362      1.382      1.362      1.382       noise     keep
+2.004      2.265      2.004      2.265       breath    cut
+2.326      2.466      2.326      2.466       noise     keep
+2.747      2.780      2.747      2.780       noise     keep
+3.680      4.153      3.680      4.153       noise     cut
+4.434      4.474      4.434      4.464       noise     keep
+4.715      4.755      4.715      4.755       noise     keep
+4.796      4.856      4.796      4.856       noise     keep
+5.137      5.237      5.137      5.237       breath    cut
+5.579      5.679      5.579      5.679       noise     cut
+5.920      7.922      5.920      6.040       noise     cut
+8.023      8.043      8.023      8.043       noise     keep
+8.083      8.103      8.083      8.103       noise     keep
+8.204      8.244      8.204      8.244       noise     keep
+8.587      8.980      8.587      8.980       noise     cut
+9.720      9.755      9.720      9.755       noise     keep
+10.097     10.158     10.097     10.158      noise     keep
+10.500     12.340     10.500     10.980      noise     cut
+12.622     13.270     12.622     12.642      silence   cut
+14.410     15.430     14.410     14.870      noise     cut
+15.730     15.796     15.730     15.796      noise     keep
+16.141     16.202     16.141     16.202      noise     keep
+16.365     16.405     16.365     16.405      noise     keep
+16.527     18.430     16.527     17.147      noise     cut
+18.790     19.276     18.790     19.276      noise     cut
+19.397     19.437     19.397     19.437      noise     keep
+19.679     19.740     19.679     19.679      noise     keep
+19.820     19.861     19.820     19.820      noise     keep
+20.022     20.123     20.022     20.123      noise     keep
+20.304     20.364     20.304     20.364      noise     keep
+20.445     20.526     20.445     20.526      noise     keep
+20.687     20.747     20.687     20.747      noise     keep
+21.009     22.740     21.009     21.379      noise     cut
+23.143     23.163     23.143     23.163      noise     keep
+23.445     23.525     23.445     23.525      noise     keep
+23.948     24.089     23.948     24.089      noise     keep
+24.189     24.410     24.189     24.410      breath    cut
+24.612     25.034     24.612     25.034      breath    cut
+25.235     25.296     25.235     25.296      noise     keep
+25.537     25.577     25.537     25.577      noise     keep
+25.678     25.718     25.678     25.718      noise     keep
+25.920     27.290     25.920     26.030      noise     cut
+27.733     29.030     27.733     28.213      noise     cut
+29.250     29.281     29.250     29.281      noise     keep
+29.421     29.462     29.421     29.462      noise     keep
+29.502     29.864     29.502     29.864      breath    cut
+30.145     30.206     30.145     30.145      noise     keep
+30.326     30.350     30.326     30.350      noise     keep
+31.050     33.290     31.050     31.360      noise     cut
+33.731     34.875     33.731     33.731      noise     cut
+35.055     35.095     35.055     35.055      silence   keep
+35.296     35.336     35.296     35.336      noise     keep
+35.436     35.617     35.436     35.617      noise     keep
+35.998     36.340     35.998     36.340      noise     cut
+36.700     37.220     36.700     36.700      silence   cut
+37.662     39.209     37.662     38.042      noise     cut
+39.330     39.370     39.330     39.370      noise     keep
+39.591     39.751     39.591     39.751      breath    cut
+40.073     40.214     40.073     40.214      noise     cut
+40.374     40.434     40.374     40.434      noise     keep
+40.515     40.555     40.515     40.555      noise     keep
+40.756     40.796     40.756     40.796      noise     keep
+40.876     41.117     40.876     41.117      breath    cut
+41.338     41.379     41.338     41.379      noise     keep
+41.439     41.499     41.439     41.499      noise     keep
