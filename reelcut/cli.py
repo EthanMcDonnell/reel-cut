@@ -257,7 +257,8 @@ def render_hooks(
             "title": card.title,
             "subtitle": card.subtitle,
             "start": 0.0,
-            "end": hook_dur,
+            # -1 = until the end of the video; otherwise the card ends with the hook.
+            "end": -1 if cfg.headings.full_video else hook_dur,
             "scrim": card.scrim,
         }], indent=2))
         tmp_images = assets_dir / f".render-hook{i + 1}.images.json"

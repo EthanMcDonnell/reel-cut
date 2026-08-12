@@ -190,6 +190,7 @@ class ImagesConfig(BaseModel):
 class HeadingsConfig(BaseModel):
     enabled: bool = True
     default_end_s: float = 3.0               # end time (s) written into the auto-created headings.json stub; -1 = until end of video
+    full_video: bool = False                 # render-hooks: keep the hook's title card up for the whole video (hook + body) instead of just the hook
     font: str = "PlayfairDisplay"            # bundled in reelcut/fonts/
     subtitle_font: str = "PlayfairDisplay-Italic"
     title_size: int = 96

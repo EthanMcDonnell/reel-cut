@@ -171,6 +171,8 @@ images:
 headings:
   enabled: true                  # render headings if a headings.json is present next to the captions file
   default_end_s: -1             # default end time (output-timeline seconds) for the auto-created headings.json stub
+  full_video: true               # render-hooks: keep the hook's title card up for the whole video
+                                 # (hook + body). false = only for the hook, then it disappears.
   font: PlayfairDisplay          # bundled in reelcut/fonts/ (elegant gold serif look)
   subtitle_font: PlayfairDisplay-Italic
   title_size: 96                 # title point size at 1080-wide (auto-shrinks if it won't fit)
