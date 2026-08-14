@@ -25,9 +25,10 @@ Example: `/schedule-video spotify-wrapped-billion-ai-stories --time 18:00`
 Every hook of a slug is the same body and the same voiceover with a different opening line.
 Instagram clusters near-duplicates and throttles the later ones to almost no reach, so hooks must
 be spread out. `scrape/post_video.py` enforces a **2-day minimum gap**; this command applies the
-same rule, but it does not work the spacing out locally: it asks social-cockpit for free slots, so
-the gap is measured against what is genuinely on the calendar — everything already published
-(including posts made from the phone) and everything already booked — not just this slug.
+same rule, but it does not work the spacing out locally: it reads social-cockpit's calendar and
+asks it for free slots. The rule is **per video** — two hooks of one video stay ≥2 days apart,
+while two different videos may share a day — so it needs the real calendar to know which posts are
+variants of what.
 
 ## Prerequisites
 
@@ -69,32 +70,53 @@ caption of the hook it mirrors.
 Load `assets/<slug>/automation.json` if present. Set `key` to the slug when absent — all hooks of
 a slug share **one** flow, created on the first to publish and appended to by the rest.
 
-## Step 3 — Ask the calendar for the slots
+## Step 3 — Look at the calendar, then ask for slots
 
 **Do not compute slot times yourself.** Only the cockpit knows what is actually on the calendar —
-what already went out (including anything posted from the phone) and what is already booked. Call:
+what already went out (including posts made from the phone) and what is already booked.
+
+First, see the shape of the week:
+
+```
+mcp__social-cockpit__get_calendar   days: 14
+```
+
+This is the picture the decision is made from: each day, what is on it, and which video each post
+belongs to. Read it before choosing anything — if the coming days are already dense, that is a
+reason to start later or spread wider, and no config can make that judgement for you.
+
+Then ask for this video's slots:
 
 ```
 mcp__social-cockpit__suggest_slots
+  video:       <slug>
   count:       <number of hooks from Step 2>
-  gap_days:    <--gap, default 2>
+  min_days:    <--gap, default 2>
   time_of_day: <--time, default "09:30">
   earliest:    <--start, omit for "now">
 ```
 
-It returns one `scheduled_at` string per slot, each already clear of every published and scheduled
-post by `gap_days` **on both sides** — which is the part that is easy to get wrong by hand, since a
-hole two days after the last post may still sit an hour before the next booked one. Pass those
-strings through to Step 5 unchanged.
+`min_days` is a **same-video** rule, not a cadence rule. It keeps two hooks of *this* video apart,
+because they share a body and a voiceover and land as near-duplicates. Posts of other videos do
+not block a slot — two different videos may share a day — they are only reported. A candidate
+within an hour of any existing post is skipped so nothing stacks.
 
-If it returns fewer slots than you asked for, it says so; report that rather than inventing the
-remainder.
+Pass the returned `scheduled_at` strings through to Step 5 unchanged. If it returns fewer slots
+than you asked for, it says so; report that rather than inventing the remainder.
 
 | Argument | Default |
 |---|---|
-| `--gap <days>` | `2` |
+| `--gap <days>` | `2` (same-video spacing) |
 | `--time <HH:MM>` | `09:30` |
 | `--start <when>` | now |
+
+### Posting more than once a day
+
+Two posts in one day is fine **when they are different videos** — that is exactly what the
+same-video rule permits. Schedule each video's hooks with its own `suggest_slots` call and a
+different `time_of_day` (say `09:30` for one and `18:00` for the other), then check the result in
+`get_calendar`. What you must not do is put two hooks of *one* video on the same day; the tool
+will not offer that, and overriding it by hand is what gets the second one throttled.
 
 ## Step 4 — Show the plan and confirm
 
@@ -120,6 +142,7 @@ On confirmation, call `mcp__social-cockpit__schedule_posts` **once** with every 
     {
       "scheduled_at": "2026-08-16T09:30",
       "video_path": "/absolute/path/to/output/<slug>/<hook>.mp4",
+      "video": "<slug>",
       "caption": "…",
       "trial_reel": true,
       "automation": { "key": "<slug>", "trigger_keywords": ["…"], "config": { } }
@@ -129,6 +152,9 @@ On confirmation, call `mcp__social-cockpit__schedule_posts` **once** with every 
 ```
 
 Notes:
+- **`video` must be the slug on every hook.** It is what marks these posts as variants of one
+  video, and so what makes the same-video spacing work on the next run. It is stored on the job and
+  never sent to Instagram. Omitting it silently disables the throttle protection.
 - `video_path` must be **absolute**. The cockpit reads the file at publish time, so it must stay
   where it is until then.
 - `scheduled_at` without an offset is read in the cockpit's timezone — which is what you want,
