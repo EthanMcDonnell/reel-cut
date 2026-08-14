@@ -27,10 +27,9 @@ Instagram clusters near-duplicates and throttles the later ones to almost no rea
 be spread out. The rule is **per video**: two hooks of one video stay `min_same_video_days` apart,
 while two different videos may happily share a day.
 
-**Nothing in social-cockpit enforces that rule.** `suggest_slots` honours `max_posts_per_day`,
-offers `suggested_times`, and keeps an hour clear of anything already committed — it never asks
-which video is calling, so with a 2-a-day policy it will return two same-day slots without
-hesitation. The same-video gap exists only in the callers: `scrape/post_video.py` checks the
+**Nothing in social-cockpit enforces that rule.** `suggest_slots` honours `max_posts_per_day` and
+offers `suggested_times` — that is all it does, and it never asks which video is calling, so with a
+2-a-day policy it will return two same-day slots without hesitation. The same-video gap exists only in the callers: `scrape/post_video.py` checks the
 calendar before posting, and Step 3 here walks the slot requests forward one gap at a time. If you
 short-circuit that walk into a single `count: N` call, the spacing silently disappears and the later
 hooks get throttled — which is the whole failure this command was written to avoid.
@@ -115,7 +114,9 @@ Then ask for the slots. `suggest_slots` takes exactly three arguments — `count
 |---|---|
 | `max_posts_per_day` | Hard ceiling per day, enforced. Not overridable: the booking route rejects a breach with `409 day_full`, so asking for more only produces slots that fail. |
 | `suggested_times` | The times slots are offered at. More than one entry is how a day holds more than one post. `--time` overrides these for this run only. |
-| *(1-hour separation)* | Nothing is offered within an hour of an existing commitment. A collision guard, not a cadence rule. |
+
+Those two are the **entire** policy. There is no collision buffer and no cadence rule of any kind:
+a day under its cap will offer every one of its configured times.
 
 `--time` maps to `times`. Omit it unless the user asked for a specific time. `--start` maps to
 `earliest`, but only ever pushes it later — see the floor below.
