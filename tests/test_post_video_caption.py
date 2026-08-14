@@ -60,3 +60,20 @@ def test_unknown_stem_falls_back_to_the_filename(tmp_path, monkeypatch):
 def test_missing_title_json_falls_back_to_the_filename(tmp_path, monkeypatch):
     monkeypatch.setattr(post_video, "ROOT", tmp_path)
     assert post_video.caption_for("nope", "hook1") == "hook1"
+
+
+def test_alt_slug_gets_its_own_caption(tmp_path, monkeypatch):
+    # A duplicate rendered under alt_slug must post its alt caption, not the hook's.
+    entries = [{"slug": "postgres-queue-unfair", "title": "Figma's queue is unfair",
+                "alt_slug": "queue-jumping-is-the-point", "alt_title": "queue jumping is the point"}]
+    slug = _slug_with_titles(tmp_path, monkeypatch, entries)
+    assert post_video.caption_for(slug, "queue-jumping-is-the-point") == "queue jumping is the point"
+    assert post_video.caption_for(slug, "postgres-queue-unfair") == "Figma's queue is unfair"
+
+
+def test_alt_title_without_alt_slug_is_keyed_by_its_slugified_title(tmp_path, monkeypatch):
+    # render-hooks names that file safe_slug(alt_title), so the lookup has to match it.
+    entries = [{"slug": "postgres-queue-unfair", "title": "Figma's queue is unfair",
+                "alt_title": "queue jumping is the point 💸"}]
+    slug = _slug_with_titles(tmp_path, monkeypatch, entries)
+    assert post_video.caption_for(slug, "queue-jumping-is-the-point") == "queue jumping is the point 💸"

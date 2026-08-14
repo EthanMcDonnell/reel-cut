@@ -48,3 +48,16 @@ def test_scaffold_titles_creates_stub_and_never_clobbers(tmp_path):
     tp.write_text('[{"title": "kept", "slug": "kept"}]')
     _scaffold_titles(cap)
     assert json.loads(tp.read_text()) == [{"title": "kept", "slug": "kept"}]
+
+
+def test_load_titles_reads_the_duplicate_alt_fields(tmp_path):
+    # The flipped duplicate's caption/filename — absent means it reuses the hook's.
+    tp = tmp_path / "title.json"
+    tp.write_text(json.dumps([
+        {"title": "a", "slug": "a", "alt_title": "b 💸", "alt_slug": "b"},
+        {"title": "c", "slug": "c"},
+    ]))
+    assert load_titles(tp) == [
+        TitleSpec(title="a", slug="a", alt_title="b 💸", alt_slug="b"),
+        TitleSpec(title="c", slug="c", alt_title="", alt_slug=""),
+    ]

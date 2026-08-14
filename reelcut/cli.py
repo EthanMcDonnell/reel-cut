@@ -172,6 +172,32 @@ def _flip_plan(n: int, flip_cfg) -> list[list[tuple[str, bool]]]:
     return [[("", False), (flip_cfg.suffix, True)] if f else [("", False)] for f in flipped]
 
 
+def _hook_variant_groups(plan_entries, stem: str, card, title, out_dir: Path):
+    """Group one hook's planned outputs by the title card they carry.
+
+    The first output is the hook itself; any second output is its flipped duplicate, which
+    takes the card's `alt_title` and the title.json `alt_slug`/`alt_title` when those are
+    authored — otherwise a duplicate is a text-identical clone of its hook.
+
+    Returns `[(card_title, [(path, flip), …]), …]`. Outputs sharing a card title stay in one
+    group so they also share the overlay frames and segment extraction; a duplicate with its
+    own card title is necessarily its own render.
+    """
+    from .title import safe_slug
+
+    groups: list[tuple[str, list[tuple[Path, bool]]]] = []
+    for idx, (suffix, flip) in enumerate(plan_entries):
+        is_dup = idx > 0
+        card_title = card.alt_title if is_dup and card.alt_title else card.title
+        alt_stem = safe_slug(title.alt_slug or title.alt_title) if is_dup and title else ""
+        path = out_dir / f"{alt_stem or stem + suffix}.mp4"
+        if groups and groups[-1][0] == card_title:
+            groups[-1][1].append((path, flip))
+        else:
+            groups.append((card_title, [(path, flip)]))
+    return groups
+
+
 # ---------------------------------------------------------------------------
 # reelcut render-hooks  (Phase 2 — one video per hook)
 # ---------------------------------------------------------------------------
@@ -253,31 +279,36 @@ def render_hooks(
         # episode-token resolution still finds the slug + series_index.json. Cleaned up
         # after each render.
         tmp_headings = assets_dir / f".render-hook{i + 1}.headings.json"
-        tmp_headings.write_text(json.dumps([{
-            "title": card.title,
-            "subtitle": card.subtitle,
-            "start": 0.0,
-            # -1 = until the end of the video; otherwise the card ends with the hook.
-            "end": -1 if cfg.headings.full_video else hook_dur,
-            "scrim": card.scrim,
-        }], indent=2))
         tmp_images = assets_dir / f".render-hook{i + 1}.images.json"
         save_images(drop_covered(images, drop_intervals), tmp_images)
 
         # One or two outputs per hook — the second is the flipped duplicate when
-        # output.flip is set to duplicate. They go through _phase2 together so the shared
-        # work (overlay frames, segment extraction, concat) is done once per hook.
-        variants = [(out_dir / f"{stem}{suffix}.mp4", flip) for suffix, flip in plan[i]]
+        # output.flip is set to duplicate. Outputs sharing a title card go through _phase2
+        # together so the shared work (overlay frames, segment extraction, concat) is done
+        # once; a duplicate carrying its own alt_title card is its own _phase2 call.
+        groups = _hook_variant_groups(
+            plan[i], stem, card, titles[i] if i < len(titles) else None, out_dir
+        )
         console.rule(
-            f"[bold]Hook {i + 1}/{n}[/bold] → " + ", ".join(p.name for p, _ in variants)
+            f"[bold]Hook {i + 1}/{n}[/bold] → "
+            + ", ".join(p.name for _, variants in groups for p, _ in variants)
         )
 
         try:
-            all_warnings.extend(_phase2(
-                cfg, new_doc, variants, verbose,
-                headings_path=tmp_headings, images_path=tmp_images, audio_path=audio_path,
-                reset_logos_per_section=False,
-            ))
+            for card_title, variants in groups:
+                tmp_headings.write_text(json.dumps([{
+                    "title": card_title,
+                    "subtitle": card.subtitle,
+                    "start": 0.0,
+                    # -1 = until the end of the video; otherwise the card ends with the hook.
+                    "end": -1 if cfg.headings.full_video else hook_dur,
+                    "scrim": card.scrim,
+                }], indent=2))
+                all_warnings.extend(_phase2(
+                    cfg, new_doc, variants, verbose,
+                    headings_path=tmp_headings, images_path=tmp_images, audio_path=audio_path,
+                    reset_logos_per_section=False,
+                ))
         finally:
             tmp_headings.unlink(missing_ok=True)
             tmp_images.unlink(missing_ok=True)

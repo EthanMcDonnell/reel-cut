@@ -101,7 +101,10 @@ output:
     apply: duplicate                # in_place | duplicate — a flipped render either REPLACES that
                                     #   hook's video (3 hooks -> 3 files) or is written ALONGSIDE it
                                     #   (3 hooks + mode:all -> 6 files).
-    suffix: "-flipped"              # filename suffix for duplicate flipped outputs only
+    suffix: "-flipped"              # filename suffix for duplicate flipped outputs that have no
+                                    # alt_slug/alt_title in title.json (those are named and
+                                    # captioned by their own alt text instead — see /produce-video
+                                    # Steps 4b/4c, which also give the duplicate its own title card)
                                     # NOTE: not a proven IG dedup lever — SSCD is trained on flips
                                     # (INSTAGRAM_DEDUP_EVASION_PLAN.md #4). Cheap, but don't expect
                                     # a mirrored copy to de-cluster from its original.

@@ -196,9 +196,18 @@ Once approved, write `headings.json` with **one card per hook window** from `hoo
 
 Field reference:
 - `title` — use `\n` for line breaks; `{n:<series>}` is auto-replaced with this video's episode number at render time (series slug from SERIES.md)
+- `alt_title` — the card the **mirrored duplicate** of this hook gets (see below); omit when flip duplicates are off
 - `subtitle` — optional smaller italic line; also supports `{n:<series>}`
 - `start`/`end` — **output-timeline seconds** from `hook_windows` (Step 3c), not source-clip time
 - `scrim` — `true` darkens footage behind the text; omit to use the config default
+
+**Mirrored duplicates need their own card.** Check `output.flip` in `config.yaml`: when `apply: duplicate` and `mode` is not `off`, every (or every second) hook is rendered *twice*, and without an `alt_title` the mirror carries a byte-identical card — exactly the shared signal the per-hook titles above exist to remove. So for each hook that gets a duplicate, write a **second** title for the same hook's angle (a different phrasing of the same claim — it must pass the same accuracy check, since both cards sit over the same spoken words):
+
+```json
+{ "title": "What Are\nAI Tokens?", "alt_title": "The Hidden\nCost Of A Word", "subtitle": "Tech Behind Big Tech Day {n:tbbt}", "start": 0.0, "end": 3.1, "scrim": true }
+```
+
+Include the alt titles in the same AskUserQuestion set. Omitting `alt_title` is a valid choice — the mirror then reuses the hook's card, and it renders faster (the duplicate shares the hook's overlay frames and segment extraction; its own card means its own full render pass).
 
 **Logo resets:** each card's start/end is a logo-reset boundary. A brand re-mentioned after any card edge re-fires its logo in that section — no extra configuration needed.
 
@@ -230,6 +239,16 @@ Examples of the register: `the cloud? never heard of it` · `dropbox unsubscribe
 Field reference:
 - `title` — the pretty caption (emoji + lowercase), used verbatim in the Telegram/Instagram post (Step 7)
 - `slug` — a filesystem-safe stem for the `.mp4` filename: lowercase, hyphen-separated, no emoji/punctuation. The renderer re-sanitizes it defensively; if you leave it empty it's derived from `title`, and if nothing usable survives the file falls back to `hook{i}.mp4`.
+- `alt_title` / `alt_slug` — the caption and filename for this hook's **mirrored duplicate** (see below)
+
+**Mirrored duplicates need their own caption too.** Same trigger as Step 4b: if `output.flip` is `apply: duplicate` with `mode` not `off`, each duplicated hook needs a second Instagram title, written to the same entry as `alt_title` (+ `alt_slug`). It follows every style rule above and stays true to the same spoken body — it's a different angle on the same hook, not a different video:
+
+```json
+{ "title": "why reddit ditched kafka 😵", "slug": "why-reddit-ditched-kafka",
+  "alt_title": "kafka? we hardly knew her", "alt_slug": "kafka-we-hardly-knew-her" }
+```
+
+With `alt_slug` set, that copy is written as `output/<video-slug>/kafka-we-hardly-knew-her.mp4` instead of `<slug><flip-suffix>.mp4`, and `/post-video` captions it from `alt_title`. Leave both out and the mirror keeps the hook's caption and the suffixed filename (today's behaviour).
 
 ## Step 5 — Render (one video per hook)
 
@@ -248,9 +267,13 @@ render; there is no concatenation.
 flipped hook is written *twice* — `<title-slug>.mp4` plus `<title-slug><suffix>.mp4` (default
 suffix `-flipped`) — so `mode: all` turns 3 hooks into 6 files; with `apply: in_place` the count
 is unchanged and the selected hooks are simply mirrored. The mirror is applied to the footage
-only, never to the captions or title card. `/post-video` picks the extra files up automatically
-and captions each flipped copy from the hook it mirrors. A duplicate is cheap — it shares the
-hook's overlay frames and segment extraction (~80% of a render) and repeats only the encode.
+only, never to the captions or title card. `/post-video` picks the extra files up automatically.
+
+A duplicate with no alt text (Steps 4b/4c) is cheap — it shares the hook's overlay frames and
+segment extraction (~80% of a render), repeats only the encode, and posts with the hook's
+caption. Give it an `alt_title` card and it becomes its own render pass; give it an
+`alt_slug`/`alt_title` in `title.json` and it takes that filename and that caption instead of
+the suffixed clone of its hook's.
 
 Report all output paths when done.
 

@@ -18,6 +18,11 @@ from pathlib import Path
 class TitleSpec:
     title: str  # pretty caption, e.g. "reddit & kafka -> kubernetes w/ no 🧑❓"
     slug: str = ""  # filesystem-safe stem, e.g. "reddit-kafka-to-kubernetes"
+    # A hook rendered twice (output.flip.apply: duplicate) posts its mirrored copy under
+    # these instead, so the duplicate isn't a text-identical clone. Empty → the duplicate
+    # keeps the hook's caption and is named <slug><flip suffix>.
+    alt_title: str = ""
+    alt_slug: str = ""
 
 
 def load_titles(path: Path) -> list[TitleSpec]:
@@ -28,7 +33,15 @@ def load_titles(path: Path) -> list[TitleSpec]:
     raw = json.loads(path.read_text())
     if not isinstance(raw, list):
         raise ValueError(f"{path} must be a JSON list of title objects")
-    return [TitleSpec(title=t.get("title", ""), slug=t.get("slug", "")) for t in raw]
+    return [
+        TitleSpec(
+            title=t.get("title", ""),
+            slug=t.get("slug", ""),
+            alt_title=t.get("alt_title", ""),
+            alt_slug=t.get("alt_slug", ""),
+        )
+        for t in raw
+    ]
 
 
 def safe_slug(text: str) -> str:

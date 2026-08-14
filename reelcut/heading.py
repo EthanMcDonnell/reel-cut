@@ -33,6 +33,7 @@ class HeadingSpec:
     end: float                 # output-timeline seconds
     subtitle: str = ""
     scrim: bool | None = None  # None → use config default
+    alt_title: str = ""        # title used by this hook's flipped duplicate (empty → reuse `title`)
 
 
 def load_headings(path: Path) -> list[HeadingSpec]:
@@ -47,6 +48,7 @@ def load_headings(path: Path) -> list[HeadingSpec]:
             end=float(h.get("end", 0.0)),
             subtitle=h.get("subtitle", ""),
             scrim=h.get("scrim"),
+            alt_title=h.get("alt_title", ""),
         )
         for h in raw
     ]
