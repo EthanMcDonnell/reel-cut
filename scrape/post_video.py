@@ -51,9 +51,10 @@ ROOT = Path(__file__).parent.parent
 load_dotenv(ROOT / ".env")
 
 COCKPIT = os.environ.get("COCKPIT_URL", "http://localhost:3000").rstrip("/")
-# Days between posts. Two near-identical hooks landing closer than this is what
-# tanks the second one's reach.
-DEFAULT_MIN_GAP_DAYS = 2
+# Fallback spacing, used only when the cockpit can't tell us its own setting
+# (older build, or unreachable). The real value lives in social-cockpit so one
+# change covers this script and /schedule-video alike -- see min_gap_days().
+FALLBACK_MIN_GAP_DAYS = 2
 # When automation is attached the cockpit waits up to 5 min for the reel to
 # finish processing (so it can return a media_id and attach), so allow headroom.
 REQUEST_TIMEOUT_S = 360
@@ -126,6 +127,21 @@ def read_published(log):
         for line in log.read_text().splitlines()
         if line.strip()
     }
+
+
+def min_gap_days():
+    """The configured same-video spacing, from social-cockpit.
+
+    Kept in the cockpit rather than here so that this script, ``/schedule-video``
+    and the scheduler itself cannot drift apart on the one number that decides
+    whether a hook gets throttled.
+    """
+    try:
+        settings = requests.get(f"{COCKPIT}/api/schedule/settings", timeout=15).json()
+    except requests.RequestException:
+        return FALLBACK_MIN_GAP_DAYS
+    value = settings.get("min_same_video_days")
+    return float(value) if isinstance(value, (int, float)) else FALLBACK_MIN_GAP_DAYS
 
 
 def calendar_conflict(gap_days):
@@ -212,10 +228,11 @@ def main():
                          "Omit to post the oldest unpublished hook across all slugs.")
     ap.add_argument("--dry-run", action="store_true",
                     help="show what would be posted without publishing")
-    ap.add_argument("--min-gap-days", type=float, default=DEFAULT_MIN_GAP_DAYS,
-                    help=f"minimum days clear of any other post, published or "
-                         f"scheduled (default {DEFAULT_MIN_GAP_DAYS}); exits "
-                         "without posting if the gap isn't met")
+    ap.add_argument("--min-gap-days", type=float, default=None,
+                    help="minimum days clear of any other post, published or "
+                         "scheduled; exits without posting if the gap isn't met. "
+                         "Defaults to social-cockpit's min_same_video_days "
+                         f"(falls back to {FALLBACK_MIN_GAP_DAYS} if it can't be read)")
     ap.add_argument("--ignore-gap", action="store_true",
                     help="post now even if the minimum gap hasn't elapsed")
     args = ap.parse_args()
@@ -233,14 +250,16 @@ def main():
         print(f"Nothing to publish {where} — every hook is already in output/.published.")
         return
 
+    gap = args.min_gap_days if args.min_gap_days is not None else min_gap_days()
+
     if not args.ignore_gap:
-        conflict = calendar_conflict(args.min_gap_days)
+        conflict = calendar_conflict(gap)
         if conflict:
             when, label, kind = conflict
-            clear_at = when + timedelta(days=args.min_gap_days)
+            clear_at = when + timedelta(days=gap)
             print(f"Too close to a {kind} post: {when:%Y-%m-%d %H:%M} {label!r}. "
                   f"Clear after {clear_at:%Y-%m-%d %H:%M} "
-                  f"(min gap {args.min_gap_days}d). Nothing posted.")
+                  f"(min gap {gap}d). Nothing posted.")
             print(f"{len(queue)} hook(s) waiting — next up: {queue[0][0]}/{queue[0][1].name}")
             return
 
@@ -277,7 +296,7 @@ def main():
         f.write(f"{slug}/{mp4.name}\t{datetime.now().isoformat(timespec='seconds')}\n")
 
     if len(queue) > 1:
-        nxt = datetime.now() + timedelta(days=args.min_gap_days)
+        nxt = datetime.now() + timedelta(days=gap)
         print(f"\nDone. {len(queue) - 1} hook(s) left; next due {nxt:%Y-%m-%d %H:%M}.")
     else:
         print("\nDone — queue is empty.")

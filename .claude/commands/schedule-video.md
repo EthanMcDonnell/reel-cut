@@ -96,27 +96,39 @@ mcp__social-cockpit__suggest_slots
   earliest:    <--start, omit for "now">
 ```
 
-`min_days` is a **same-video** rule, not a cadence rule. It keeps two hooks of *this* video apart,
-because they share a body and a voiceover and land as near-duplicates. Posts of other videos do
-not block a slot — two different videos may share a day — they are only reported. A candidate
-within an hour of any existing post is skipped so nothing stacks.
+**Omit `min_days` and `times` unless the user asked for something specific.** They default to
+social-cockpit's stored policy, which is the single place these are configured:
+
+| Setting | Meaning |
+|---|---|
+| `min_same_video_days` | Days two hooks of *this* video stay apart. A **same-video** rule — posts of other videos never block a slot. |
+| `max_posts_per_day` | Hard ceiling per day. Not overridable: the booking route rejects a breach with `409 day_full`, so asking for more only produces slots that fail. |
+| `suggested_times` | Times slots are offered at. More than one entry is how a day holds more than one post. |
+
+The `--gap` and `--time` arguments map to `min_days` and `times` and override the stored policy
+for this run only. `--start` maps to `earliest`.
 
 Pass the returned `scheduled_at` strings through to Step 5 unchanged. If it returns fewer slots
-than you asked for, it says so; report that rather than inventing the remainder.
+than you asked for, or reports days skipped at the daily limit, say so rather than inventing the
+remainder.
 
-| Argument | Default |
-|---|---|
-| `--gap <days>` | `2` (same-video spacing) |
-| `--time <HH:MM>` | `09:30` |
-| `--start <when>` | now |
+If the output warns that the cockpit returned no policy, it is running a build without these
+settings — report that instead of silently using fallbacks.
 
 ### Posting more than once a day
 
-Two posts in one day is fine **when they are different videos** — that is exactly what the
-same-video rule permits. Schedule each video's hooks with its own `suggest_slots` call and a
-different `time_of_day` (say `09:30` for one and `18:00` for the other), then check the result in
-`get_calendar`. What you must not do is put two hooks of *one* video on the same day; the tool
-will not offer that, and overriding it by hand is what gets the second one throttled.
+Change it **in social-cockpit**, not here — one place, and it applies to `/schedule-video`,
+`/post-video` and the scheduler alike:
+
+```bash
+curl -X PUT {COCKPIT_URL}/api/schedule/settings -H 'Content-Type: application/json' \
+  -d '{"suggested_times":["09:30","18:00"],"max_posts_per_day":2}'
+```
+
+Two posts in one day works **when they are different videos** — a second video will take the
+18:00 slot on a day the first holds 09:30. What you cannot do is put two hooks of *one* video on
+the same day: `min_same_video_days` prevents it, and overriding it by hand is what gets the second
+one throttled.
 
 ## Step 4 — Show the plan and confirm
 
