@@ -11,7 +11,9 @@ Publishes every rendered hook variant for a slug (`output/<video-slug>/*.mp4`) t
 through social-cockpit's `/api/publish/local` endpoint. It hands the endpoint each mp4's local
 filesystem path and social-cockpit manages the whole chain server-side (read file → upload to R2 →
 presign → call Instagram → reclaim the object). Each hook is captioned from
-`assets/<slug>/title.json` and posted as a trial reel (`graduation_strategy: MANUAL`). Posts are
+`assets/<slug>/title.json` and posted as a trial reel (`graduation_strategy: MANUAL`). A
+mirrored duplicate (`output.flip.apply: duplicate`) is captioned from its entry's `alt_title`
+when `/produce-video` Step 4c wrote one, and from the hook it mirrors when it didn't. Posts are
 spaced a **random 3-7 minutes apart** and each hook is posted **once** — `output/.published`
 records what's gone out so re-runs never double-post.
 

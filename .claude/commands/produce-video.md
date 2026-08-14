@@ -309,7 +309,8 @@ Make every rendered `output/<video-slug>/*.mp4` reachable over Tailscale, then p
 link for each **not-yet-notified** hook video **of this slug** to the Telegram `file-exchange`
 topic. The loop is scoped to the current slug's folder so other videos' hooks are never
 touched; a `.notified` log additionally dedupes across renders, so re-running only posts newly
-rendered hooks. The Telegram caption uses the pretty Instagram title from `title.json`.
+rendered hooks. The Telegram caption uses the pretty Instagram title from `title.json` — a
+mirrored duplicate posts under its `alt_title` when Step 4c gave it one.
 
 **Prerequisites** (set up once, outside this workflow):
 - Tailscale installed and this machine joined to the tailnet (`tailscale up`).
@@ -350,8 +351,17 @@ for f in "{PROJECT_ROOT}"/output/"${SLUG}"/*.mp4; do
   name=$(basename "$f")
   key="${SLUG}/${name}"
   grep -qxF "$key" "$SENT_LOG" && continue   # already notified — skip
-  # Pretty caption: the title.json entry whose slug matches this file's stem; else the filename.
-  caption=$(jq -r --arg s "${name%.mp4}" '(map(select(.slug == $s)) | .[0].title) // $s' "$TITLES" 2>/dev/null || echo "$name")
+  # Pretty caption: the title.json entry whose slug matches this file's stem; else the entry
+  # whose alt_slug/alt_title matches (a mirrored duplicate posts under its own caption — the
+  # altstem fallback mirrors reelcut.title.safe_slug for entries with alt_title but no
+  # alt_slug); else the filename.
+  caption=$(jq -r --arg s "${name%.mp4}" '
+    def altstem: (.alt_slug // "") as $a
+      | if $a != "" then $a
+        else ((.alt_title // "") | ascii_downcase | gsub("[^a-z0-9]+"; "-") | gsub("^-|-$"; "")) end;
+    (map(select(.slug == $s)) | .[0].title)
+    // (map(select(altstem == $s and $s != "")) | .[0].alt_title)
+    // $s' "$TITLES" 2>/dev/null || echo "$name")
   url="https://${TS_HOST}/reels/${SLUG}/${name}"
   # Never post a link the serve config doesn't actually answer — an unreachable URL must not
   # be logged as notified. --resolve pins DNS to the tailnet IP (see TS_IP note above).
