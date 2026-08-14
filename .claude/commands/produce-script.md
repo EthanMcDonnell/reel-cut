@@ -1,9 +1,6 @@
 ---
 name: produce-script
 description: Produce a single video script from a user-supplied prompt (URL, phrase, idea-bank reference, or a bare contested claim)
-tools: Read, Glob, Edit, Bash, WebFetch, WebSearch, Agent
-model: opus
-permissionMode: default
 ---
 Produces a complete, validated video script from a user-supplied prompt. The prompt may be a URL (engineering blog post, article), a phrase or topic idea, a reference to an idea in a repo-root idea bank (`*VIDEO_IDEA*.md`, written by `/video-ideas`) or an older note in the Obsidian Video Ideas folder (`{VAULT_VIDEO_IDEAS}`), or a bare contested claim (a `hot-takes` opinion with no source).
 

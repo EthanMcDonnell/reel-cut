@@ -2,8 +2,6 @@
 name: produce-video
 description: Assign screenshot and person image timings to images.json, then render one video per hook via reelcut.
 argument-hint: "<video-slug>"
-tools: Read, Edit, Bash
-permissionMode: default
 ---
 
 Populates image overlays in images.json and renders one video per hook (each hook + the shared body).
