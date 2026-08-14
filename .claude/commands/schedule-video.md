@@ -1,7 +1,7 @@
 ---
 name: schedule-video
-description: Schedule a slug's rendered hook reels to Instagram via social-cockpit's scheduler — books each output/<slug>/*.mp4 into a future slot spaced ≥2 days apart, as a trial reel captioned from videos.json, using the social-cockpit MCP.
-argument-hint: "<video-slug> [--start <when>] [--gap <days>] [--time <HH:MM>]"
+description: Schedule a slug's rendered hook reels to Instagram via social-cockpit's scheduler — books each output/<slug>/*.mp4 into its own slot recommended by the MCP, never inside the next 15 minutes, as a trial reel captioned from videos.json.
+argument-hint: "<video-slug> [--start <when>] [--time <HH:MM>]"
 ---
 
 Books every unposted hook variant for a slug into social-cockpit's **scheduler**, rather than
@@ -11,7 +11,7 @@ and its worker publishes at the appointed time — uploading to R2 only at that 
 This is the scheduled counterpart to `/post-video`. Use it to lay out a slug's whole run of hooks
 in one go; use `/post-video` when you want one hook to go out right now.
 
-Arguments: `$ARGUMENTS` — expected format: `<video-slug> [--start <when>] [--gap <days>] [--time <HH:MM>]`
+Arguments: `$ARGUMENTS` — expected format: `<video-slug> [--start <when>] [--time <HH:MM>]`
 
 Slugs with rendered output:
 !`ls -1 output/ 2>/dev/null | grep -vE '\.(mp4|md)$'`
@@ -24,11 +24,13 @@ Example: `/schedule-video spotify-wrapped-billion-ai-stories --time 18:00`
 
 Every hook of a slug is the same body and the same voiceover with a different opening line.
 Instagram clusters near-duplicates and throttles the later ones to almost no reach, so hooks must
-be spread out. `scrape/post_video.py` enforces a **2-day minimum gap**; this command applies the
-same rule, but it does not work the spacing out locally: it reads social-cockpit's calendar and
-asks it for free slots. The rule is **per video** — two hooks of one video stay ≥2 days apart,
-while two different videos may share a day — so it needs the real calendar to know which posts are
-variants of what.
+be spread out — which is exactly why this command does not work the spacing out locally. It asks
+social-cockpit for slots and takes what it gets. The rule is **per video** — two hooks of one video
+stay `min_same_video_days` apart, while two different videos may share a day — and only the cockpit
+knows which posts on the calendar are variants of what.
+
+There is no `--gap` argument, on purpose. The gap is a cockpit setting, so it applies identically
+here, in `/post-video`, and in the scheduler worker. Change it there, not per run.
 
 ## Prerequisites
 
@@ -67,37 +69,50 @@ Caption each remaining file from `assets/<slug>/videos.json`, using the same rul
 doesn't describe falls back to the **longest stem the filename starts with**, so it inherits the
 caption of the hook it mirrors.
 
-Load `assets/<slug>/automation.json` if present. Set `key` to the slug when absent — all hooks of
-a slug share **one** flow, created on the first to publish and appended to by the rest.
+### The automation
 
-## Step 3 — Look at the calendar, then ask for slots
+`assets/<slug>/automation.json` is the only source of the comment automation. `/produce-script`
+writes it at Step 3.6.5 for comment-bait series, carrying the CTA's keyword and the lead magnet
+URL; it is the same file `/post-video` reads. Nothing here reads the vault note, and nothing here
+invents an automation that file doesn't describe.
 
-**Do not compute slot times yourself.** Only the cockpit knows what is actually on the calendar —
-what already went out (including posts made from the phone) and what is already booked.
+- **File present** → attach it to every hook, with `key` forced to the **slug** (default it when the
+  file omits it, and override a `key` that is anything else). All hooks of a slug share **one**
+  flow: the first to publish creates it, every later one appends. A per-hook key would create a
+  flow per hook, which is the failure this rule exists to prevent.
+- **File absent** → schedule with no `automation` field at all. That is the correct result for
+  `follow`, `disagreement` and `misc` series, which have no keyword to trigger on. Say so in
+  Step 4 rather than treating it as a problem.
 
-First, see the shape of the week:
+## Step 3 — Ask the cockpit for the slots
+
+**Do not compute slot times yourself, and do not adjust the ones you get back.** The cockpit is the
+only thing that knows what is actually on the calendar — what already went out (including posts made
+from the phone), what is already booked, and which times this account posts at. The returned times
+are the recommendation; this command's job is to hand them straight to Step 5.
+
+First, see the shape of the fortnight:
 
 ```
 mcp__social-cockpit__get_calendar   days: 14
 ```
 
-This is the picture the decision is made from: each day, what is on it, and which video each post
-belongs to. Read it before choosing anything — if the coming days are already dense, that is a
-reason to start later or spread wider, and no config can make that judgement for you.
+Read it before booking. It is what you show the user in Step 4 and what tells you whether the
+suggestions landed somewhere sane. If the coming days are already dense with this slug's hooks,
+that is worth saying out loud — but it is not a reason to hand-pick different times.
 
-Then ask for this video's slots:
+Then ask for one slot per hook, in a single call:
 
 ```
 mcp__social-cockpit__suggest_slots
-  video:       <slug>
-  count:       <number of hooks from Step 2>
-  min_days:    <--gap, default 2>
-  time_of_day: <--time, default "09:30">
-  earliest:    <--start, omit for "now">
+  count:     <number of hooks from Step 2>
+  earliest:  <now + 15 minutes, or --start if later>
+  times:     <--time, omit otherwise>
 ```
 
-**Omit `min_days` and `times` unless the user asked for something specific.** They default to
-social-cockpit's stored policy, which is the single place these are configured:
+That is the whole parameter set — `count`, `earliest`, `times`. There is no per-video or gap
+argument on this tool: spacing comes from the cockpit's stored policy, which is the single place it
+is configured.
 
 | Setting | Meaning |
 |---|---|
@@ -105,12 +120,29 @@ social-cockpit's stored policy, which is the single place these are configured:
 | `max_posts_per_day` | Hard ceiling per day. Not overridable: the booking route rejects a breach with `409 day_full`, so asking for more only produces slots that fail. |
 | `suggested_times` | Times slots are offered at. More than one entry is how a day holds more than one post. |
 
-The `--gap` and `--time` arguments map to `min_days` and `times` and override the stored policy
-for this run only. `--start` maps to `earliest`.
+`--time` maps to `times` and overrides the stored times for this run only. Omit it unless the user
+asked for a specific time. `--start` maps to `earliest`, but only ever pushes it later — see below.
 
-Pass the returned `scheduled_at` strings through to Step 5 unchanged. If it returns fewer slots
-than you asked for, or reports days skipped at the daily limit, say so rather than inventing the
-remainder.
+### The 15-minute floor
+
+**Never book anything inside the next 15 minutes.** A job whose slot is minutes away gives no room
+to cancel a mistake, and one that lands during this conversation can fire mid-plan. So:
+
+- Compute `earliest` as **now + 15 minutes** in the cockpit's timezone and pass it explicitly.
+  Take the later of that and `--start` when the user gave one; a `--start` in the past or inside the
+  floor loses to the floor.
+- When the suggestions come back, **check the first one is still more than 15 minutes out.** If it
+  is not, drop it, ask for one more, and say what you dropped.
+
+### One slot per hook
+
+Each hook is its own post at its own time. Ask for exactly as many slots as there are hooks from
+Step 2, pair them in order, and confirm no two hooks share a `scheduled_at` before going on. If two
+come back identical, that is a cockpit bug — report it, don't dedupe by nudging a time by hand.
+
+Pass the returned `scheduled_at` strings through to Step 5 unchanged. If it returns fewer slots than
+you asked for, or reports days skipped at the daily limit, book the ones you got and say which hooks
+were left unscheduled rather than inventing the remainder.
 
 If the output warns that the cockpit returned no policy, it is running a build without these
 settings — report that instead of silently using fallbacks.
@@ -141,8 +173,13 @@ Sat 16 Aug 2026, 09:30 GMT+10   waited-longest-dropped-first.mp4   "…"
 Mon 18 Aug 2026, 09:30 GMT+10   figma-fixed-outages.mp4            "…"
 ```
 
-State alongside it: the gap being used, what `suggest_slots` reported fitting the plan around,
-whether an automation will attach (and its key), and that each posts as a **trial reel**.
+State alongside it: that every time came from `suggest_slots` and what it reported fitting the plan
+around, the `earliest` you passed and why (the 15-minute floor, or `--start`), whether an automation
+will attach — with its key and trigger keywords, or that there is no `automation.json` so these post
+without one — and that each posts as a **trial reel**.
+
+If any hook went unslotted because `suggest_slots` returned fewer slots than hooks, name it here.
+It stays unscheduled and unclaimed, and the next run picks it up.
 
 ## Step 5 — Book them
 
@@ -169,8 +206,12 @@ Notes:
   never sent to Instagram. Omitting it silently disables the throttle protection.
 - `video_path` must be **absolute**. The cockpit reads the file at publish time, so it must stay
   where it is until then.
-- `scheduled_at` without an offset is read in the cockpit's timezone — which is what you want,
-  since the plan was computed in that zone.
+- `scheduled_at` is the string `suggest_slots` returned, **verbatim**. Without an offset it is read
+  in the cockpit's timezone, which is the zone the suggestion was made in.
+- One entry per hook, every entry a different `scheduled_at`, all in **one** call — the tool creates
+  them in order and reports each independently.
+- `automation.key` is the **slug** on every entry, or the whole `automation` field is absent on
+  every entry. Never a mix, and never a per-hook key.
 - Entries are independent: a rejected one does not roll back the others. The result lists
   `scheduled` and `failed` separately — report both, and retry only the failures.
 

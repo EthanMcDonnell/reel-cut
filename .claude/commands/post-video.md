@@ -46,6 +46,9 @@ creates the flow on the first hook and appends every later hook to it — no
 duplicate flows, and re-posting is idempotent. No file = posts with no automation
 (unchanged behaviour). The dry run reports whether an automation will attach.
 
+`/produce-script` writes this file at Step 3.6.5 for comment-bait series, from the CTA's keyword
+and lead magnet. Series with no keyword get no file, and post without an automation.
+
 `assets/<slug>/automation.json` (all fields except `trigger_keywords`/`config` optional):
 
 ```json

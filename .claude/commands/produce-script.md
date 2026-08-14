@@ -319,6 +319,35 @@ Good: `S3 conditional writes resource:` / `ZooKeeper leader election resource:` 
 
 Bad: `Lead Magnet (AWS Storage Blog, building multi writer applications on S3 with conditional writes, the exact If-Match pattern Canva used, with code):` — it is three labels stapled together, it argues for the link, and nobody reads that far.
 
+### Step 3.6.5 — Write the automation spec
+
+*Comment-bait series only.* The keyword and the lead magnet are the whole content of the comment
+automation, so write them down now, while you still hold them — `/post-video` and
+`/schedule-video` both read this file and neither of them can see the vault note.
+
+Write `assets/<video-slug>/automation.json`:
+
+```json
+{
+  "key": "<video-slug>",
+  "trigger_keywords": ["<KEYWORD>"],
+  "template_type": "comment_to_dm",
+  "config": {
+    "initial_message": "<one line naming the resource, then the lead magnet URL>",
+    "comment_replies": ["Sent 📩", "Check your DMs 🔗"]
+  }
+}
+```
+
+- `key` is the slug, always. Every hook of this video joins one flow, created by whichever hook
+  publishes first — that is why the key must not vary per hook.
+- `trigger_keywords` is the keyword from Step 3.6.3, exactly as the CTA says it.
+- `initial_message` sends the **lead magnet** — the first URL in the resources block, the one the
+  CTA promised. Not the article, unless the article *is* the lead magnet.
+
+For `follow`, `disagreement` and `misc` there is no keyword and nothing to send, so write no file.
+A missing `automation.json` means the hooks post with no automation, which is the correct result.
+
 Then re-run the linter and confirm it still passes:
 
 ```bash
@@ -459,6 +488,7 @@ Report to the user:
 - Prompt resolved as: [URL / file reference / phrase / bare claim] → [TOPIC] ([SERIES])
 - Script saved to: [file path]
 - CTA & resources: the CTA type the series called for and the line you wrote, plus the shipped links appended to the file. Note any verified candidate you cut, in case the user wants a different lead magnet
+- Automation: the keyword and the URL written to `assets/<slug>/automation.json`, or that none was written and why (the series' CTA type has no keyword)
 - **If `SOURCE_URLS: none`:** say the source gate skipped Stages 0.4, 4, and 4b, so the video ships with no screenshots and no figures. Skip the four items below
 - Screenshots saved to: `assets/<slug>/`
 - Screenshot results: how many captured (with the exact/fuzzy breakdown), and explicitly list any snippets that were **not found** so the user knows which claims lack on-screen evidence
