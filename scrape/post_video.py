@@ -10,27 +10,25 @@ captioned from ``assets/<slug>/title.json`` and posted as a trial reel.
 identical body and a byte-identical voiceover, so posting them close together
 gets the later ones clustered as near-duplicates and throttled to ~no reach
 (see ``INSTAGRAM_DEDUP_EVASION_PLAN.md``). ``--min-gap-days`` enforces the
-spacing: if the last post went out more recently than that, this exits without
-posting — so it is safe to run on a daily schedule, with the gap check deciding
-when a hook is actually due.
+spacing by asking **social-cockpit** what is within that window — both what
+actually went out and what is booked to go out. So it is safe to run on a daily
+schedule, with the calendar deciding when a hook is actually due.
 
-With no slug it drains the global queue — the oldest unpublished hook across
-all of ``output/``. Published hooks are recorded in ``output/.published`` as
-``<slug>/<file>.mp4<TAB><iso8601>`` and skipped on re-run, so publishing to
-Instagram is never accidentally repeated.
+Two separate questions, two separate authorities:
 
-``output/.published`` is shared with ``/schedule-video``, which books hooks into
-social-cockpit's scheduler instead of posting them now. It writes the same lines
-at booking time, stamped with the hook's future *slot*. So a line here means "this
-hook is committed to going out", not strictly "this hook has already gone out" —
-which is what stops the two paths from both claiming the same hook. Two
-consequences for the code below: the newest timestamp may be in the future, in
-which case the gap check holds off until that slot has passed (use
-``--ignore-gap`` to post anyway), and a scheduled job that later fails leaves a
-line behind that has to be removed before its hook is eligible again.
+* **"Has this hook been used?"** — ``output/.published``. A key there means the
+  hook is spoken for and must never go out again, whether this script posted it
+  or ``/schedule-video`` booked it into a future slot. Deleting its line is the
+  only way to release it. The timestamp on the line is informational only.
+* **"Is now a good time to post?"** — the cockpit's calendar, via
+  ``calendar_conflict``. A local text file can't answer this: it doesn't know
+  about posts made from the phone, and a slot booked in it is just text.
 
-Timestamps here are naive local time; ``read_published`` converts an
-offset-aware one rather than choking on it.
+With no slug it drains the global queue — the oldest unclaimed hook across all
+of ``output/``.
+
+One consequence worth knowing: a scheduled job that later fails leaves its line
+behind, claiming a hook that never went out. Remove the line to release it.
 
 Env (read from the repo-root ``.env``):
   COCKPIT_URL   optional, default http://localhost:3000
@@ -108,37 +106,66 @@ def automation_for(slug):
 
 
 def read_published(log):
-    """Parse output/.published -> (set of published keys, datetime of last post).
+    """Parse output/.published -> set of claimed ``<slug>/<file>.mp4`` keys.
 
-    Lines are ``<slug>/<file>.mp4<TAB><iso8601>``. Lines written before
-    timestamping was added have no tab and no date; they still count as
-    published, they just can't date the last post (so they never hold up the
-    gap check).
+    Lines are ``<slug>/<file>.mp4<TAB><iso8601>``. A key here means the hook is
+    spoken for and must never go out again — whether it was posted by this script
+    or booked into a future slot by ``/schedule-video``. Removing its line is the
+    only way to make a hook eligible again.
 
-    Stamps are naive local time. An offset-aware one is converted rather than
-    trusted: this file is also written by ``/schedule-video``, and mixing the two
-    kinds would raise "can't compare offset-naive and offset-aware datetimes"
-    from the gap check — an opaque crash a long way from the line that caused it.
+    The timestamp is **informational**: a record of when the hook went out or is
+    due to. Nothing reads it, because a local text file is the wrong authority on
+    what the calendar looks like — ``calendar_conflict`` asks social-cockpit
+    instead. Lines written before timestamping was added have no tab and no date,
+    which is fine.
     """
     if not log.exists():
-        return set(), None
-    keys, last = set(), None
-    for line in log.read_text().splitlines():
-        if not line.strip():
-            continue
-        key, _, stamp = line.partition("\t")
-        keys.add(key)
-        if not stamp:
-            continue
-        try:
-            when = datetime.fromisoformat(stamp)
-        except ValueError:
-            continue
-        if when.tzinfo is not None:
-            when = when.astimezone().replace(tzinfo=None)
-        if last is None or when > last:
-            last = when
-    return keys, last
+        return set()
+    return {
+        line.partition("\t")[0]
+        for line in log.read_text().splitlines()
+        if line.strip()
+    }
+
+
+def calendar_conflict(gap_days):
+    """Nearest post within ``gap_days`` of now, per social-cockpit. None if clear.
+
+    The cockpit is the authority on the calendar: it knows what actually went out
+    (from its media cache) and what is booked to go out (from the scheduler). The
+    local ledger knows neither — it can't see posts made from the phone, and a
+    booked slot there is just text.
+
+    Returns ``(when, label, kind)`` for the closest conflict, so the caller can
+    say precisely what is in the way.
+    """
+    now = datetime.now()
+    window = timedelta(days=gap_days)
+    params = {
+        "from": int((now - window).timestamp() * 1000),
+        "to": int((now + window).timestamp() * 1000),
+    }
+
+    found = []
+    published = requests.get(f"{COCKPIT}/api/schedule/history", params=params,
+                             timeout=30).json()
+    for post in published.get("posts", []):
+        found.append((datetime.fromtimestamp(post["published_at"] / 1000),
+                      post.get("title", "(untitled)"), "published"))
+
+    booked = requests.get(
+        f"{COCKPIT}/api/schedule",
+        params={**params, "status": "pending,paused,publishing,finalizing", "limit": 1000},
+        timeout=30,
+    ).json()
+    for job in booked.get("jobs", []):
+        caption = (job.get("payload") or {}).get("caption") or "(no caption)"
+        found.append((datetime.fromtimestamp(job["scheduled_at"] / 1000),
+                      caption.split("\n")[0], "scheduled"))
+
+    if not found:
+        return None
+    return min(found, key=lambda f: abs(f[0] - now))
 
 
 def pending(slug, done):
@@ -186,8 +213,9 @@ def main():
     ap.add_argument("--dry-run", action="store_true",
                     help="show what would be posted without publishing")
     ap.add_argument("--min-gap-days", type=float, default=DEFAULT_MIN_GAP_DAYS,
-                    help=f"minimum days since the last post (default {DEFAULT_MIN_GAP_DAYS}); "
-                         "exits without posting if the gap isn't met")
+                    help=f"minimum days clear of any other post, published or "
+                         f"scheduled (default {DEFAULT_MIN_GAP_DAYS}); exits "
+                         "without posting if the gap isn't met")
     ap.add_argument("--ignore-gap", action="store_true",
                     help="post now even if the minimum gap hasn't elapsed")
     args = ap.parse_args()
@@ -197,7 +225,7 @@ def main():
                  f"(missing {ROOT / 'output' / args.slug})")
 
     log = ROOT / "output" / ".published"
-    done, last_post = read_published(log)
+    done = read_published(log)
 
     queue = pending(args.slug, done)
     if not queue:
@@ -205,11 +233,14 @@ def main():
         print(f"Nothing to publish {where} — every hook is already in output/.published.")
         return
 
-    if last_post and not args.ignore_gap:
-        due = last_post + timedelta(days=args.min_gap_days)
-        if datetime.now() < due:
-            print(f"Last post was {last_post:%Y-%m-%d %H:%M}; next hook is due "
-                  f"{due:%Y-%m-%d %H:%M} (min gap {args.min_gap_days}d). Nothing posted.")
+    if not args.ignore_gap:
+        conflict = calendar_conflict(args.min_gap_days)
+        if conflict:
+            when, label, kind = conflict
+            clear_at = when + timedelta(days=args.min_gap_days)
+            print(f"Too close to a {kind} post: {when:%Y-%m-%d %H:%M} {label!r}. "
+                  f"Clear after {clear_at:%Y-%m-%d %H:%M} "
+                  f"(min gap {args.min_gap_days}d). Nothing posted.")
             print(f"{len(queue)} hook(s) waiting — next up: {queue[0][0]}/{queue[0][1].name}")
             return
 
