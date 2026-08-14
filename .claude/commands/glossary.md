@@ -16,7 +16,7 @@ resolved against `{PROJECT_ROOT}`.
 | `{PROJECT_ROOT}` | `/Users/ethanmcdonnell/Development/reel-cut` |
 | `{VAULT_VIDEO_IDEAS}` | `/Users/ethanmcdonnell/Library/Mobile Documents/iCloud~md~obsidian/Documents/Vault/Videos/Video Ideas/` |
 | `{VAULT_VIDEOS_TODO}` | `/Users/ethanmcdonnell/Library/Mobile Documents/iCloud~md~obsidian/Documents/Vault/Videos/Videos To Do/` |
-| `{SOCIAL_COCKPIT_DIR}` | `~/Documents/social-cockpit` |
+| `{SOCIAL_COCKPIT_DIR}` | `/Users/ethanmcdonnell/Development/social-cockpit` |
 
 Run all `.venv/bin/…` and `scrape/…` commands from `{PROJECT_ROOT}`.
 

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "social-cockpit": {
+      "command": "node",
+      "args": ["/Users/ethanmcdonnell/Development/social-cockpit/mcp/dist/index.js"]
+    }
+  }
+}
