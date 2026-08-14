@@ -11,6 +11,8 @@
 - `/produce-script` — Phase 0: article/URL → script + screenshots
 - `/prepare-video <slug>` — Phase 1: transcribe + fix EDL
 - `/produce-video <slug>` — Phase 2: assign image timings + render
+- `/schedule-video <slug>` — Phase 3: book every hook into a future slot
+- `/post-video <slug>` — Phase 3, now: post one hook immediately
 
 
 **Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.

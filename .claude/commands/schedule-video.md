@@ -24,13 +24,19 @@ Example: `/schedule-video spotify-wrapped-billion-ai-stories --time 18:00`
 
 Every hook of a slug is the same body and the same voiceover with a different opening line.
 Instagram clusters near-duplicates and throttles the later ones to almost no reach, so hooks must
-be spread out — which is exactly why this command does not work the spacing out locally. It asks
-social-cockpit for slots and takes what it gets. The rule is **per video** — two hooks of one video
-stay `min_same_video_days` apart, while two different videos may share a day — and only the cockpit
-knows which posts on the calendar are variants of what.
+be spread out. The rule is **per video**: two hooks of one video stay `min_same_video_days` apart,
+while two different videos may happily share a day.
 
-There is no `--gap` argument, on purpose. The gap is a cockpit setting, so it applies identically
-here, in `/post-video`, and in the scheduler worker. Change it there, not per run.
+**Nothing in social-cockpit enforces that rule.** `suggest_slots` honours `max_posts_per_day`,
+offers `suggested_times`, and keeps an hour clear of anything already committed — it never asks
+which video is calling, so with a 2-a-day policy it will return two same-day slots without
+hesitation. The same-video gap exists only in the callers: `scrape/post_video.py` checks the
+calendar before posting, and Step 3 here walks the slot requests forward one gap at a time. If you
+short-circuit that walk into a single `count: N` call, the spacing silently disappears and the later
+hooks get throttled — which is the whole failure this command was written to avoid.
+
+There is no `--gap` argument, on purpose. The number lives in the cockpit's settings so this command
+and `/post-video` read the same one. Change it there, not per run.
 
 ## Prerequisites
 
@@ -47,6 +53,7 @@ which reports the same banner).
 - `scheduler_enabled: false` → **stop.** Jobs would be stored and never published. Tell the user.
 - `dry_run: true` → warn: jobs will run the pipeline but post nothing.
 - Note the **timezone**. Every time you state back to the user must be in that zone.
+- Note **`min_same_video_days`** — Step 3 needs it. Absent means 2.
 
 ## Step 2 — Work out what still needs posting
 
@@ -101,27 +108,39 @@ Read it before booking. It is what you show the user in Step 4 and what tells yo
 suggestions landed somewhere sane. If the coming days are already dense with this slug's hooks,
 that is worth saying out loud — but it is not a reason to hand-pick different times.
 
-Then ask for one slot per hook, in a single call:
+Then ask for the slots. `suggest_slots` takes exactly three arguments — `count`, `earliest`,
+`times` — and knows nothing about which video is asking:
 
-```
-mcp__social-cockpit__suggest_slots
-  count:     <number of hooks from Step 2>
-  earliest:  <now + 15 minutes, or --start if later>
-  times:     <--time, omit otherwise>
-```
-
-That is the whole parameter set — `count`, `earliest`, `times`. There is no per-video or gap
-argument on this tool: spacing comes from the cockpit's stored policy, which is the single place it
-is configured.
-
-| Setting | Meaning |
+| Setting | What `suggest_slots` does with it |
 |---|---|
-| `min_same_video_days` | Days two hooks of *this* video stay apart. A **same-video** rule — posts of other videos never block a slot. |
-| `max_posts_per_day` | Hard ceiling per day. Not overridable: the booking route rejects a breach with `409 day_full`, so asking for more only produces slots that fail. |
-| `suggested_times` | Times slots are offered at. More than one entry is how a day holds more than one post. |
+| `max_posts_per_day` | Hard ceiling per day, enforced. Not overridable: the booking route rejects a breach with `409 day_full`, so asking for more only produces slots that fail. |
+| `suggested_times` | The times slots are offered at. More than one entry is how a day holds more than one post. `--time` overrides these for this run only. |
+| *(1-hour separation)* | Nothing is offered within an hour of an existing commitment. A collision guard, not a cadence rule. |
 
-`--time` maps to `times` and overrides the stored times for this run only. Omit it unless the user
-asked for a specific time. `--start` maps to `earliest`, but only ever pushes it later — see below.
+`--time` maps to `times`. Omit it unless the user asked for a specific time. `--start` maps to
+`earliest`, but only ever pushes it later — see the floor below.
+
+### Ask once per hook, not once for all of them
+
+**`suggest_slots` has no same-video rule.** It will happily return two slots on the same day when
+the policy allows two posts a day — which is precisely the case that gets a video's second hook
+throttled. `count: <all hooks>` in one call is therefore wrong, however convenient it looks.
+
+Instead, walk the hooks and make **one call per hook**, each starting after the last one landed:
+
+1. Read `min_same_video_days` from the settings banner in Step 1. If the cockpit doesn't supply it,
+   use **2** — the same fallback `scrape/post_video.py` uses (`FALLBACK_MIN_GAP_DAYS`), so the two
+   commands can't drift on the one number that decides whether a hook gets throttled.
+2. First hook: `suggest_slots  count: 1  earliest: <now + 15 minutes, or --start if later>`.
+3. Each hook after: `suggest_slots  count: 1  earliest: <previous slot + min_same_video_days>`.
+
+Every time still comes from the cockpit — it picks the time of day, skips full days, and dodges
+collisions. The loop only decides which window to ask about, which is the one thing the tool cannot
+work out for itself. Booking is still a **single** `schedule_posts` call at Step 5; it is only the
+asking that iterates.
+
+A call that returns no slot means the calendar is full from that point on — stop there and report
+the hooks left over rather than tightening the gap to make them fit.
 
 ### The 15-minute floor
 
@@ -134,15 +153,16 @@ to cancel a mistake, and one that lands during this conversation can fire mid-pl
 - When the suggestions come back, **check the first one is still more than 15 minutes out.** If it
   is not, drop it, ask for one more, and say what you dropped.
 
-### One slot per hook
+### Before moving on
 
-Each hook is its own post at its own time. Ask for exactly as many slots as there are hooks from
-Step 2, pair them in order, and confirm no two hooks share a `scheduled_at` before going on. If two
-come back identical, that is a cockpit bug — report it, don't dedupe by nudging a time by hand.
+Each hook is its own post at its own time. Pair hooks to slots in order, then check the collected
+slots as a set: no two on the same **day**, and every consecutive pair at least
+`min_same_video_days` apart. If that doesn't hold, the loop above was short-circuited — redo it
+rather than nudging a time by hand.
 
-Pass the returned `scheduled_at` strings through to Step 5 unchanged. If it returns fewer slots than
-you asked for, or reports days skipped at the daily limit, book the ones you got and say which hooks
-were left unscheduled rather than inventing the remainder.
+Pass the returned `scheduled_at` strings through to Step 5 unchanged. If a call reports days skipped
+at the daily limit, that is worth repeating to the user, but it is not a problem — it is the policy
+working.
 
 If the output warns that the cockpit returned no policy, it is running a build without these
 settings — report that instead of silently using fallbacks.
@@ -157,10 +177,13 @@ curl -X PUT {COCKPIT_URL}/api/schedule/settings -H 'Content-Type: application/js
   -d '{"suggested_times":["09:30","18:00"],"max_posts_per_day":2}'
 ```
 
-Two posts in one day works **when they are different videos** — a second video will take the
-18:00 slot on a day the first holds 09:30. What you cannot do is put two hooks of *one* video on
-the same day: `min_same_video_days` prevents it, and overriding it by hand is what gets the second
-one throttled.
+Two posts in one day is for **two different videos** — a second video takes the 18:00 slot on a day
+the first holds 09:30. Two hooks of *one* video on the same day is the thing to avoid, and since
+`suggest_slots` won't stop you, Step 3's one-call-per-hook walk is what keeps them apart. Raising
+`max_posts_per_day` makes that walk more necessary, not less.
+
+`min_same_video_days` lives in the same settings object and is read by `/post-video` and Step 3
+here. The cockpit stores it; nothing in the cockpit acts on it.
 
 ## Step 4 — Show the plan and confirm
 
@@ -174,7 +197,8 @@ Mon 18 Aug 2026, 09:30 GMT+10   figma-fixed-outages.mp4            "…"
 ```
 
 State alongside it: that every time came from `suggest_slots` and what it reported fitting the plan
-around, the `earliest` you passed and why (the 15-minute floor, or `--start`), whether an automation
+around, the `min_same_video_days` gap in force and whether it came from the cockpit or the
+fallback, the first `earliest` you passed and why (the 15-minute floor, or `--start`), whether an automation
 will attach — with its key and trigger keywords, or that there is no `automation.json` so these post
 without one — and that each posts as a **trial reel**.
 
