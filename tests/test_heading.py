@@ -4,31 +4,20 @@ import json
 from PIL import Image
 
 from reelcut.config import HeadingsConfig
-from reelcut.heading import HeadingSpec, _series_number, load_headings, render_heading_frames
+from reelcut.heading import HeadingSpec, _series_number, headings_from_videos, render_heading_frames
+from reelcut.video_spec import VideoSpec
 
 
-class TestLoadHeadings:
-    def test_parses_fields_and_defaults(self, tmp_path):
-        p = tmp_path / "headings.json"
-        p.write_text(json.dumps([
-            {"title": "What Are\nAI Tokens?", "subtitle": "explained in 90s", "start": 0.0, "end": 3.0, "scrim": False},
-            {"title": "Just a title", "start": 5, "end": 7},
-        ]))
-        heads = load_headings(p)
-        assert [h.title for h in heads] == ["What Are\nAI Tokens?", "Just a title"]
-        assert heads[0].subtitle == "explained in 90s"
-        assert heads[0].scrim is False
-        assert heads[1].subtitle == "" and heads[1].scrim is None  # defaults
-        assert heads[1].start == 5.0 and heads[1].end == 7.0       # coerced to float
-
-    def test_rejects_non_list(self, tmp_path):
-        p = tmp_path / "headings.json"
-        p.write_text(json.dumps({"title": "nope"}))
-        try:
-            load_headings(p)
-            assert False, "expected ValueError"
-        except ValueError:
-            pass
+class TestHeadingsFromVideos:
+    def test_only_titled_base_entries_become_cards(self):
+        # A mirror entry is rendered by render-hooks with its own card, so the combined
+        # render must not stack it on top of the hook it mirrors.
+        cards = headings_from_videos([
+            VideoSpec(id="a", title="Card A", subtitle="sub", start=0.0, end=3.0, scrim=False),
+            VideoSpec(id="a-flipped", of="a", title="Card A2"),
+            VideoSpec(id="b", title="", start=3.0, end=6.0),
+        ])
+        assert cards == [HeadingSpec(title="Card A", start=0.0, end=3.0, subtitle="sub", scrim=False)]
 
 
 class TestRenderHeadingFrames:

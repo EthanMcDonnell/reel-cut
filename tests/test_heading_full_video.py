@@ -1,8 +1,8 @@
 """`headings.full_video` controls how long a hook's title card stays up.
 
-render-hooks writes a one-card temp headings.json per render. Its `end` used to always be
-the hook's own duration, so the card vanished when the body started. With full_video on it
-writes -1 ("until the end of the video") instead.
+render-hooks builds a one-card HeadingSpec per render. Its `end` used to always be the
+hook's own duration, so the card vanished when the body started. With full_video on it
+passes -1 ("until the end of the video") instead.
 """
 import json
 from pathlib import Path
@@ -29,16 +29,16 @@ def assets(tmp_path, monkeypatch):
         cap,
     )
     # hook 1 = [0,2), hook 2 = [2,4), body = [4,6)
-    (slug_dir / "headings.json").write_text(json.dumps([
-        {"title": "one", "start": 0.0, "end": 2.0},
-        {"title": "two", "start": 2.0, "end": 4.0},
+    (slug_dir / "videos.json").write_text(json.dumps([
+        {"id": "one", "title": "one", "start": 0.0, "end": 2.0},
+        {"id": "two", "title": "two", "start": 2.0, "end": 4.0},
     ]))
     (slug_dir / "images.json").write_text("[]")
 
     captured: list[dict] = []
 
-    def fake_phase2(cfg, doc, outputs, verbose, headings_path=None, **kwargs):
-        captured.extend(json.loads(Path(headings_path).read_text()))
+    def fake_phase2(cfg, doc, outputs, verbose, headings=None, **kwargs):
+        captured.extend(headings or [])
         return []
 
     monkeypatch.setattr(cli, "_phase2", fake_phase2)
@@ -57,10 +57,10 @@ def _config(tmp_path: Path, full_video: bool) -> Path:
 def test_full_video_keeps_the_card_up_until_the_end(assets, tmp_path):
     slug_dir, cap, captured = assets
     cli.render_hooks(str(_config(tmp_path, True)), str(cap), slug="a-slug", verbose=False)
-    assert [c["end"] for c in captured] == [-1, -1]
+    assert [c.end for c in captured] == [-1, -1]
 
 
 def test_card_ends_with_the_hook_by_default(assets, tmp_path):
     slug_dir, cap, captured = assets
     cli.render_hooks(str(_config(tmp_path, False)), str(cap), slug="a-slug", verbose=False)
-    assert [c["end"] for c in captured] == [2.0, 2.0]
+    assert [c.end for c in captured] == [2.0, 2.0]

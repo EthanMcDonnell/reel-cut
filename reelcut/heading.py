@@ -1,8 +1,8 @@
 """Heading renderer — static styled title cards burned in as overlay frames.
 
-Headings are hand-authored in `assets/<slug>/headings.json` (a list of title cards on
-the **output-timeline**, i.e. the final video's clock). Each heading is rendered once to a
-transparent PNG — an optional dark scrim, a soft-shadowed gold serif title, and an optional
+A heading is one title card on the **output-timeline** (the final video's clock), built by
+the caller from the hand-authored `assets/<slug>/videos.json` (see `video_spec`). Each
+heading is rendered once to a transparent PNG — an optional dark scrim, a soft-shadowed gold serif title, and an optional
 italic subtitle — and that single PNG is reused for every frame in its `[start, end)` window.
 No animation; the styling matches the approved Playfair-Display gold look.
 """
@@ -33,24 +33,15 @@ class HeadingSpec:
     end: float                 # output-timeline seconds
     subtitle: str = ""
     scrim: bool | None = None  # None → use config default
-    alt_title: str = ""        # title used by this hook's flipped duplicate (empty → reuse `title`)
 
 
-def load_headings(path: Path) -> list[HeadingSpec]:
-    """Load headings.json (a JSON list of heading objects). Missing keys are tolerated."""
-    raw = json.loads(Path(path).read_text())
-    if not isinstance(raw, list):
-        raise ValueError(f"{path} must be a JSON list of heading objects")
+def headings_from_videos(videos) -> list[HeadingSpec]:
+    """Title cards for the combined render: one per titled base entry of videos.json."""
+    from .video_spec import base_videos
     return [
-        HeadingSpec(
-            title=h.get("title", ""),
-            start=float(h.get("start", 0.0)),
-            end=float(h.get("end", 0.0)),
-            subtitle=h.get("subtitle", ""),
-            scrim=h.get("scrim"),
-            alt_title=h.get("alt_title", ""),
-        )
-        for h in raw
+        HeadingSpec(title=v.title, start=v.start, end=v.end, subtitle=v.subtitle, scrim=v.scrim)
+        for v in base_videos(videos)
+        if v.title
     ]
 
 

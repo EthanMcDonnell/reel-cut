@@ -71,10 +71,9 @@ def transcribe(
         doc = _phase1(cfg, clips, output_dir, verbose)
         from .captions_doc import save_captions_doc
         save_captions_doc(doc, captions_path)
-        _scaffold_headings(captions_path, cfg.headings.default_end_s)
+        _scaffold_videos(captions_path, cfg.headings.default_end_s)
         _scaffold_images(captions_path)
         _scaffold_audio(captions_path)
-        _scaffold_titles(captions_path)
         console.print(f"[green]Captions doc →[/green] {captions_path}")
     else:
         input_folder = Path(footage)
@@ -92,10 +91,9 @@ def transcribe(
                     doc = _phase1(cfg, [str(video)], output_dir, verbose)
                     from .captions_doc import save_captions_doc
                     save_captions_doc(doc, captions_path)
-                    _scaffold_headings(captions_path, cfg.headings.default_end_s)
+                    _scaffold_videos(captions_path, cfg.headings.default_end_s)
                     _scaffold_images(captions_path)
                     _scaffold_audio(captions_path)
-                    _scaffold_titles(captions_path)
                     console.print(f"[green]Captions doc →[/green] {captions_path}")
                 except Exception as exc:
                     err_console.print(f"[red]Failed:[/red] {video.name} — {exc}")
@@ -109,10 +107,9 @@ def transcribe(
             doc = _phase1(cfg, clips, output_dir, verbose)
             from .captions_doc import save_captions_doc
             save_captions_doc(doc, captions_path)
-            _scaffold_headings(captions_path, cfg.headings.default_end_s)
+            _scaffold_videos(captions_path, cfg.headings.default_end_s)
             _scaffold_images(captions_path)
             _scaffold_audio(captions_path)
-            _scaffold_titles(captions_path)
             console.print(f"[green]Captions doc →[/green] {captions_path}")
 
     console.print(
@@ -152,8 +149,13 @@ def render(
     out_dir.mkdir(parents=True, exist_ok=True)
     output_path = out_dir / f"{slug}.mp4"
 
+    from .heading import headings_from_videos
+    from .video_spec import load_videos
+
     console.rule(f"[bold]Rendering → {output_path}[/bold]")
-    _phase2(cfg, doc, [(output_path, False)], verbose, headings_path=cap_path.parent / "headings.json",
+    _phase2(cfg, doc, [(output_path, False)], verbose,
+            headings=headings_from_videos(load_videos(cap_path.parent / "videos.json")),
+            assets_dir=cap_path.parent,
             images_path=cap_path.parent / "images.json", audio_path=cap_path.parent / "audio.json")
 
 
@@ -172,29 +174,29 @@ def _flip_plan(n: int, flip_cfg) -> list[list[tuple[str, bool]]]:
     return [[("", False), (flip_cfg.suffix, True)] if f else [("", False)] for f in flipped]
 
 
-def _hook_variant_groups(plan_entries, stem: str, card, title, out_dir: Path):
-    """Group one hook's planned outputs by the title card they carry.
+def _hook_variant_groups(plan_entries, base, mirror, out_dir: Path):
+    """Group one hook's planned outputs by the videos.json entry that describes them.
 
-    The first output is the hook itself; any second output is its flipped duplicate, which
-    takes the card's `alt_title` and the title.json `alt_slug`/`alt_title` when those are
-    authored — otherwise a duplicate is a text-identical clone of its hook.
+    The first output is the hook itself (`base`); any second output is its mirrored duplicate,
+    described by the entry whose `of` names the base — its own card, caption and filename. A
+    duplicate the file doesn't describe falls back to the base entry's card under a suffixed
+    filename, which is a text-identical clone of its hook.
 
-    Returns `[(card_title, [(path, flip), …]), …]`. Outputs sharing a card title stay in one
-    group so they also share the overlay frames and segment extraction; a duplicate with its
-    own card title is necessarily its own render.
+    Returns `[(entry, [(path, flip), …]), …]`. Outputs described by the same entry stay in one
+    group so they share the overlay frames and segment extraction; a duplicate with its own
+    entry is necessarily its own render.
     """
-    from .title import safe_slug
+    from .video_spec import stem_for
 
-    groups: list[tuple[str, list[tuple[Path, bool]]]] = []
+    groups: list[tuple[object, list[tuple[Path, bool]]]] = []
     for idx, (suffix, flip) in enumerate(plan_entries):
-        is_dup = idx > 0
-        card_title = card.alt_title if is_dup and card.alt_title else card.title
-        alt_stem = safe_slug(title.alt_slug or title.alt_title) if is_dup and title else ""
-        path = out_dir / f"{alt_stem or stem + suffix}.mp4"
-        if groups and groups[-1][0] == card_title:
+        entry = mirror if idx > 0 and mirror else base
+        stem = stem_for(entry) if entry is not base else stem_for(base) + suffix
+        path = out_dir / f"{stem}.mp4"
+        if groups and groups[-1][0] is entry:
             groups[-1][1].append((path, flip))
         else:
-            groups.append((card_title, [(path, flip)]))
+            groups.append((entry, [(path, flip)]))
     return groups
 
 
@@ -211,19 +213,18 @@ def render_hooks(
 ) -> None:
     """Phase 2 (per-hook): render one video per hook — each is hook_i + the shared body.
 
-    The titled cards in headings.json are the hook definition (one card per hook, as
-    produced by /produce-video). Each render is a normal full render with the *other*
-    hooks flipped to cuts, so music/captions/scaling all behave as usual — no concat.
-    Outputs output/<slug>/<title-slug>.mp4 (title from title.json; falls back to hook{i}.mp4).
+    The titled base entries of videos.json are the hook definition (one per hook, as produced
+    by /produce-video). Each render is a normal full render with the *other* hooks flipped to
+    cuts, so music/captions/scaling all behave as usual — no concat. Outputs
+    output/<slug>/<entry-slug>.mp4, and a mirrored duplicate takes the filename and card of
+    the entry whose `of` names its hook.
     """
-    import json
-
     from .captions_doc import CaptionsDoc, load_captions_doc
     from .config import load_config
-    from .heading import load_headings
+    from .heading import HeadingSpec
     from .hook_split import build_hook_edl, drop_covered
     from .image_spec import load_images, save_images
-    from .title import load_titles, safe_slug
+    from .video_spec import base_videos, load_videos, mirror_of
 
     try:
         cfg = load_config(config_path)
@@ -240,21 +241,20 @@ def render_hooks(
     slug = _resolve_slug(cfg, slug) or cap_path.parent.name
     assets_dir = cap_path.parent
 
-    headings_path = assets_dir / "headings.json"
-    cards = [h for h in load_headings(headings_path) if h.title] if headings_path.exists() else []
-    if not cards:
+    videos = load_videos(assets_dir / "videos.json")
+    hooks = [v for v in base_videos(videos) if v.title]
+    if not hooks:
         err_console.print(
-            "[red]Error:[/red] headings.json has no titled hook cards — fill it in first "
+            "[red]Error:[/red] videos.json has no titled hook entries — fill it in first "
             "(/produce-video Step 4b)."
         )
         raise typer.Exit(1)
-    hook_windows = [(h.start, h.end) for h in cards]
+    hook_windows = [(v.start, v.end) for v in hooks]
 
-    # Output videos are grouped in a per-slug folder and named by their viewer-facing title
-    # (from title.json); an empty/missing title falls back to positional hook{i}.mp4.
+    # Output videos are grouped in a per-slug folder and named by their entry's slug (falling
+    # back to the caption, then the entry id).
     out_dir = Path(cfg.output.location) / slug
     out_dir.mkdir(parents=True, exist_ok=True)
-    titles = load_titles(assets_dir / "title.json")
     images = load_images(assets_dir / "images.json")
     audio_path = assets_dir / "audio.json"
 
@@ -264,9 +264,7 @@ def render_hooks(
     console.print(f"[bold]{n_videos} video(s) to render from {n} hook(s)[/bold]\n")
     all_warnings: list[str] = []
     for i in range(n):
-        card = cards[i]
-        stem = safe_slug(titles[i].slug or titles[i].title) if i < len(titles) else ""
-        stem = stem or f"hook{i + 1}"
+        base = hooks[i]
 
         new_edl, hook_dur, drop_intervals = build_hook_edl(doc.edl, hook_windows, i)
         new_doc = CaptionsDoc(
@@ -275,42 +273,37 @@ def render_hooks(
             words=drop_covered(doc.words, drop_intervals),
         )
 
-        # Per-hook overlay stubs written into the assets dir so heading's {n:<series>}
-        # episode-token resolution still finds the slug + series_index.json. Cleaned up
-        # after each render.
-        tmp_headings = assets_dir / f".render-hook{i + 1}.headings.json"
+        # Per-hook image stub, written into the assets dir and cleaned up after the render.
         tmp_images = assets_dir / f".render-hook{i + 1}.images.json"
         save_images(drop_covered(images, drop_intervals), tmp_images)
 
-        # One or two outputs per hook — the second is the flipped duplicate when
-        # output.flip is set to duplicate. Outputs sharing a title card go through _phase2
-        # together so the shared work (overlay frames, segment extraction, concat) is done
-        # once; a duplicate carrying its own alt_title card is its own _phase2 call.
-        groups = _hook_variant_groups(
-            plan[i], stem, card, titles[i] if i < len(titles) else None, out_dir
-        )
+        # One or two outputs per hook — the second is the flipped duplicate when output.flip
+        # is set to duplicate. Outputs described by the same videos.json entry go through
+        # _phase2 together so the shared work (overlay frames, segment extraction, concat) is
+        # done once; a duplicate with its own entry is its own _phase2 call.
+        groups = _hook_variant_groups(plan[i], base, mirror_of(videos, base.id), out_dir)
         console.rule(
             f"[bold]Hook {i + 1}/{n}[/bold] → "
             + ", ".join(p.name for _, variants in groups for p, _ in variants)
         )
 
         try:
-            for card_title, variants in groups:
-                tmp_headings.write_text(json.dumps([{
-                    "title": card_title,
-                    "subtitle": card.subtitle,
-                    "start": 0.0,
+            for entry, variants in groups:
+                card = HeadingSpec(
+                    title=entry.title or base.title,
+                    subtitle=entry.subtitle or base.subtitle,
+                    start=0.0,
                     # -1 = until the end of the video; otherwise the card ends with the hook.
-                    "end": -1 if cfg.headings.full_video else hook_dur,
-                    "scrim": card.scrim,
-                }], indent=2))
+                    end=-1 if cfg.headings.full_video else hook_dur,
+                    scrim=base.scrim if entry.scrim is None else entry.scrim,
+                )
                 all_warnings.extend(_phase2(
                     cfg, new_doc, variants, verbose,
-                    headings_path=tmp_headings, images_path=tmp_images, audio_path=audio_path,
+                    headings=[card], assets_dir=assets_dir,
+                    images_path=tmp_images, audio_path=audio_path,
                     reset_logos_per_section=False,
                 ))
         finally:
-            tmp_headings.unlink(missing_ok=True)
             tmp_images.unlink(missing_ok=True)
 
     _exit_with_warnings(all_warnings)
@@ -331,6 +324,8 @@ def run(
     """End-to-end: transcribe + render without LLM editing step. Moves footage to done/."""
     from .captions_doc import save_captions_doc
     from .config import load_config
+    from .heading import headings_from_videos
+    from .video_spec import load_videos
     try:
         cfg = load_config(config_path)
     except (FileNotFoundError, ValueError) as exc:
@@ -372,7 +367,9 @@ def run(
                 console.print(f"[yellow]--dry-run:[/yellow] skipping render. Captions → {cap_path}")
                 continue
 
-            warnings = _phase2(cfg, doc, [(out_path, False)], verbose, headings_path=cap_path.parent / "headings.json",
+            warnings = _phase2(cfg, doc, [(out_path, False)], verbose,
+                               headings=headings_from_videos(load_videos(cap_path.parent / "videos.json")),
+                               assets_dir=cap_path.parent,
                                images_path=cap_path.parent / "images.json", audio_path=cap_path.parent / "audio.json")
             all_warnings.extend(warnings)
         except Exception as exc:
@@ -727,7 +724,8 @@ def _phase1(cfg, clips: list[str], output_dir: Path, verbose: bool):
 # Phase 2 — render core
 # ---------------------------------------------------------------------------
 
-def _phase2(cfg, doc, outputs: list[tuple[Path, bool]], verbose: bool, headings_path: Path | None = None,
+def _phase2(cfg, doc, outputs: list[tuple[Path, bool]], verbose: bool,
+            headings: list | None = None, assets_dir: Path | None = None,
             images_path: Path | None = None, audio_path: Path | None = None,
             reset_logos_per_section: bool = True) -> list[str]:
     """Render one or more videos from a CaptionsDoc. Returns warnings.
@@ -736,6 +734,10 @@ def _phase2(cfg, doc, outputs: list[tuple[Path, bool]], verbose: bool, headings_
     call, so the caption/image/heading frames and the segment extraction are done once and
     only the final encode repeats. `flip` mirrors the footage; overlays are composited after
     the flip, so captions and title cards read normally (see output.flip in config).
+
+    `headings` are the title cards to burn in (built from videos.json by the caller, so a
+    mirrored duplicate can be given its own card). `assets_dir` is the slug's asset folder —
+    it resolves the `{n:<series>}` episode token against `assets/series_index.json`.
 
     `reset_logos_per_section` clears logo dedup at each heading-card edge so a brand
     re-mentioned in a later section re-fires its logo. render-hooks passes False: a
@@ -787,13 +789,10 @@ def _phase2(cfg, doc, outputs: list[tuple[Path, bool]], verbose: bool, headings_
             )
             _tlog(time.perf_counter() - t, f"{len(caption_frames)} frames")
 
-        # Heading specs (output-timeline) — loaded once: their card edges double as the
-        # logo-reset boundaries so a brand re-mentioned in a later section re-fires its logo.
+        # Heading specs (output-timeline) — their card edges double as the logo-reset
+        # boundaries so a brand re-mentioned in a later section re-fires its logo.
         total_output_s = sum(e.end - e.start for e in edl if e.keep)
-        heading_specs = []
-        if cfg.headings.enabled and headings_path and headings_path.exists():
-            from .heading import load_headings
-            heading_specs = load_headings(headings_path)
+        heading_specs = (headings or []) if cfg.headings.enabled else []
         logo_reset_boundaries = (
             _heading_reset_boundaries(heading_specs, total_output_s)
             if reset_logos_per_section else []
@@ -842,7 +841,7 @@ def _phase2(cfg, doc, outputs: list[tuple[Path, bool]], verbose: bool, headings_
             )
             _tlog(time.perf_counter() - t)
 
-        # Heading overlays — hand-authored title cards (headings.json), composited on top
+        # Heading overlays — the hand-authored title cards (videos.json), composited on top
         if cfg.headings.enabled and heading_specs:
             from .heading import render_heading_frames
             console.print(f"[bold]Step 6b+/6[/bold] Rendering {len(heading_specs)} heading(s)…")
@@ -853,8 +852,8 @@ def _phase2(cfg, doc, outputs: list[tuple[Path, bool]], verbose: bool, headings_
                 fps=cfg.output.fps,
                 resolution=tuple(cfg.output.resolution),
                 total_output_s=total_output_s,
-                slug=headings_path.parent.name,
-                registry_path=headings_path.parent.parent / "series_index.json",
+                slug=assets_dir.name if assets_dir else None,
+                registry_path=assets_dir.parent / "series_index.json" if assets_dir else None,
             )
             caption_frames = merge_with_caption_frames(
                 heading_frames, caption_frames, tuple(cfg.output.resolution),
@@ -1057,7 +1056,7 @@ def _resolve_image_spec(spec, display_duration_s: float):
 def _clean_transcription_artifacts(output_dir: Path, console: Console) -> None:
     """Wipe everything derived from a prior transcribe so a re-run is a clean slate.
 
-    This includes the overlay files (images.json / headings.json / audio.json):
+    This includes the overlay files (images.json / videos.json / audio.json):
     they are keyed to the old transcript and would otherwise silently survive
     (the scaffolders never clobber) and drift out of alignment. They are
     re-scaffolded as fresh stubs immediately after transcription. Source inputs —
@@ -1071,7 +1070,7 @@ def _clean_transcription_artifacts(output_dir: Path, console: Console) -> None:
     for p in output_dir.glob("*.debug.*.txt"):
         p.unlink()
         cleaned.append(p.name)
-    for name in ("images.json", "headings.json", "audio.json", "title.json"):
+    for name in ("images.json", "videos.json", "audio.json"):
         p = output_dir / name
         if p.exists():
             p.unlink()
@@ -1090,16 +1089,22 @@ def _resolve_slug(cfg, slug_arg: str | None) -> str | None:
     return None
 
 
-def _scaffold_headings(captions_path: Path, end_s: float) -> None:
-    """Drop an editable headings.json stub next to the captions file (never clobbers an
-    existing one). The stub's title is empty, so render skips it until you fill it in."""
+def _scaffold_videos(captions_path: Path, end_s: float) -> None:
+    """Drop an editable videos.json stub next to the captions file (never clobbers an existing
+    one). The stub's title is empty, so render skips it until /produce-video fills it in."""
     import json
-    hp = captions_path.parent / "headings.json"
-    if hp.exists():
+    vp = captions_path.parent / "videos.json"
+    if vp.exists():
         return
-    stub = [{"title": "", "subtitle": "", "start": 0.0, "end": end_s, "scrim": True}]
-    hp.write_text(json.dumps(stub, indent=2) + "\n")
-    console.print(f"[green]Headings stub →[/green] {hp} [dim](edit 'title' to add a title card)[/dim]")
+    stub = [{
+        "id": "hook1", "title": "", "subtitle": "", "start": 0.0, "end": end_s,
+        "scrim": True, "caption": "", "slug": "",
+    }]
+    vp.write_text(json.dumps(stub, indent=2) + "\n")
+    console.print(
+        f"[green]Videos stub →[/green] {vp} "
+        "[dim](one entry per rendered video — title card, caption and filename)[/dim]"
+    )
 
 
 def _scaffold_images(captions_path: Path) -> None:
@@ -1122,17 +1127,6 @@ def _scaffold_audio(captions_path: Path) -> None:
         return
     ap.write_text("[]\n")
     console.print(f"[green]Audio stub →[/green] {ap} [dim](add tracks e.g. {{\"track\": \"upbeat\"}}, or leave empty for the config default)[/dim]")
-
-
-def _scaffold_titles(captions_path: Path) -> None:
-    """Drop an editable title.json stub (empty list) next to the captions file, never
-    clobbering an existing one. Populated by /produce-video Step 4c with one {title, slug} per
-    hook; empty means render-hooks falls back to positional hook{i}.mp4 filenames."""
-    tp = captions_path.parent / "title.json"
-    if tp.exists():
-        return
-    tp.write_text("[]\n")
-    console.print(f"[green]Title stub →[/green] {tp} [dim](add one {{\"title\", \"slug\"}} per hook)[/dim]")
 
 
 def _assets_or_ts_dir(cfg, slug: str | None) -> Path:

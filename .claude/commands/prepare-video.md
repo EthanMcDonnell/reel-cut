@@ -27,7 +27,7 @@ The user drops their footage into `assets/<video-slug>/` before running this com
 
 Output goes to `assets/<slug>/`, named after the footage stem (e.g. `Teleprompter-2026-01-06_20-59-13.captions.json`). The transcription step prints the actual path.
 
-**This is a full reset.** Transcription first wipes everything derived from any prior run — the old `captions.json`, debug reports, and the overlay files `images.json` / `headings.json` / `audio.json` / `title.json` — then re-scaffolds them as fresh stubs. So re-running this command on a slug that already went through `/produce-video` discards those image timings, title cards, and Instagram titles (they'd otherwise drift against the new transcript). Source inputs are untouched: the footage, `manifest.json`, and the produce-script screenshots all carry over.
+**This is a full reset.** Transcription first wipes everything derived from any prior run — the old `captions.json`, debug reports, and the overlay files `images.json` / `videos.json` / `audio.json` — then re-scaffolds them as fresh stubs. So re-running this command on a slug that already went through `/produce-video` discards those image timings, title cards, and captions (they'd otherwise drift against the new transcript). Source inputs are untouched: the footage, `manifest.json`, and the produce-script screenshots all carry over.
 
 ## Step 2.5 — Reconcile screenshot manifest (only if one exists)
 
@@ -56,7 +56,7 @@ Summarise (after Step 4 has run):
 - Keep / cut duration after fixes
 - Anomalies found, split into those auto-fixed in Step 4 and those left for the user to apply (with the recommended fix for each)
 - Any remaining issues that need a human listen (ambiguous takes, uncertain boundaries)
-- `headings.json`, `images.json`, and `title.json` stubs were auto-created in the slug folder — optionally add a title card / image overlays / Instagram title later by filling them in (covered in `/produce-video`)
+- `videos.json` and `images.json` stubs were auto-created in the slug folder — the title card, caption and filename of each rendered video (and its image overlays) are filled in later by `/produce-video`
 
 ## Step 4 — Apply the certain fixes, then log
 

@@ -153,102 +153,87 @@ Example `images.json`:
 
 All `start`/`end` values are **source-clip seconds** taken from the `words` array in captions.json (the renderer remaps them to the output timeline).
 
-## Step 4b — Headings (one distinct on-screen title card per hook)
+## Step 4b — videos.json (one entry per rendered video)
 
-Read `assets/<video-slug>/headings.json`. If the first entry has a non-empty `title`, it's already filled in — skip to Step 4c.
+`assets/<video-slug>/videos.json` describes **every video this render produces**: its burned-in title card, its Instagram/Telegram caption, and its filename. One entry per output `.mp4`.
 
-If the title is empty (the stub state from `prepare-video`), generate the heading cards.
+Read it. If the first entry has a non-empty `title`, it's already filled in — skip to Step 5. If the title is empty (the stub state from `prepare-video`), fill it in as below.
 
-**Each hook video gets its OWN on-screen title card, derived from that hook's angle — do NOT stamp one shared title across all cards.** This is deliberate. The three hook videos (`render-hooks` → `output/<slug>/*.mp4`) share an identical body and voiceover, so the burned-in title card in the opening seconds is the one visual element we can cheaply make distinct per variant. A single reused title stamps a byte-identical overlay onto the exact region Instagram scans hardest for near-duplicates; a per-hook title removes that shared signal and keeps each card matching the hook the viewer just heard. (This alone does **not** de-cluster the videos — the shared body + voiceover cap that; see `INSTAGRAM_DEDUP_EVASION_PLAN.md`. It is cheap, on-strategy hygiene, not a silver bullet.)
+Two different artifacts live in each entry, and they are written to different rules:
+- `title` / `subtitle` — **burned into the video** as the gold card over the opening seconds
+- `caption` / `slug` — **never rendered**; they name the file and caption the post
+
+### The entries
+
+One **base entry per hook** (same order as `hook_windows` from Step 3c), plus — when `output.flip` in `config.yaml` is `apply: duplicate` with `mode` not `off` — one **mirror entry** per duplicated hook, linked by `of`:
+
+```json
+[
+  { "id": "tokens", "title": "What Are\nAI Tokens?", "subtitle": "Tech Behind Big Tech Day {n:tbbt}",
+    "start": 0.0, "end": 3.1, "scrim": true,
+    "caption": "what are ai tokens? 🤔", "slug": "what-are-ai-tokens" },
+
+  { "id": "tokens-flipped", "of": "tokens", "title": "The Hidden\nCost Of A Word",
+    "caption": "you pay by the syllable 💸", "slug": "pay-by-the-syllable" },
+
+  { "id": "syllable", "title": "Why ChatGPT\nBills Per Word", "subtitle": "Tech Behind Big Tech Day {n:tbbt}",
+    "start": 3.1, "end": 6.4, "scrim": true,
+    "caption": "big tech bills you by the syllable 🤫", "slug": "billed-by-the-syllable" }
+]
+```
+
+Field reference:
+- `id` — stable handle for the entry, and the last-resort filename. Convention: the hook's short name, and `<base-id><flip-suffix>` for its mirror (the suffix is `output.flip.suffix`, default `-flipped`)
+- `of` — **mirror entries only**: the `id` of the hook this one mirrors. It inherits that hook's window, so it needs no `start`/`end`
+- `title` — burned-in card; use `\n` for line breaks. `{n:<series>}` is auto-replaced with this video's episode number at render time (series slug from SERIES.md)
+- `subtitle` — smaller italic line under the title; also supports `{n:<series>}`. A mirror inherits its hook's subtitle if it omits this
+- `start`/`end` — **output-timeline seconds** from `hook_windows` (Step 3c), not source-clip time
+- `scrim` — `true` darkens footage behind the text; omit to use the config default
+- `caption` — the pretty post text (emoji + lowercase), used verbatim in the Telegram/Instagram post
+- `slug` — filesystem-safe stem for the `.mp4`: lowercase, hyphen-separated, no emoji. Leave empty and it's derived from `caption`; if nothing usable survives, the file is named after `id`
 
 **Inputs to draw from:**
-- `hook_windows` from Step 3c — one window per hook, each with its output-timeline `(start, end)` — **plus that hook's spoken text** (from the Step 1 timeline). The title for card N is derived from hook N's angle.
+- `hook_windows` from Step 3c — one window per hook, each with its output-timeline `(start, end)` — **plus that hook's spoken text** (from the Step 1 timeline). Every entry for hook N is derived from hook N's angle.
 - The video slug and topic; the manifest `topic` / `hook` fields if present
 - The series (from the manifest or inferred from the slug — check SERIES.md for the tone of each series)
 
-**Generate one title per hook** — each punchy, tailored to *that hook's* angle, and in the series tone (a stylized 2–3-second card, not the hook's verbatim wording):
+### Every entry gets its OWN title and caption
+
+**Do NOT stamp one shared title across the cards, and do not let a mirror reuse the text of the hook it mirrors.** This is deliberate. All of these videos (`render-hooks` → `output/<slug>/*.mp4`) share an identical body and voiceover, so the burned-in card and the caption are the elements we can cheaply make distinct per variant. Reused text stamps a byte-identical overlay onto the exact region Instagram scans hardest for near-duplicates; distinct text removes that shared signal and keeps each card matching the hook the viewer just heard. (This alone does **not** de-cluster the videos — the shared body + voiceover cap that; see `INSTAGRAM_DEDUP_EVASION_PLAN.md`. It is cheap, on-strategy hygiene, not a silver bullet.)
+
+A mirror entry is a *second angle on the same hook*, not a different video: it sits over the same spoken words, so it must stay true to them.
+
+**Title card style** — punchy, tailored to that hook's angle, in the series tone (a stylized 2–3-second card, not the hook's verbatim wording):
 - *tbbt*: punchy question or shocking statement about the architecture
 - *updates*: news-style headline
 - *interesting-tech / Interesting Tech*: the "impossible thing" framing ("Can a prime number be illegal?")
 - *AI Fundamentals*: first-principles question the viewer is already asking
 
-Use `\n` in `title` for line breaks (2 lines usually reads better on mobile). Keep each title short enough to read in 2–3 seconds.
+Use `\n` for line breaks (2 lines usually reads better on mobile). Keep each title short enough to read in 2–3 seconds.
 
 **A card may compress the claim but never contradict it.** The card is burned in, so an error here can only be fixed by re-rendering and re-uploading. Before proposing, check each card against the spoken body from the Step 1 timeline and against the source article: every number, count, and singular/plural in the card has to survive that check. If the body says "chunks", the card may not say "one file". The failure mode to watch for is a card that states the approach the source *rejected* — it will read as the most striking option precisely because it's wrong. See rule 10 in the `hooks` skill.
 
-**The subtitle stays constant across all cards** — it carries the series branding, so keep it identical for every hook (varying the big gold title is what makes the cards visually distinct; the subtitle keeps the brand recognisable):
+**The subtitle stays constant across all cards** — it carries the series branding, so keep it identical for every entry (varying the big gold title is what makes the cards visually distinct; the subtitle keeps the brand recognisable):
 - *tbbt*: `Tech Behind Big Tech Day {n:tbbt}` (the literal words "Tech Behind Big Tech Day" followed by the episode number — not `#`, and never just `Day {n:tbbt}` on its own)
 - *updates*: `Tech & AI Updates #{n:updates}` (the series name followed by the episode number)
 - *interesting-tech / Interesting Tech*: subtitle can include the series day count
 - *AI Fundamentals*: a short tagline
 
-**Use AskUserQuestion** to present the full set of proposed per-hook titles at once — one option to accept all, plus "Enter my own" — the same pattern as Step 4c. Pair each proposed title with the hook it was derived from so the mapping is clear.
-
-Once approved, write `headings.json` with **one card per hook window** from `hook_windows` — each card carries its OWN `title`, all sharing the same `subtitle`:
-
-```json
-[
-  { "title": "What Are\nAI Tokens?", "subtitle": "Tech Behind Big Tech Day {n:tbbt}", "start": 0.0, "end": 3.1, "scrim": true },
-  { "title": "Why ChatGPT\nBills Per Word", "subtitle": "Tech Behind Big Tech Day {n:tbbt}", "start": 3.1, "end": 6.4, "scrim": true },
-  { "title": "You Pay\nBy The Syllable", "subtitle": "Tech Behind Big Tech Day {n:tbbt}", "start": 6.4, "end": 9.8, "scrim": true }
-]
-```
-
-Field reference:
-- `title` — use `\n` for line breaks; `{n:<series>}` is auto-replaced with this video's episode number at render time (series slug from SERIES.md)
-- `alt_title` — the card the **mirrored duplicate** of this hook gets (see below); omit when flip duplicates are off
-- `subtitle` — optional smaller italic line; also supports `{n:<series>}`
-- `start`/`end` — **output-timeline seconds** from `hook_windows` (Step 3c), not source-clip time
-- `scrim` — `true` darkens footage behind the text; omit to use the config default
-
-**Mirrored duplicates need their own card.** Check `output.flip` in `config.yaml`: when `apply: duplicate` and `mode` is not `off`, every (or every second) hook is rendered *twice*, and without an `alt_title` the mirror carries a byte-identical card — exactly the shared signal the per-hook titles above exist to remove. So for each hook that gets a duplicate, write a **second** title for the same hook's angle (a different phrasing of the same claim — it must pass the same accuracy check, since both cards sit over the same spoken words):
-
-```json
-{ "title": "What Are\nAI Tokens?", "alt_title": "The Hidden\nCost Of A Word", "subtitle": "Tech Behind Big Tech Day {n:tbbt}", "start": 0.0, "end": 3.1, "scrim": true }
-```
-
-Include the alt titles in the same AskUserQuestion set. Omitting `alt_title` is a valid choice — the mirror then reuses the hook's card, and it renders faster (the duplicate shares the hook's overlay frames and segment extraction; its own card means its own full render pass).
-
-**Logo resets:** each card's start/end is a logo-reset boundary. A brand re-mentioned after any card edge re-fires its logo in that section — no extra configuration needed.
-
-## Step 4c — Instagram titles (one per hook)
-
-The **on-screen** title card (Step 4b) is a different artifact from the **Instagram/Telegram** title written here. This step names each rendered file and captions the post — it is not burned into the video. `render-hooks` reads `title.json` and writes `output/<video-slug>/<title-slug>.mp4` (one file per hook, grouped in a per-slug folder).
-
-Read `assets/<video-slug>/title.json`. If the first entry has a non-empty `title`, it's already filled in — skip to Step 5. If it's the empty stub (`[]`), generate one title **per hook** — each tailored to *that hook's* angle (the openings differ; the body is shared).
-
-**Style (all titles):**
+**Caption style:**
 - **all lowercase**
-- **at most one emoji, only if it earns its place.** No default emoji — most titles are stronger without one. Reach for a single emoji only when it actually lands the joke (e.g. the conspiratorial `🤫`); a tacked-on one is worse than none. Never more than one.
+- **at most one emoji, only if it earns its place.** No default emoji — most captions are stronger without one. Reach for a single emoji only when it actually lands the joke (e.g. the conspiratorial `🤫`); a tacked-on one is worse than none. Never more than one.
 - **short & sharp** — roughly 4–8 words
 - **no em dashes.** `->`, `w/`, `&`, `/` are fine — that quirky shorthand register is the point
-- **quirky and scroll-stopping over informative.** Lead with attitude, understatement, meme energy, or a sneaky reframe — a title that makes someone stop mid-scroll beats one that neatly summarises. It does **not** have to explain (or even literally describe) the video; intrigue is the job. Avoid the flat "how X did Y" / "why X did Y" template unless it's carrying a genuine twist.
-- **never assert what the video denies.** The bullet above frees the title from *describing* the video; it does not license contradicting it. Those are different axes, and this rule only bites on the second. A title carrying no factual claim (`the cloud? never heard of it`) has nothing to check — that's the register working as intended. But the moment a title asserts something (a number, a count, a singular/plural, a mechanism), that assertion has to hold against the spoken script and the source article. The trap is a title stating the approach the source *rejected*, since it reads as the punchiest option for exactly the reason it's false. Same check as the Step 4b cards and rule 10 in the `hooks` skill.
+- **quirky and scroll-stopping over informative.** Lead with attitude, understatement, meme energy, or a sneaky reframe — a caption that makes someone stop mid-scroll beats one that neatly summarises. It does **not** have to explain (or even literally describe) the video; intrigue is the job. Avoid the flat "how X did Y" / "why X did Y" template unless it's carrying a genuine twist.
+- **never assert what the video denies.** The bullet above frees the caption from *describing* the video; it does not license contradicting it. Those are different axes, and this rule only bites on the second. A caption carrying no factual claim (`the cloud? never heard of it`) has nothing to check — that's the register working as intended. But the moment a caption asserts something (a number, a count, a singular/plural, a mechanism), that assertion has to hold against the spoken script and the source article. The trap is a caption stating the approach the source *rejected*, since it reads as the punchiest option for exactly the reason it's false. Same check as the cards above and rule 10 in the `hooks` skill.
 
 Examples of the register: `the cloud? never heard of it` · `dropbox unsubscribed from amazon` · `big tech hates this one weird trick: owning your servers 🤫` · `turns out the cloud was just amazon's computers ☁️`
 
-**Use AskUserQuestion** to present the full set of proposed per-hook titles (one option to accept all, plus "Enter my own"). Once approved, write `title.json` with **one entry per hook** (same order as the hook windows / `headings.json` cards):
+**Use AskUserQuestion** to present the full proposed set at once — one option to accept all, plus "Enter my own". Pair each proposed title/caption with the hook it was derived from so the mapping is clear, and mark which entries are mirrors.
 
-```json
-[
-  { "title": "reddit & kafka -> kubernetes w/ no 🧑❓", "slug": "reddit-kafka-to-kubernetes" },
-  { "title": "why reddit ditched kafka 😵", "slug": "why-reddit-ditched-kafka" }
-]
-```
+**Omitting a mirror entry is a valid choice.** The duplicate then reuses its hook's card and caption under a `<slug><flip-suffix>.mp4` filename, and it renders faster: without its own card it shares the hook's overlay frames and segment extraction (~80% of a render) and repeats only the encode. Its own card means its own full render pass.
 
-Field reference:
-- `title` — the pretty caption (emoji + lowercase), used verbatim in the Telegram/Instagram post (Step 7)
-- `slug` — a filesystem-safe stem for the `.mp4` filename: lowercase, hyphen-separated, no emoji/punctuation. The renderer re-sanitizes it defensively; if you leave it empty it's derived from `title`, and if nothing usable survives the file falls back to `hook{i}.mp4`.
-- `alt_title` / `alt_slug` — the caption and filename for this hook's **mirrored duplicate** (see below)
-
-**Mirrored duplicates need their own caption too.** Same trigger as Step 4b: if `output.flip` is `apply: duplicate` with `mode` not `off`, each duplicated hook needs a second Instagram title, written to the same entry as `alt_title` (+ `alt_slug`). It follows every style rule above and stays true to the same spoken body — it's a different angle on the same hook, not a different video:
-
-```json
-{ "title": "why reddit ditched kafka 😵", "slug": "why-reddit-ditched-kafka",
-  "alt_title": "kafka? we hardly knew her", "alt_slug": "kafka-we-hardly-knew-her" }
-```
-
-With `alt_slug` set, that copy is written as `output/<video-slug>/kafka-we-hardly-knew-her.mp4` instead of `<slug><flip-suffix>.mp4`, and `/post-video` captions it from `alt_title`. Leave both out and the mirror keeps the hook's caption and the suffixed filename (today's behaviour).
+**Logo resets:** each base entry's start/end is a logo-reset boundary. A brand re-mentioned after any card edge re-fires its logo in that section — no extra configuration needed.
 
 ## Step 5 — Render (one video per hook)
 
@@ -256,24 +241,22 @@ With `alt_slug` set, that copy is written as `output/<video-slug>/kafka-we-hardl
 .venv/bin/reelcut render-hooks config.yaml "assets/<video-slug>/<actual-captions-filename>.captions.json"
 ```
 
-`render-hooks` reads the hook cards in `headings.json` (one per hook, from Step 4b) and
+`render-hooks` reads the titled base entries of `videos.json` (one per hook, from Step 4b) and
 renders **one video per hook** — each is `hook_i + body`, with the other hooks cut out. The
-outputs are grouped in a per-slug folder and named by their Instagram title (Step 4c):
-`output/<video-slug>/<title-slug>.mp4`, one per hook (falling back to `hook{i}.mp4` if
-`title.json` is empty). Music, captions, and the title card behave exactly as in a normal
-render; there is no concatenation.
+outputs are grouped in a per-slug folder and named by their entry's `slug`:
+`output/<video-slug>/<slug>.mp4` (falling back to the entry's `caption`, then its `id`). Music,
+captions, and the title card behave exactly as in a normal render; there is no concatenation.
 
 **More files than hooks?** That is `output.flip` in `config.yaml`. With `apply: duplicate` a
-flipped hook is written *twice* — `<title-slug>.mp4` plus `<title-slug><suffix>.mp4` (default
-suffix `-flipped`) — so `mode: all` turns 3 hooks into 6 files; with `apply: in_place` the count
-is unchanged and the selected hooks are simply mirrored. The mirror is applied to the footage
-only, never to the captions or title card. `/post-video` picks the extra files up automatically.
+flipped hook is written *twice* — so `mode: all` turns 3 hooks into 6 files; with
+`apply: in_place` the count is unchanged and the selected hooks are simply mirrored. The mirror
+is applied to the footage only, never to the captions or title card. `/post-video` picks the
+extra files up automatically.
 
-A duplicate with no alt text (Steps 4b/4c) is cheap — it shares the hook's overlay frames and
-segment extraction (~80% of a render), repeats only the encode, and posts with the hook's
-caption. Give it an `alt_title` card and it becomes its own render pass; give it an
-`alt_slug`/`alt_title` in `title.json` and it takes that filename and that caption instead of
-the suffixed clone of its hook's.
+A duplicate described by a mirror entry (`of`, Step 4b) is written under that entry's own name,
+card and caption, and is its own render pass. A duplicate with no mirror entry is cheap — named
+`<slug><flip-suffix>.mp4`, it shares the hook's overlay frames and segment extraction (~80% of a
+render), repeats only the encode, and posts with the hook's caption.
 
 Report all output paths when done.
 
@@ -309,8 +292,8 @@ Make every rendered `output/<video-slug>/*.mp4` reachable over Tailscale, then p
 link for each **not-yet-notified** hook video **of this slug** to the Telegram `file-exchange`
 topic. The loop is scoped to the current slug's folder so other videos' hooks are never
 touched; a `.notified` log additionally dedupes across renders, so re-running only posts newly
-rendered hooks. The Telegram caption uses the pretty Instagram title from `title.json` — a
-mirrored duplicate posts under its `alt_title` when Step 4c gave it one.
+rendered hooks. The Telegram caption is the entry's `caption` from `videos.json`, so a mirrored
+duplicate posts under its own.
 
 **Prerequisites** (set up once, outside this workflow):
 - Tailscale installed and this machine joined to the tailnet (`tailscale up`).
@@ -344,24 +327,25 @@ TS_IP=$(tailscale ip -4)
 #    The .notified log additionally guards against re-sending on repeat renders (keyed on the
 #    slug-relative path so two videos sharing a title-slug can't collide).
 SLUG="<video-slug>"
-TITLES="{PROJECT_ROOT}/assets/${SLUG}/title.json"
+VIDEOS="{PROJECT_ROOT}/assets/${SLUG}/videos.json"
 SENT_LOG="{PROJECT_ROOT}/output/.notified"
 touch "$SENT_LOG"
 for f in "{PROJECT_ROOT}"/output/"${SLUG}"/*.mp4; do
   name=$(basename "$f")
   key="${SLUG}/${name}"
   grep -qxF "$key" "$SENT_LOG" && continue   # already notified — skip
-  # Pretty caption: the title.json entry whose slug matches this file's stem; else the entry
-  # whose alt_slug/alt_title matches (a mirrored duplicate posts under its own caption — the
-  # altstem fallback mirrors reelcut.title.safe_slug for entries with alt_title but no
-  # alt_slug); else the filename.
+  # Pretty caption: the videos.json entry whose stem matches this file (a mirrored duplicate
+  # has its own entry, so it posts under its own caption). `stem` mirrors
+  # reelcut.video_spec.stem_for — slug, else caption, else id. Falls back to the filename.
+  # An undescribed duplicate is <stem><flip-suffix>.mp4, so an exact miss falls back to the
+  # longest stem the filename starts with — same rule as post_video.caption_for.
   caption=$(jq -r --arg s "${name%.mp4}" '
-    def altstem: (.alt_slug // "") as $a
-      | if $a != "" then $a
-        else ((.alt_title // "") | ascii_downcase | gsub("[^a-z0-9]+"; "-") | gsub("^-|-$"; "")) end;
-    (map(select(.slug == $s)) | .[0].title)
-    // (map(select(altstem == $s and $s != "")) | .[0].alt_title)
-    // $s' "$TITLES" 2>/dev/null || echo "$name")
+    def slugify: ascii_downcase | gsub("[^a-z0-9]+"; "-") | gsub("^-|-$"; "");
+    def stem: [(.slug // ""), (.caption // ""), (.id // "")] | map(slugify) | map(select(. != "")) | first // "";
+    (map(select(stem == $s)) | .[0].caption)
+    // ([.[] | stem as $k | select($k != "" and ($s | startswith($k))) | {k: $k, c: .caption}]
+        | sort_by(.k | length) | last | .c)
+    // $s' "$VIDEOS" 2>/dev/null || echo "$name")
   url="https://${TS_HOST}/reels/${SLUG}/${name}"
   # Never post a link the serve config doesn't actually answer — an unreachable URL must not
   # be logged as notified. --resolve pins DNS to the tailnet IP (see TS_IP note above).

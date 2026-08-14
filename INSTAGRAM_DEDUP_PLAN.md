@@ -11,7 +11,7 @@ legitimate way to reduce clustering.
 
 ## How the pipeline produces the 3 videos (context)
 
-- `/produce-video` (`.claude/commands/produce-video.md`) → fills `images.json` + `headings.json`
+- `/produce-video` (`.claude/commands/produce-video.md`) → fills `images.json` + `videos.json`
   (one hook card per hook), then runs `reelcut render-hooks`.
 - `render-hooks` (`reelcut/cli.py:161`) renders one mp4 per hook: `hook_i + shared body`, other
   hooks cut out. Outputs `output/<slug>-hook{i}.mp4`.

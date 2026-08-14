@@ -49,32 +49,26 @@ REQUEST_TIMEOUT_S = 360
 
 
 def captions_for(slug):
-    """Map each rendered file stem -> pretty caption from assets/<slug>/title.json.
+    """Map each rendered file stem -> pretty caption from assets/<slug>/videos.json.
 
-    An entry may carry ``alt_slug``/``alt_title`` for its flipped duplicate, which is then
-    rendered under that stem and posts with that caption instead of the hook's.
+    One entry per rendered video, so a mirrored duplicate (the entry with ``of``) is keyed by
+    its own stem and posts under its own caption.
     """
-    from reelcut.title import safe_slug
+    from reelcut.video_spec import load_videos, stem_for
 
-    path = ROOT / "assets" / slug / "title.json"
-    if not path.exists():
-        return {}
-    captions = {}
-    for e in json.loads(path.read_text()):
-        if e.get("slug"):
-            captions[e["slug"]] = e["title"]
-        alt_stem = safe_slug(e.get("alt_slug") or e.get("alt_title") or "")
-        if alt_stem:
-            captions[alt_stem] = e.get("alt_title") or e["title"]
-    return captions
+    return {
+        stem_for(v): v.caption
+        for v in load_videos(ROOT / "assets" / slug / "videos.json")
+        if v.caption
+    }
 
 
 def caption_for(slug, stem):
-    """Caption for one rendered file, from its title.json entry.
+    """Caption for one rendered file, from its videos.json entry.
 
-    A flipped duplicate with no ``alt_slug``/``alt_title`` is written as the hook's title
-    slug plus a suffix, so an exact miss falls back to the longest title slug the filename
-    starts with — that copy posts with the same caption as the hook it mirrors.
+    A mirrored duplicate that videos.json doesn't describe is written as its hook's stem plus
+    the flip suffix, so an exact miss falls back to the longest stem the filename starts
+    with — that copy posts with the same caption as the hook it mirrors.
     """
     titles = captions_for(slug)
     if stem in titles:
