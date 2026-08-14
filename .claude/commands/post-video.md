@@ -18,6 +18,13 @@ the caption of the hook it mirrors. Posts are
 spaced a **random 3-7 minutes apart** and each hook is posted **once** — `output/.published`
 records what's gone out so re-runs never double-post.
 
+`output/.published` is shared with `/schedule-video`, which books hooks into social-cockpit's
+scheduler rather than posting them now, and writes its lines at booking time stamped with the
+future slot. A line therefore means "committed to going out", not strictly "already out". That is
+what stops the two commands from both claiming a hook, and it means this one will skip anything
+already booked and hold off on the gap check until the last booked slot has passed
+(`--ignore-gap` overrides).
+
 Arguments: `$ARGUMENTS` — expected format: `<video-slug>`
 
 Slugs with rendered output:

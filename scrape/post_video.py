@@ -19,6 +19,19 @@ all of ``output/``. Published hooks are recorded in ``output/.published`` as
 ``<slug>/<file>.mp4<TAB><iso8601>`` and skipped on re-run, so publishing to
 Instagram is never accidentally repeated.
 
+``output/.published`` is shared with ``/schedule-video``, which books hooks into
+social-cockpit's scheduler instead of posting them now. It writes the same lines
+at booking time, stamped with the hook's future *slot*. So a line here means "this
+hook is committed to going out", not strictly "this hook has already gone out" —
+which is what stops the two paths from both claiming the same hook. Two
+consequences for the code below: the newest timestamp may be in the future, in
+which case the gap check holds off until that slot has passed (use
+``--ignore-gap`` to post anyway), and a scheduled job that later fails leaves a
+line behind that has to be removed before its hook is eligible again.
+
+Timestamps here are naive local time; ``read_published`` converts an
+offset-aware one rather than choking on it.
+
 Env (read from the repo-root ``.env``):
   COCKPIT_URL   optional, default http://localhost:3000
 
@@ -101,6 +114,11 @@ def read_published(log):
     timestamping was added have no tab and no date; they still count as
     published, they just can't date the last post (so they never hold up the
     gap check).
+
+    Stamps are naive local time. An offset-aware one is converted rather than
+    trusted: this file is also written by ``/schedule-video``, and mixing the two
+    kinds would raise "can't compare offset-naive and offset-aware datetimes"
+    from the gap check — an opaque crash a long way from the line that caused it.
     """
     if not log.exists():
         return set(), None
@@ -116,6 +134,8 @@ def read_published(log):
             when = datetime.fromisoformat(stamp)
         except ValueError:
             continue
+        if when.tzinfo is not None:
+            when = when.astimezone().replace(tzinfo=None)
         if last is None or when > last:
             last = when
     return keys, last

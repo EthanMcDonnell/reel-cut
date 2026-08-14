@@ -46,16 +46,14 @@ which reports the same banner).
 
 ## Step 2 — Work out what still needs posting
 
-Hooks are `output/<slug>/*.mp4`. Exclude any that are already committed:
-
-- `output/.published` — already posted (lines are `<slug>/<file>.mp4<TAB><iso8601>`).
-- `output/.scheduled` — already booked by a previous run of this command
-  (`<slug>/<file>.mp4<TAB><job-id><TAB><iso8601>`). Read it if it exists.
+Hooks are `output/<slug>/*.mp4`. Exclude any already listed in **`output/.published`** —
+the single ledger both this command and `/post-video` read and write. A hook appears there once
+it is *committed to going out*, whether that means posted just now or booked for a future slot,
+so neither command can ever pick up a hook the other has claimed.
 
 ```bash
 ls -1 output/<slug>/*.mp4
 cat output/.published 2>/dev/null
-cat output/.scheduled 2>/dev/null
 ```
 
 If nothing is left, say so and stop.
@@ -70,14 +68,16 @@ a slug share **one** flow, created on the first to publish and appended to by th
 
 ## Step 3 — Lay out the slots
 
-Find the anchor — the latest time already committed:
+Find the anchor — the latest time already committed. That is the newest timestamp in
+`output/.published`, which now covers both past posts and future booked slots.
 
-- the newest timestamp in `output/.published`, and
-- the latest `scheduled_at` among **pending** jobs from
-  `mcp__social-cockpit__list_scheduled_posts` (status `pending`, `paused`, `finalizing`).
+Cross-check it against the latest `scheduled_at` among live jobs from
+`mcp__social-cockpit__list_scheduled_posts` (statuses `pending`, `paused`, `finalizing`) and take
+whichever is later. The two should agree; a job in the cockpit that is missing from the ledger
+means something was booked outside this command, and ignoring it would double-book that slot.
 
-Take whichever is later. The first new slot is `anchor + gap`; each hook after it is another `gap`
-later. Defaults, all overridable by the arguments:
+The first new slot is `anchor + gap`; each hook after it is another `gap` later. Defaults, all
+overridable by the arguments:
 
 | Argument | Default |
 |---|---|
@@ -130,15 +130,31 @@ Notes:
 
 ## Step 6 — Record what was booked
 
-Append one line per successfully scheduled hook to `output/.scheduled`:
+Append one line per **successfully** scheduled hook to `output/.published` — the same ledger
+`/post-video` writes, in the same format:
 
 ```
-<slug>/<file>.mp4<TAB><job-id><TAB><scheduled-at-iso>
+<slug>/<file>.mp4<TAB><scheduled-at-iso>
 ```
 
-This is what makes re-running the command safe — a hook already booked is never booked twice.
+The timestamp is the hook's **slot**, not the moment you booked it — the ledger records when a
+post goes out, and for a scheduled hook that is in the future.
+
+Write it as **naive local time with seconds** (`2028-12-16T18:00:00`) — no `Z`, no offset — to
+match every other line in the file. `scrape/post_video.py` will convert an offset-aware stamp to
+local rather than choke on it, but only naive stamps read correctly at a glance.
+
+Never write a line for a hook that appears in the result's `failed` list.
 
 Then report the final schedule, with job ids, in the cockpit's timezone.
+
+### What this means for `/post-video`
+
+`post_video.py` takes the newest timestamp in the ledger as its gap anchor, so once slots are
+booked it will hold off until the last one has passed plus the gap, reporting the booked date as
+the last post. That is the intended, conservative behaviour: the queue is already spoken for, and
+posting another hook by hand into the middle of it is what breaks the spacing. `--ignore-gap`
+overrides it when that is genuinely what you want.
 
 ## Managing what's booked
 
@@ -147,14 +163,26 @@ Then report the final schedule, with job ids, in the cockpit's timezone.
   revives a job that failed or was missed.
 - **Pause / resume:** same tool, `status: "paused"` / `"pending"`.
 - **Cancel:** `mcp__social-cockpit__cancel_scheduled_post`. Also remove its line from
-  `output/.scheduled` so the hook becomes eligible again.
+  `output/.published` so the hook becomes eligible again — otherwise it stays claimed by a job
+  that no longer exists.
+- **Move one:** rescheduling changes when it goes out, so update that hook's timestamp in
+  `output/.published` to match, or the gap anchor will be wrong on the next run.
 - **Post one early:** `mcp__social-cockpit__run_scheduled_post_now` — publishes immediately and
   blocks for a few minutes. Confirm with the user first; it can't be undone.
 - **Why did it fail:** `mcp__social-cockpit__get_scheduled_post` returns the job's event history.
 
-## Known gap
+## When a scheduled post fails
 
-`scrape/post_video.py` (behind `/post-video`) reads `output/.published` but **not**
-`output/.scheduled`. A hook booked here is therefore still visible to `/post-video` as unposted,
-so running both against the same slug can double-post it. Until that script learns about
-`output/.scheduled`, pick one path per slug — schedule it, or post it manually, not both.
+A hook is written to the ledger when it is *booked*, so a job that later fails terminally leaves a
+line claiming a post that never went out. That hook will not be picked up again until the line is
+removed.
+
+Check for these before assuming a slug is fully posted:
+
+```
+mcp__social-cockpit__list_scheduled_posts  →  status: ["failed", "missed"]
+```
+
+For each one, either revive it (`update_scheduled_post` with a new `scheduled_at`, which resets
+its attempts) and correct the timestamp in `output/.published`, or cancel it and delete its line
+so the hook is rescheduled from scratch on the next run.
