@@ -95,7 +95,7 @@ output:
                                     # composited AFTER the flip, so on-screen text is never mirrored
                                     # — but anything physically in shot is (background text, logos
                                     # on clothing, which hand you gesture with).
-    mode: "off"                     # off | alternate | all — which hooks get a flipped render.
+    mode: "all"                     # off | alternate | all — which hooks get a flipped render.
                                     #   alternate = every second hook (3 hooks -> the middle one)
                                     # QUOTE "off" — bare off is a YAML boolean.
     apply: duplicate                # in_place | duplicate — a flipped render either REPLACES that
