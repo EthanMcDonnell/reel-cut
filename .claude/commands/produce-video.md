@@ -155,7 +155,10 @@ All `start`/`end` values are **source-clip seconds** taken from the `words` arra
 
 `assets/<video-slug>/videos.json` describes **every video this render produces**: its burned-in title card, its Instagram/Telegram caption, and its filename. One entry per output `.mp4`.
 
-Read it. If the first entry has a non-empty `title`, it's already filled in — skip to Step 5. If the title is empty (the stub state from `prepare-video`), fill it in as below.
+Read it, then pick the case:
+- **Missing, or the first entry's `title` is empty** (the stub state from `prepare-video`, or a slug that predates this file) — write the whole thing as below.
+- **Filled in, and mirror entries are already there or aren't wanted** — skip to Step 5. "Aren't wanted" means `output.flip` in `config.yaml` is `mode: "off"` or `apply: in_place`.
+- **Filled in, but `output.flip` is `apply: duplicate` with `mode` not `off` and a duplicated hook has no entry whose `of` names it** — the mirror would render as a text-identical clone. Author the missing mirror entries only (leave every existing entry alone) and confirm them with AskUserQuestion as below. Under `mode: alternate` only every second hook is duplicated, so only those need one.
 
 Two different artifacts live in each entry, and they are written to different rules:
 - `title` / `subtitle` — **burned into the video** as the gold card over the opening seconds
