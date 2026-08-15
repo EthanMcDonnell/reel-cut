@@ -38,13 +38,26 @@ from reelcut.cli import _build_edl_remap
 from reelcut.video_spec import load_videos
 
 ROOT = Path(__file__).parent.parent
+CONFIG_PATH = Path(__file__).parent.parent / "config.yaml"
 
 CUT_REASON = "manual-cut"
 SLIVER_REASON = "sliver-absorbed"
 
-# A keep span shorter than this cannot be extracted: h264_videotoolbox fails to open
-# an encoder at all ("Could not open encoder before EOF"), which kills the whole render.
-MIN_KEEP_S = 0.1
+
+def _min_keep_s() -> float:
+    """The floor a keep span must clear, from `cuts.min_keep_ms` in config.yaml.
+
+    Deliberately the pipeline's own parameter rather than a second constant here.
+    `reelcut.edl._optimize_edl` applies this same floor when it builds an EDL, so a
+    remnant this tool strands is measured against the rule that would have removed it
+    had the pipeline produced the span.
+
+    Resolved from this file's location, not from `ROOT` — `ROOT` says where assets live
+    and tests repoint it at a tmpdir, but config.yaml is always beside the repo.
+    """
+    from reelcut.config import load_config
+
+    return load_config(CONFIG_PATH).cuts.min_keep_ms / 1000.0
 
 
 def _fail(msg: str, **extra) -> dict:
@@ -141,22 +154,29 @@ def _apply_cut(edl: list[EdlEntry], cut_start: float, cut_end: float) -> list[Ed
     return out
 
 
-def _absorb_slivers(
-    edl: list[EdlEntry], tail_start: float
+def _absorb_remnants(
+    edl: list[EdlEntry], floor_s: float
 ) -> tuple[list[EdlEntry], list[dict]]:
-    """Flip keep spans too short to render into the cut.
+    """Flip keep spans this tool's cuts stranded, when they're under the keep floor.
 
-    A cut boundary landing a few ms inside a keep span leaves a remnant of that
-    span behind — 10ms of silence is enough. The encoder cannot open a segment
-    that short, so the render dies with an error that never names the segment.
+    A cut boundary landing a few ms inside a keep span leaves a remnant behind — 10ms
+    of silence is enough. The encoder cannot open a segment that short, so the render
+    dies with an error that never names the span.
 
-    Only the tail is swept. A sliver before `tail_start` predates the cut and is
-    already rendering fine, and removing it would shift the output timeline out
-    from under the burned-in title cards.
+    Eligibility is **adjacency to a `CUT_REASON` span**, not position on the timeline.
+    Those are the spans this edit created, so they are ours to clean up. A short keep
+    anywhere else predates the edit and is rendering fine — 120ms and 150ms spans ship
+    in real videos — and flipping one would shift the output timeline out from under the
+    burned-in title cards for no reason. Keying on position instead missed the case that
+    actually kills renders: a remnant sitting just before the tail guard.
     """
     out, absorbed = [], []
-    for e in edl:
-        if e.keep and e.start >= tail_start and e.end - e.start < MIN_KEEP_S:
+    for i, e in enumerate(edl):
+        touches_our_cut = any(
+            0 <= j < len(edl) and not edl[j].keep and edl[j].reason == CUT_REASON
+            for j in (i - 1, i + 1)
+        )
+        if e.keep and touches_our_cut and e.end - e.start < floor_s:
             absorbed.append(
                 {"start": e.start, "end": e.end, "duration": round(e.end - e.start, 3)}
             )
@@ -164,6 +184,31 @@ def _absorb_slivers(
         else:
             out.append(e)
     return out, absorbed
+
+
+def _merge_adjacent_cuts(edl: list[EdlEntry]) -> list[EdlEntry]:
+    """Collapse consecutive cut spans on the same clip into one.
+
+    Mirrors pass 2 of `reelcut.edl._optimize_edl`, which every pipeline-built EDL goes
+    through. Without it each `--cut` leaves its own entry, so repeated edits fragment the
+    EDL — three cuts on one clip produced 28 spans covering 14 contiguous runs, one of
+    them 1ms wide. Keeps `prev.reason`, same as the pipeline.
+    """
+    if not edl:
+        return edl
+    merged = [edl[0]]
+    for e in edl[1:]:
+        prev = merged[-1]
+        if (
+            not e.keep
+            and not prev.keep
+            and e.source_clip == prev.source_clip
+            and e.start <= prev.end + 0.001
+        ):
+            merged[-1] = EdlEntry(prev.source_clip, prev.start, e.end, False, prev.reason)
+        else:
+            merged.append(e)
+    return merged
 
 
 def _durations(edl: list[EdlEntry]) -> tuple[float, float]:
@@ -316,7 +361,8 @@ def edit(slug: str, cut_specs: list[str], dry_run: bool) -> dict:
             "text": " ".join(w.word for w in doc.words if w.start >= cs and w.end <= ce),
         })
 
-    edl, absorbed = _absorb_slivers(edl, tail_start)
+    edl, absorbed = _absorb_remnants(edl, _min_keep_s())
+    edl = _merge_adjacent_cuts(edl)
 
     keep_after, cut_after = _durations(edl)
     report = {

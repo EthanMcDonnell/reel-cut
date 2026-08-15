@@ -86,9 +86,10 @@ Report to the user, then get explicit confirmation before Step 4:
   about, so quote it
 - keep duration before → after
 - any `snapped` boundaries (a mid-word boundary was widened to take the whole word)
-- any `absorbed_slivers` — a cut boundary landed a few ms inside a keep span and the remnant was
-  too short to render, so it went with the cut. Mention it, but it needs no decision: these are
-  sub-100ms fragments of silence, never words.
+- any `absorbed_slivers` — a cut boundary landed a few ms inside a keep span and the remnant fell
+  under `cuts.min_keep_ms`, so it went with the cut rather than being stranded as a segment the
+  encoder cannot open. Mention it, but it needs no decision: these are fragments of silence
+  adjacent to your own cut, never words.
 - any `orphaned_images` — **flag these prominently**. An overlay inside a cut span silently
   vanishes from the render. If the cut is meant to keep that screenshot, the span is wrong.
 
