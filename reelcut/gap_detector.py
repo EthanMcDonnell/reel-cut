@@ -308,7 +308,7 @@ def _find_speech_onset_backward(
     config: CutsConfig,
     min_silence_ms: float = 100.0,
 ) -> float:
-    """Scan backward from word_start to find where the following word's speech begins.
+    """Scan backward from word_start for the last contiguous audible run before it.
 
     The mirror of `_find_trailing_speech_end`. That one exists because WhisperX truncates
     word *ends*, so the cut's left edge must be measured rather than taken from the
@@ -316,15 +316,22 @@ def _find_speech_onset_backward(
     (`nxt.start - pad`) was still taken from the timestamp, so the only defence against a
     late start was to refuse the cut outright and leave the whole gap in.
 
-    Walks back through contiguous speech from `word_start` and stops at the first silence
-    of at least `min_silence_ms` — beyond that lies the gap, not this word. Returns a time
-    in [gap_start, word_start]; **never later than word_start**, so a cut derived from it
-    is always a subset of the cut the raw timestamp would have produced. That one-sided
-    guarantee is what makes it safe to trust: it can shrink a cut, never extend one into
-    a word.
+    **This finds audible audio, not specifically the word.** It walks back through
+    contiguous above-threshold frames from `word_start` and stops at the first silence of
+    at least `min_silence_ms`. That run is the word's true onset when the word simply
+    started before its timestamp — but it can equally be a breath, or untranscribed speech
+    sitting in the gap. All three are things a cut should stop at, so the conservative
+    reading is the useful one; do not read the result as "the word starts here".
 
-    Returns word_start unchanged when the audio there is already silent (accurate
-    alignment — the common case), so it is inert for well-aligned words.
+    This is also why the caller applies it only where the timestamp is already distrusted.
+    Used on every gap it would stop the pipeline removing untranscribed audio, which is
+    deliberate behaviour, not a bug.
+
+    Returns a time in [gap_start, word_start]; **never later than word_start**, so a cut
+    derived from it is always a subset of the cut the raw timestamp would have produced.
+    That one-sided guarantee is what makes it safe: it can shrink a cut, never extend one
+    into a word. Returns word_start unchanged when the audio there is already silent
+    (accurate alignment — the common case), so it is inert for well-aligned words.
     """
     frame_size = max(64, int(0.010 * sr))
     required_frames = max(1, int(min_silence_ms / 10))
@@ -449,9 +456,19 @@ def _build_gaps(
             speech_onset = _find_speech_onset_backward(
                 audio, sr, effective_start, gap_end, config
             )
-            should_cut = duration_ms >= config.min_silence_ms
+            # Measuring the boundary is the whole fix here, so the duration rule must not
+            # change with it: apply the same floor this gap's type would get below.
+            floor_ms = config.min_breath_ms if gap_type == "breath" else config.min_silence_ms
+            should_cut = duration_ms >= floor_ms
             if not should_cut:
-                skip_reason = f"too short ({duration_ms:.0f}ms < {config.min_silence_ms}ms)"
+                skip_reason = f"too short ({duration_ms:.0f}ms < {floor_ms}ms)"
+            elif speech_onset - config.speech_pad_ms / 1000.0 <= speech_end:
+                # The measured onset leaves no room between the previous word's speech end
+                # and the pad, so edl.py declines the cut. Report it kept, so the flag
+                # matches what the EDL actually does. (The same mismatch predates this
+                # branch elsewhere in the chain and is deliberately left alone.)
+                should_cut = False
+                skip_reason = f"measured onset leaves nothing to cut ({speech_onset:.3f}s)"
         elif prev_conf < config.min_word_confidence:
             # Only the preceding word is uncertain — apply relaxed threshold rather than blocking.
             should_cut = duration_ms >= config.low_confidence_min_gap_ms

@@ -100,3 +100,30 @@ def test_measured_onset_pulls_the_cut_back_when_a_word_starts_before_its_timesta
     assert gap.speech_onset == pytest.approx(2.7, abs=0.05), "must find the real onset"
     cut_end = gap.speech_onset - cfg.speech_pad_ms / 1000.0
     assert cut_end < 2.7, "cut must stop before the word's real speech"
+
+
+def test_gap_is_not_flagged_cut_when_the_measured_onset_leaves_nothing_to_remove():
+    """`cut` must mean "the EDL will remove this". When a breath runs right up to a
+    low-confidence word, the measured onset leaves no room past the pad and edl.py
+    declines — so the gap must not be reported as cut, or the debug report lies."""
+    cfg = CutsConfig()
+    audio = np.concatenate([
+        _tone(0.5),             # "sync."  0.00–0.50
+        _tone(0.13, amp=0.02),  # breath   0.50–0.63  (fills the whole gap)
+        _tone(0.2),             # "want"   0.63–0.83
+        _tone(0.6, amp=0.0),    # pad      0.83–1.43
+    ])
+    words = [
+        WordTimestamp("sync.", 0.0, 0.5, confidence=0.9),
+        WordTimestamp("want", 0.63, 0.83, confidence=0.30),
+    ]
+    peak = float(np.max(np.abs(audio)))
+
+    gap = _build_gaps(words, audio, SR, cfg, peak, retake_ranges=None)[0]
+
+    # The precondition this test exists for — assert it, so the test can never pass
+    # vacuously if the scene stops reproducing the case.
+    cut_end = gap.speech_onset - cfg.speech_pad_ms / 1000.0
+    assert cut_end <= gap.speech_end + 0.010, "scene no longer reproduces a declined cut"
+    assert gap.cut is False
+    assert "nothing to cut" in gap.skip_reason
