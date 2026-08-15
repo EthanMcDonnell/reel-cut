@@ -64,9 +64,15 @@ Pipeline order: 0.review → 1.raw → 1b.sentences → 2.post-retrans → 3.pos
 - No ranges despite known false start → phrase didn't match exactly (transcription error) or gap exceeded `max_retake_gap_s`
 
 ### TIMELINE (read `*.debug.5.timeline.txt`)
-- `KEEP [hard_floor]` → adjacent word too low-conf; gap blocked regardless of duration
 - `KEEP [too short]` → gap below threshold; raise `min_silence_ms` or accept
-- `KEEP [mid_sentence_floor]` → gap detector said CUT but EDL suppressed it; lower `mid_sentence_cut_floor_ms`
+- `KEEP [measured onset leaves nothing to cut]` → the next word is low-confidence, so its onset was
+  measured from the audio rather than trusted, and the measured onset leaves no room past
+  `speech_pad_ms`. Usually a breath running straight into the word — nothing to remove
+- `KEEP [mid_sentence_floor]` → gap detector said CUT but EDL suppressed it; lower
+  `mid_sentence_cut_floor_ms`. **Also fires spuriously**: the label is emitted whenever
+  `gap.speech_end` is missing from the EDL cut boundaries, and `edl.py`'s `min_keep_ms` floor can
+  move that boundary — so a cut that *did* happen gets reported as kept. Check the EDL entries
+  before trusting this one
 - `KEEP [preserve_start/preserve_end]` → within protected region
 
 ### EDL ENTRIES

@@ -1,6 +1,6 @@
 """Regression test: gap detection must ignore confidence guards for doomed words.
 
-The `hard_floor`/`low_conf` guards in `_build_gaps` exist to avoid clipping *kept*
+The confidence guards in `_build_gaps` exist to avoid clipping *kept*
 speech. When a long silence sits in front of a low-confidence word that a later
 retake pass deletes, the guard was defending a word that never reaches the output —
 stranding the silence as dead air at the retake boundary. Passing the retake ranges
