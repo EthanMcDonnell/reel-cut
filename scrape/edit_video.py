@@ -40,6 +40,11 @@ from reelcut.video_spec import load_videos
 ROOT = Path(__file__).parent.parent
 
 CUT_REASON = "manual-cut"
+SLIVER_REASON = "sliver-absorbed"
+
+# A keep span shorter than this cannot be extracted: h264_videotoolbox fails to open
+# an encoder at all ("Could not open encoder before EOF"), which kills the whole render.
+MIN_KEEP_S = 0.1
 
 
 def _fail(msg: str, **extra) -> dict:
@@ -136,6 +141,31 @@ def _apply_cut(edl: list[EdlEntry], cut_start: float, cut_end: float) -> list[Ed
     return out
 
 
+def _absorb_slivers(
+    edl: list[EdlEntry], tail_start: float
+) -> tuple[list[EdlEntry], list[dict]]:
+    """Flip keep spans too short to render into the cut.
+
+    A cut boundary landing a few ms inside a keep span leaves a remnant of that
+    span behind — 10ms of silence is enough. The encoder cannot open a segment
+    that short, so the render dies with an error that never names the segment.
+
+    Only the tail is swept. A sliver before `tail_start` predates the cut and is
+    already rendering fine, and removing it would shift the output timeline out
+    from under the burned-in title cards.
+    """
+    out, absorbed = [], []
+    for e in edl:
+        if e.keep and e.start >= tail_start and e.end - e.start < MIN_KEEP_S:
+            absorbed.append(
+                {"start": e.start, "end": e.end, "duration": round(e.end - e.start, 3)}
+            )
+            out.append(EdlEntry(e.source_clip, e.start, e.end, False, SLIVER_REASON))
+        else:
+            out.append(e)
+    return out, absorbed
+
+
 def _durations(edl: list[EdlEntry]) -> tuple[float, float]:
     keep = sum(e.end - e.start for e in edl if e.keep)
     cut = sum(e.end - e.start for e in edl if not e.keep)
@@ -190,6 +220,14 @@ def _write_editlog(captions_path: Path, slug: str, report: dict) -> Path:
                 f"      snapped {s['boundary']} {s['from']:.3f} → {s['to']:.3f} "
                 f"(mid-word '{s['word']}')"
             )
+    if report["absorbed_slivers"]:
+        lines += [
+            "",
+            f"KEEP SLIVERS ABSORBED ({len(report['absorbed_slivers'])}) "
+            f"— remnants under {MIN_KEEP_S}s, too short for the encoder to open",
+        ]
+        for s in report["absorbed_slivers"]:
+            lines.append(f"  {s['start']:.3f}s → {s['end']:.3f}s  ({s['duration']}s)")
     if report["orphaned_images"]:
         lines += ["", f"OVERLAYS REMOVED BY THESE CUTS ({len(report['orphaned_images'])})"]
         for img in report["orphaned_images"]:
@@ -278,12 +316,15 @@ def edit(slug: str, cut_specs: list[str], dry_run: bool) -> dict:
             "text": " ".join(w.word for w in doc.words if w.start >= cs and w.end <= ce),
         })
 
+    edl, absorbed = _absorb_slivers(edl, tail_start)
+
     keep_after, cut_after = _durations(edl)
     report = {
         "slug": slug,
         "captions": str(captions_path.relative_to(ROOT)),
         "dry_run": dry_run,
         "cuts": applied,
+        "absorbed_slivers": absorbed,
         "keep_s_before": keep_before,
         "cut_s_before": cut_before,
         "keep_s_after": keep_after,
