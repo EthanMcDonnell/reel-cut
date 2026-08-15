@@ -1218,13 +1218,26 @@ def _mark_sentence_ends(words: list, pause_s: float) -> list:
 
 
 def _remap_kept_words(words: list, edl: list) -> list:
-    """Remap kept WordTimestamp objects from source clip time to output video time."""
+    """Remap kept WordTimestamp objects from source clip time to output video time.
+
+    A word is kept only if the EDL keeps the span it sits in. Testing the EDL rather
+    than trusting `w.keep` matters in Phase 2: captions.json carries no per-word keep
+    flag, so words reloaded from it all default to keep=True and a retake's words
+    would otherwise be captioned over the top of the take that replaced them.
+    """
     from .transcriber import WordTimestamp
 
     remap, _ = _build_edl_remap(edl)
+    cut_spans: dict[str, list[tuple[float, float]]] = {}
+    for e in edl:
+        if not e.keep:
+            cut_spans.setdefault(e.source_clip, []).append((e.start, e.end))
+
     remapped = []
     for w in words:
         if not w.keep:
+            continue
+        if any(s <= w.start < e for s, e in cut_spans.get(w.clip_path, [])):
             continue
         new_start = remap(w.clip_path, w.start)
         new_end = new_start + (w.end - w.start)

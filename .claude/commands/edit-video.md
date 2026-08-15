@@ -27,6 +27,10 @@ and the `words` array are load-bearing — the render and the EDL are both timed
 hand-edit `captions.json`, and never re-run `transcribe` to "refresh" anything: that recomputes
 the whole EDL and discards every fix `/prepare-video` applied.
 
+**Captions follow the EDL — you never edit them.** `_remap_kept_words` drops any word sitting in a
+`keep: false` span, so cutting a span removes its burned-in captions along with its audio. There is
+no separate caption edit to make, and making one by hand would desync the two.
+
 **Cuts must start after the last hook window.** `videos.json` hook `start`/`end` are
 *output-timeline* seconds, so removing anything earlier shifts every later word forward and slides
 the burned-in title cards onto the wrong words — silently, and burned-in means re-render-only to
