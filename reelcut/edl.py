@@ -77,7 +77,11 @@ def generate_scriptless_edl(
                 or gap.duration_ms >= mid_sentence_cut_floor_ms
             ):
                 cut_start = gap.speech_end               # true speech end — >= word end, never inside the word
-                cut_end   = nxt.start - pad_s            # keep natural lead before next word
+                # gap.speech_onset is the next word's measured speech onset, capped at
+                # nxt.start — so this is nxt.start - pad whenever the timestamp is trusted,
+                # and pulls earlier only when the audio says the word starts before its
+                # timestamp. Symmetric with speech_end on the left edge.
+                cut_end   = gap.speech_onset - pad_s     # keep natural lead before next word
 
                 # If the word immediately before this cut is shorter than min_keep_ms,
                 # push cut_start forward so the word has a minimum audible window.

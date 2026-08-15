@@ -25,7 +25,16 @@ class Gap:
     duration_ms: float
     gap_type: GapType
     cut: bool              # True = this gap will be removed
+    speech_onset: float = 0.0  # true onset of the following word's speech, <= end — earlier
+                           # than end when Whisper starts the word late. edl.py cuts up to
+                           # here (minus pad) so word heads aren't clipped. Defaults to
+                           # `end`, i.e. trusting the timestamp, which is the behaviour
+                           # everywhere the alignment is confident.
     skip_reason: str = ""  # non-empty when cut=False; human-readable explanation
+
+    def __post_init__(self) -> None:
+        if self.speech_onset <= 0.0:
+            self.speech_onset = self.end
 
 
 def detect_gaps(
@@ -291,6 +300,59 @@ def _find_trailing_speech_end(
     return min(last_speech_end, limit)
 
 
+def _find_speech_onset_backward(
+    audio: np.ndarray,
+    sr: int,
+    gap_start: float,
+    word_start: float,
+    config: CutsConfig,
+    min_silence_ms: float = 100.0,
+) -> float:
+    """Scan backward from word_start to find where the following word's speech begins.
+
+    The mirror of `_find_trailing_speech_end`. That one exists because WhisperX truncates
+    word *ends*, so the cut's left edge must be measured rather than taken from the
+    timestamp. WhisperX mis-times word *starts* the same way — but the cut's right edge
+    (`nxt.start - pad`) was still taken from the timestamp, so the only defence against a
+    late start was to refuse the cut outright and leave the whole gap in.
+
+    Walks back through contiguous speech from `word_start` and stops at the first silence
+    of at least `min_silence_ms` — beyond that lies the gap, not this word. Returns a time
+    in [gap_start, word_start]; **never later than word_start**, so a cut derived from it
+    is always a subset of the cut the raw timestamp would have produced. That one-sided
+    guarantee is what makes it safe to trust: it can shrink a cut, never extend one into
+    a word.
+
+    Returns word_start unchanged when the audio there is already silent (accurate
+    alignment — the common case), so it is inert for well-aligned words.
+    """
+    frame_size = max(64, int(0.010 * sr))
+    required_frames = max(1, int(min_silence_ms / 10))
+    silence_thresh = float(10 ** (config.silence_threshold_db / 20))
+
+    floor_sample = int(gap_start * sr)
+    pos = int(word_start * sr)
+
+    earliest_speech = pos
+    silent_run = 0
+
+    while pos - frame_size >= floor_sample:
+        pos -= frame_size
+        frame = audio[pos : pos + frame_size]
+        if len(frame) < 64:
+            break
+        is_speech = float(np.mean(np.abs(frame) > silence_thresh)) >= config.failure_tolerance_ratio
+        if is_speech:
+            silent_run = 0
+            earliest_speech = pos
+        else:
+            silent_run += 1
+            if silent_run >= required_frames:
+                break  # a real pause — the word's speech began at earliest_speech
+
+    return min(earliest_speech / sr, word_start)
+
+
 _LONG_WORD_DUR_S = 1.5  # words longer than this are suspect for alignment errors
 
 
@@ -361,14 +423,16 @@ def _build_gaps(
         # treat it as fully confident so it can't block a cut it will never be part of.
         # (Without this, silence in front of an aborted low-confidence take survives as
         # dead air, because the guard defends a word the retake pass then deletes.)
-        if retake_ranges:
-            if _in_retake(words[i], retake_ranges):
-                prev_conf = 1.0
-            if _in_retake(words[i + 1], retake_ranges):
-                next_conf = 1.0
+        # Only the preceding word needs this. A doomed *following* word no longer blocks
+        # anything: its branch measures the onset from audio instead of vetoing.
+        if retake_ranges and _in_retake(words[i], retake_ranges):
+            prev_conf = 1.0
 
         clip_duration_s = len(audio) / sr
         skip_reason = ""
+        # Default: trust the next word's timestamp as the cut's right edge. Only the
+        # low-confidence branch below replaces it with an audio-measured onset.
+        speech_onset = gap_end
         if config.preserve_start_s > 0 and effective_start < config.preserve_start_s:
             should_cut = False
             skip_reason = f"preserve_start ({effective_start:.3f}s < {config.preserve_start_s}s)"
@@ -376,9 +440,18 @@ def _build_gaps(
             should_cut = False
             skip_reason = f"preserve_end ({gap_end:.3f}s > clip-{config.preserve_end_s}s)"
         elif next_conf < config.min_word_confidence:
-            # The word we're cutting INTO is uncertain — don't cut regardless of prev side.
-            should_cut = False
-            skip_reason = f"hard_floor (next_conf={next_conf:.2f} < {config.min_word_confidence})"
+            # The word we're cutting INTO is uncertain, so its start timestamp cannot be
+            # trusted as the cut's right edge. Measure the onset from the audio instead of
+            # refusing the cut — the boundary then no longer depends on the timestamp, and
+            # `speech_onset` is capped at the timestamp so the cut can only shrink.
+            # (Refusing outright left the whole gap in: 1.8s of dead air in
+            # ht-ghd-better-gitcli because the next word scored 0.33.)
+            speech_onset = _find_speech_onset_backward(
+                audio, sr, effective_start, gap_end, config
+            )
+            should_cut = duration_ms >= config.min_silence_ms
+            if not should_cut:
+                skip_reason = f"too short ({duration_ms:.0f}ms < {config.min_silence_ms}ms)"
         elif prev_conf < config.min_word_confidence:
             # Only the preceding word is uncertain — apply relaxed threshold rather than blocking.
             should_cut = duration_ms >= config.low_confidence_min_gap_ms
@@ -402,6 +475,7 @@ def _build_gaps(
             end=gap_end,
             effective_start=effective_start,
             speech_end=speech_end,
+            speech_onset=speech_onset,
             duration_ms=duration_ms,
             gap_type=gap_type,
             cut=should_cut,
