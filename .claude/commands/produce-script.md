@@ -343,9 +343,13 @@ Write `assets/<video-slug>/automation.json` — exactly these two fields, nothin
 - `trigger_keywords` is the keyword from Step 3.6.3, exactly as the CTA says it, and it must be
   **one word**. The worker matches it as a substring of any comment of ten words or fewer, so a
   keyword that turns up inside ordinary words fires on people who weren't asking.
-- `follower_message` is the **reward** — the labelled resource list from Step 3.6.4, same labels,
-  same order, lead magnet first. Not one link: the whole block. It is the only written copy in the
-  automation, and an empty one means a confirmed follower is sent nothing at all.
+- `follower_message` is the **reward** — the `**VIEWER RESOURCES:**` block you just wrote into the
+  note, copied **character-for-character**. Every entry, including the `Video reference article:`
+  line, in the same order, with the same labels. Do not reword a label, do not merge two entries
+  into a sentence, and do not send only the lead magnet — this is what the follower actually
+  receives, and an empty one means they are sent nothing at all.
+- **Check the count before moving on:** the reward must contain exactly as many URLs as the block
+  in the note. Dropping the go-deeper resource or the reference article is the way this goes wrong.
 
 For `follow`, `disagreement` and `misc` there is no keyword and nothing to send, so write no file.
 A missing `automation.json` means the hooks post with no automation, which is the correct result.
