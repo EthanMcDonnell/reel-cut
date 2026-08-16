@@ -344,10 +344,11 @@ Write `assets/<video-slug>/automation.json` — exactly these two fields, nothin
   **one word**. The worker matches it as a substring of any comment of ten words or fewer, so a
   keyword that turns up inside ordinary words fires on people who weren't asking.
 - `follower_message` is the **reward** — the `**VIEWER RESOURCES:**` block you just wrote into the
-  note, copied **character-for-character**. Every entry, including the `Video reference article:`
-  line, in the same order, with the same labels. Do not reword a label, do not merge two entries
-  into a sentence, and do not send only the lead magnet — this is what the follower actually
-  receives, and an empty one means they are sent nothing at all.
+  note, copied **character-for-character**, except insert one blank line between entries (the
+  script file's no-blank-line rule is for the linter and doesn't apply to this DM). Every entry,
+  including the `Video reference article:` line, in the same order, with the same labels. Do not
+  reword a label, do not merge two entries into a sentence, and do not send only the lead magnet —
+  this is what the follower actually receives, and an empty one means they are sent nothing at all.
 - **Check the count before moving on:** the reward must contain exactly as many URLs as the block
   in the note. Dropping the go-deeper resource or the reference article is the way this goes wrong.
 
