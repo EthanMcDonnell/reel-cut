@@ -4,7 +4,7 @@
 Catches mechanical defects that self-review keeps shipping (em dashes, banned
 throat-clearing openers, missing apostrophes, format and blank-line violations)
 so they never reach a saved script. Mechanical rules are checked mechanically;
-subjective judgement stays with the stop-slop review.
+subjective judgement stays with the tellcheck review.
 
 Usage:
     .venv/bin/python .claude/skills/scripts/scripts/lint_script.py <script.md>

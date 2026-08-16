@@ -81,7 +81,7 @@ talks. Write `.claude/voice/voice-profile.md` covering:
   lines, or nothing).
 - **Tics to reuse** — recurring phrasings worth keeping.
 - **Never-do list** — AI-isms absent from their real speech, so generation avoids
-  them (cross-check against the `stop-slop` skill).
+  them (cross-check against the `tellcheck` skill).
 
 Ground every claim in the transcripts — quote real fragments. This file is read
 before script-writing to match the user's register.

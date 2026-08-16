@@ -69,7 +69,7 @@ You almost always land a one-line reframe and/or a witty follow:
   magnet (see proven-hooks.md — this drove 3000+ comments on your #1 video).
 
 ## Never do (absent from your real speech)
-Cross-check with the `stop-slop` skill, and specifically avoid what you never say:
+Cross-check with the `tellcheck` skill, and specifically avoid what you never say:
 - No "In today's video" / "Let's dive in" / "Buckle up" throat-clearing.
 - No "it's important to note", "delve", "leverage", "in conclusion".
 - No em dashes in the spoken line.
