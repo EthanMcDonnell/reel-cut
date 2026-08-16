@@ -21,9 +21,9 @@ def _slug_with_videos(tmp_path, monkeypatch, entries):
 
 
 VIDEOS = [
-    {"id": "unfair", "slug": "postgres-queue-unfair",
+    {"id": "unfair", "filename": "postgres-queue-unfair",
      "caption": "Figma's Postgres queue is deliberately unfair"},
-    {"id": "outages", "slug": "twenty-outages-one-quarter",
+    {"id": "outages", "filename": "twenty-outages-one-quarter",
      "caption": "20 outages stopped in one quarter"},
 ]
 
@@ -47,8 +47,8 @@ def test_suffix_is_not_assumed_to_be_flipped(tmp_path, monkeypatch):
 def test_longest_matching_stem_wins(tmp_path, monkeypatch):
     # One stem being a prefix of another must not steal the longer one's caption.
     entries = [
-        {"id": "short", "slug": "postgres-queue", "caption": "Short one"},
-        {"id": "long", "slug": "postgres-queue-unfair", "caption": "Long one"},
+        {"id": "short", "filename": "postgres-queue", "caption": "Short one"},
+        {"id": "long", "filename": "postgres-queue-unfair", "caption": "Long one"},
     ]
     slug = _slug_with_videos(tmp_path, monkeypatch, entries)
     assert post_video.caption_for(slug, "postgres-queue-unfair-flipped") == "Long one"
@@ -57,7 +57,7 @@ def test_longest_matching_stem_wins(tmp_path, monkeypatch):
 def test_mirror_entry_posts_under_its_own_caption(tmp_path, monkeypatch):
     # The whole point of a described duplicate: it must not reuse the hook's caption.
     entries = VIDEOS + [{
-        "id": "unfair-flipped", "of": "unfair", "slug": "queue-jumping-is-the-point",
+        "id": "unfair-flipped", "of": "unfair", "filename": "queue-jumping-is-the-point",
         "caption": "queue jumping is the point",
     }]
     slug = _slug_with_videos(tmp_path, monkeypatch, entries)
@@ -65,7 +65,7 @@ def test_mirror_entry_posts_under_its_own_caption(tmp_path, monkeypatch):
     assert post_video.caption_for(slug, "postgres-queue-unfair") == VIDEOS[0]["caption"]
 
 
-def test_entry_without_a_slug_is_keyed_by_its_slugified_caption(tmp_path, monkeypatch):
+def test_entry_without_a_filename_is_keyed_by_its_slugified_caption(tmp_path, monkeypatch):
     # render-hooks names that file from the caption, so the lookup has to match it.
     entries = [{"id": "x", "caption": "queue jumping is the point 💸"}]
     slug = _slug_with_videos(tmp_path, monkeypatch, entries)

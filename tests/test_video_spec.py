@@ -31,12 +31,12 @@ def test_load_videos_reads_entries_and_defaults(tmp_path):
     vp = tmp_path / "videos.json"
     vp.write_text(json.dumps([
         {"id": "a", "title": "Card A", "subtitle": "sub", "start": 0, "end": 3,
-         "scrim": False, "caption": "caption a 🤫", "slug": "caption-a"},
+         "scrim": False, "caption": "caption a 🤫", "filename": "caption-a"},
         {"id": "a-flipped", "of": "a", "title": "Card B", "caption": "caption b"},
     ]))
     assert load_videos(vp) == [
         VideoSpec(id="a", title="Card A", subtitle="sub", scrim=False, start=0.0, end=3.0,
-                  caption="caption a 🤫", slug="caption-a"),
+                  caption="caption a 🤫", filename="caption-a"),
         VideoSpec(id="a-flipped", title="Card B", caption="caption b", of="a"),
     ]
 
@@ -68,8 +68,8 @@ def test_base_and_mirror_split():
     assert mirror_of(videos, "b") is None
 
 
-def test_stem_falls_back_from_slug_to_caption_to_id():
-    assert stem_for(VideoSpec(id="x", slug="my-slug", caption="my caption")) == "my-slug"
+def test_stem_falls_back_from_filename_to_caption_to_id():
+    assert stem_for(VideoSpec(id="x", filename="my-slug", caption="my caption")) == "my-slug"
     assert stem_for(VideoSpec(id="x", caption="my caption 😵")) == "my-caption"
     assert stem_for(VideoSpec(id="hook1", caption="🧑❓")) == "hook1"
 

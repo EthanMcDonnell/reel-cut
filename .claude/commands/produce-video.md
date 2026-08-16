@@ -162,7 +162,7 @@ Read it, then pick the case:
 
 Two different artifacts live in each entry, and they are written to different rules:
 - `title` / `subtitle` — **burned into the video** as the gold card over the opening seconds
-- `caption` / `slug` — **never rendered**; they name the file and caption the post
+- `caption` / `filename` — **never rendered**; they name the file and caption the post
 
 ### The entries
 
@@ -172,14 +172,14 @@ One **base entry per hook** (same order as `hook_windows` from Step 3c), plus �
 [
   { "id": "tokens", "title": "What Are\nAI Tokens?", "subtitle": "Tech Behind Big Tech Day {n:tbbt}",
     "start": 0.0, "end": 3.1, "scrim": true,
-    "caption": "what are ai tokens? 🤔", "slug": "what-are-ai-tokens" },
+    "caption": "what are ai tokens? 🤔", "filename": "what-are-ai-tokens" },
 
   { "id": "tokens-flipped", "of": "tokens", "title": "The Hidden\nCost Of A Word",
-    "caption": "you pay by the syllable 💸", "slug": "pay-by-the-syllable" },
+    "caption": "you pay by the syllable 💸", "filename": "pay-by-the-syllable" },
 
   { "id": "syllable", "title": "Why ChatGPT\nBills Per Word", "subtitle": "Tech Behind Big Tech Day {n:tbbt}",
     "start": 3.1, "end": 6.4, "scrim": true,
-    "caption": "big tech bills you by the syllable 🤫", "slug": "billed-by-the-syllable" }
+    "caption": "big tech bills you by the syllable 🤫", "filename": "billed-by-the-syllable" }
 ]
 ```
 
@@ -191,7 +191,7 @@ Field reference:
 - `start`/`end` — **output-timeline seconds** from `hook_windows` (Step 3c), not source-clip time
 - `scrim` — `true` darkens footage behind the text; omit to use the config default
 - `caption` — the pretty post text (emoji + lowercase), used verbatim in the Telegram/Instagram post
-- `slug` — filesystem-safe stem for the `.mp4`: lowercase, hyphen-separated, no emoji. Leave empty and it's derived from `caption`; if nothing usable survives, the file is named after `id`
+- `filename` — filesystem-safe stem for the `.mp4`: lowercase, hyphen-separated, no emoji. Leave empty and it's derived from `caption`; if nothing usable survives, the file is named after `id`
 
 **Inputs to draw from:**
 - `hook_windows` from Step 3c — one window per hook, each with its output-timeline `(start, end)` — **plus that hook's spoken text** (from the Step 1 timeline). Every entry for hook N is derived from hook N's angle.
@@ -232,7 +232,7 @@ Examples of the register: `the cloud? never heard of it` · `dropbox unsubscribe
 
 **Use AskUserQuestion** to present the full proposed set at once — one option to accept all, plus "Enter my own". Pair each proposed title/caption with the hook it was derived from so the mapping is clear, and mark which entries are mirrors.
 
-**Omitting a mirror entry is a valid choice.** The duplicate then reuses its hook's card and caption under a `<slug><flip-suffix>.mp4` filename, and it renders faster: without its own card it shares the hook's overlay frames and segment extraction (~80% of a render) and repeats only the encode. Its own card means its own full render pass.
+**Omitting a mirror entry is a valid choice.** The duplicate then reuses its hook's card and caption under a `<filename><flip-suffix>.mp4` filename, and it renders faster: without its own card it shares the hook's overlay frames and segment extraction (~80% of a render) and repeats only the encode. Its own card means its own full render pass.
 
 **Logo resets:** each base entry's start/end is a logo-reset boundary. A brand re-mentioned after any card edge re-fires its logo in that section — no extra configuration needed.
 
@@ -244,8 +244,8 @@ Examples of the register: `the cloud? never heard of it` · `dropbox unsubscribe
 
 `render-hooks` reads the titled base entries of `videos.json` (one per hook, from Step 4b) and
 renders **one video per hook** — each is `hook_i + body`, with the other hooks cut out. The
-outputs are grouped in a per-slug folder and named by their entry's `slug`:
-`output/<video-slug>/<slug>.mp4` (falling back to the entry's `caption`, then its `id`). Music,
+outputs are grouped in a per-slug folder and named by their entry's `filename`:
+`output/<video-slug>/<filename>.mp4` (falling back to the entry's `caption`, then its `id`). Music,
 captions, and the title card behave exactly as in a normal render; there is no concatenation.
 
 **More files than hooks?** That is `output.flip` in `config.yaml`. With `apply: duplicate` a
@@ -256,7 +256,7 @@ extra files up automatically.
 
 A duplicate described by a mirror entry (`of`, Step 4b) is written under that entry's own name,
 card and caption, and is its own render pass. A duplicate with no mirror entry is cheap — named
-`<slug><flip-suffix>.mp4`, it shares the hook's overlay frames and segment extraction (~80% of a
+`<filename><flip-suffix>.mp4`, it shares the hook's overlay frames and segment extraction (~80% of a
 render), repeats only the encode, and posts with the hook's caption.
 
 Report all output paths when done.
@@ -337,12 +337,12 @@ for f in "{PROJECT_ROOT}"/output/"${SLUG}"/*.mp4; do
   grep -qxF "$key" "$SENT_LOG" && continue   # already notified — skip
   # Pretty caption: the videos.json entry whose stem matches this file (a mirrored duplicate
   # has its own entry, so it posts under its own caption). `stem` mirrors
-  # reelcut.video_spec.stem_for — slug, else caption, else id. Falls back to the filename.
+  # reelcut.video_spec.stem_for — filename, else caption, else id. Falls back to the filename.
   # An undescribed duplicate is <stem><flip-suffix>.mp4, so an exact miss falls back to the
   # longest stem the filename starts with — same rule as post_video.caption_for.
   caption=$(jq -r --arg s "${name%.mp4}" '
     def slugify: ascii_downcase | gsub("[^a-z0-9]+"; "-") | gsub("^-|-$"; "");
-    def stem: [(.slug // ""), (.caption // ""), (.id // "")] | map(slugify) | map(select(. != "")) | first // "";
+    def stem: [(.filename // ""), (.caption // ""), (.id // "")] | map(slugify) | map(select(. != "")) | first // "";
     (map(select(stem == $s)) | .[0].caption)
     // ([.[] | stem as $k | select($k != "" and ($s | startswith($k))) | {k: $k, c: .caption}]
         | sort_by(.k | length) | last | .c)

@@ -6,9 +6,9 @@ This is the single hand-authored description of what comes out of a render (fill
 * `id`      — stable handle for the entry; also the last-resort filename
 * `title` / `subtitle` / `scrim` — the burned-in title card
 * `start` / `end` — the hook window on the **output timeline** (base entries only)
-* `caption` — the Instagram/Telegram post text
-* `slug`    — filesystem stem for the `.mp4`
-* `of`      — set on a mirrored duplicate: the `id` of the entry it mirrors
+* `caption`  — the Instagram/Telegram post text
+* `filename` — filesystem stem for the `.mp4`
+* `of`       — set on a mirrored duplicate: the `id` of the entry it mirrors
 
 A base entry (no `of`) defines one hook. An entry with `of` is that hook rendered a second
 time with the footage flipped (`output.flip.apply: duplicate`) — it gets its own card, its
@@ -32,7 +32,7 @@ class VideoSpec:
     start: float = 0.0         # output-timeline seconds (base entries)
     end: float = 0.0
     caption: str = ""          # pretty post text, e.g. "why reddit ditched kafka 😵"
-    slug: str = ""             # filesystem stem, e.g. "why-reddit-ditched-kafka"
+    filename: str = ""         # filesystem stem, e.g. "why-reddit-ditched-kafka"
     of: str = ""               # base entry id this one mirrors ("" → this IS a base entry)
 
 
@@ -58,7 +58,7 @@ def load_videos(path: Path) -> list[VideoSpec]:
             start=float(v.get("start", 0.0)),
             end=float(v.get("end", 0.0)),
             caption=v.get("caption", ""),
-            slug=v.get("slug", ""),
+            filename=v.get("filename", ""),
             of=v.get("of", ""),
         )
         for v in raw
@@ -88,12 +88,12 @@ def mirror_of(videos: list[VideoSpec], base_id: str) -> VideoSpec | None:
 
 
 def stem_for(video: VideoSpec) -> str:
-    """Filesystem stem for this entry's `.mp4`: its slug, else its caption, else its id."""
-    return safe_slug(video.slug) or safe_slug(video.caption) or safe_slug(video.id)
+    """Filesystem stem for this entry's `.mp4`: its filename, else its caption, else its id."""
+    return safe_slug(video.filename) or safe_slug(video.caption) or safe_slug(video.id)
 
 
 def safe_slug(text: str) -> str:
-    """Reduce a title (or authored slug) to a filesystem/URL-safe stem: lowercase ASCII
+    """Reduce a title (or authored filename) to a filesystem/URL-safe stem: lowercase ASCII
     words joined by single hyphens, with emoji and punctuation dropped. Returns "" if nothing
     usable survives (caller falls back to the next candidate)."""
     ascii_only = text.encode("ascii", "ignore").decode("ascii").lower()

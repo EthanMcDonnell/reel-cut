@@ -14,9 +14,9 @@ from reelcut.video_spec import VideoSpec
 OUT = Path("/out")
 PLAN = _flip_plan(1, FlipConfig(mode="all", apply="duplicate", suffix="-flipped"))[0]
 BASE = VideoSpec(id="tokens", title="What Are\nAI Tokens?", start=0.0, end=3.1,
-                 caption="what are ai tokens? 🤔", slug="what-are-ai-tokens")
+                 caption="what are ai tokens? 🤔", filename="what-are-ai-tokens")
 MIRROR = VideoSpec(id="tokens-flipped", of="tokens", title="You Pay\nBy The Syllable",
-                   caption="you pay by the syllable 💸", slug="pay-by-the-syllable")
+                   caption="you pay by the syllable 💸", filename="pay-by-the-syllable")
 
 
 def _paths(groups):
@@ -42,7 +42,7 @@ def test_mirror_is_named_from_its_own_entry_not_the_flip_suffix():
     assert _paths(_hook_variant_groups(PLAN, BASE, MIRROR, OUT))[1] == OUT / "pay-by-the-syllable.mp4"
 
 
-def test_mirror_without_a_slug_is_named_from_its_caption():
+def test_mirror_without_a_filename_is_named_from_its_caption():
     mirror = VideoSpec(id="tokens-flipped", of="tokens", caption="you pay by the syllable 💸")
     assert _paths(_hook_variant_groups(PLAN, BASE, mirror, OUT))[1] == OUT / "you-pay-by-the-syllable.mp4"
 
@@ -56,7 +56,7 @@ def test_single_output_hook_never_uses_the_mirror_entry():
     ]
 
 
-def test_entry_with_no_slug_or_caption_falls_back_to_its_id():
+def test_entry_with_no_filename_or_caption_falls_back_to_its_id():
     base = VideoSpec(id="hook1", title="Untitled", start=0.0, end=3.1)
     assert _paths(_hook_variant_groups(PLAN, base, None, OUT)) == [
         OUT / "hook1.mp4",

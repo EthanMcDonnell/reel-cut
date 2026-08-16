@@ -251,8 +251,8 @@ def render_hooks(
         raise typer.Exit(1)
     hook_windows = [(v.start, v.end) for v in hooks]
 
-    # Output videos are grouped in a per-slug folder and named by their entry's slug (falling
-    # back to the caption, then the entry id).
+    # Output videos are grouped in a per-slug folder and named by their entry's filename
+    # (falling back to the caption, then the entry id).
     out_dir = Path(cfg.output.location) / slug
     out_dir.mkdir(parents=True, exist_ok=True)
     images = load_images(assets_dir / "images.json")
@@ -1098,7 +1098,7 @@ def _scaffold_videos(captions_path: Path, end_s: float) -> None:
         return
     stub = [{
         "id": "hook1", "title": "", "subtitle": "", "start": 0.0, "end": end_s,
-        "scrim": True, "caption": "", "slug": "",
+        "scrim": True, "caption": "", "filename": "",
     }]
     vp.write_text(json.dumps(stub, indent=2) + "\n")
     console.print(
