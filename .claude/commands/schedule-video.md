@@ -82,23 +82,27 @@ writes it at Step 3.6.5 for comment-bait series, carrying the CTA's keyword and 
 the same file `/post-video` reads. Nothing here reads the vault note, and nothing here invents an
 automation that file doesn't describe.
 
-**Do not compose the `automation` block yourself.** The file holds two fields; the rest of the spec
-is fixed in `scrape/automation_spec.py`. Ask for the resolved block, which both validates the file
-and prints exactly what to pass:
+**You never compose the `automation` block by hand.** `scrape/schedule_video.py` (Step 5) builds it
+itself, from `scrape/automation_spec.py` — the same code `/post-video` already trusts for this — so
+there is nothing per-hook to retype into a tool call. An earlier version of this workflow had the
+agent read `validate_automation.py --spec`'s printed JSON and hand-type it into `schedule_posts`;
+that step once dropped `template_type` on a live video's automation, silently downgrading a
+comment→follow→DM flow to a comment→DM flow with the wrong config shape, which meant it could never
+actually send a DM. Don't reintroduce a hand-typed `automation` block.
+
+Still run this before Step 3 — it's the only check that the reply function and DM pack still exist
+under those names in social-cockpit; a renamed one isn't rejected at booking time, it just sends an
+empty message days later on a live post:
 
 ```bash
-.venv/bin/python scrape/validate_automation.py <slug> --spec
+.venv/bin/python scrape/validate_automation.py <slug>
 ```
 
-- **Exit 0** → attach the JSON it printed to **every** hook, verbatim. Its `key` is the slug, so all
-  hooks of a slug share **one** flow: the first to publish creates it, every later one appends. A
-  per-hook key would create a flow per hook, which is the failure that rule exists to prevent.
-- **Exit 1** → fix what it reports before Step 3. It is the only check that the reply function and
-  DM pack still exist under those names in social-cockpit; a renamed one is not rejected at booking
-  time, it just sends an empty message days later on a live post.
-- **File absent** → schedule with no `automation` field at all. That is the correct result for
-  `follow`, `disagreement` and `misc` series, which have no keyword to trigger on. Say so in
-  Step 4 rather than treating it as a problem.
+- **Exit 0** → an automation will attach; say so in Step 4 with its keywords.
+- **Exit 1** → fix what it reports before Step 3.
+- **File absent** → hooks schedule with no automation. That is the correct result for `follow`,
+  `disagreement` and `misc` series, which have no keyword to trigger on. Say so in Step 4 rather
+  than treating it as a problem.
 
 ## Step 3 — Ask the cockpit for the slots
 
@@ -147,7 +151,7 @@ Instead, walk the hooks and make **one call per hook**, each starting after the 
 
 Every time still comes from the cockpit — it picks the time of day, skips full days, and dodges
 collisions. The loop only decides which window to ask about, which is the one thing the tool cannot
-work out for itself. Booking is still a **single** `schedule_posts` call at Step 5; it is only the
+work out for itself. Booking is still a **single** `schedule_video.py` run at Step 5; it is only the
 asking that iterates.
 
 A call that returns no slot means the calendar is full from that point on — stop there and report
@@ -218,57 +222,34 @@ It stays unscheduled and unclaimed, and the next run picks it up.
 
 ## Step 5 — Book them
 
-On confirmation, call `mcp__social-cockpit__schedule_posts` **once** with every hook:
+On confirmation, book every hook in **one** run of `scrape/schedule_video.py` — it builds the
+caption and the automation block itself (see above), POSTs each hook to social-cockpit's
+`/api/schedule` directly, and claims each success in `output/.published` as it goes:
 
-```json
-{
-  "posts": [
-    {
-      "scheduled_at": "2026-08-16T09:30",
-      "video_path": "/absolute/path/to/output/<slug>/<hook>.mp4",
-      "video": "<slug>",
-      "caption": "…",
-      "trial_reel": true,
-      "automation": { "key": "<slug>", "trigger_keywords": ["…"], "config": { } }
-    }
-  ]
-}
+```bash
+.venv/bin/python scrape/schedule_video.py <slug> \
+  "<hook1>.mp4=<scheduled-at-iso-1>" \
+  "<hook2>.mp4=<scheduled-at-iso-2>"
 ```
 
 Notes:
-- **`video` must be the slug on every hook.** It is what marks these posts as variants of one
-  video, and so what makes the same-video spacing work on the next run. It is stored on the job and
-  never sent to Instagram. Omitting it silently disables the throttle protection.
-- `video_path` must be **absolute**. The cockpit reads the file at publish time, so it must stay
-  where it is until then.
-- `scheduled_at` is the string `suggest_slots` returned, **verbatim**. Without an offset it is read
-  in the cockpit's timezone, which is the zone the suggestion was made in.
-- One entry per hook, every entry a different `scheduled_at`, all in **one** call — the tool creates
-  them in order and reports each independently.
-- `automation.key` is the **slug** on every entry, or the whole `automation` field is absent on
-  every entry. Never a mix, and never a per-hook key.
-- Entries are independent: a rejected one does not roll back the others. The result lists
-  `scheduled` and `failed` separately — report both, and retry only the failures.
+- One `<hook>.mp4=<scheduled-at-iso>` pair per hook, in the order agreed in Step 4. `<hook>.mp4` is
+  the filename only (the script resolves it under `output/<slug>/`); `<scheduled-at-iso>` is the
+  string `suggest_slots` returned, **verbatim** — without an offset it's read in the cockpit's
+  timezone, the zone the suggestion was made in.
+- Entries are independent: one failing (e.g. a `day_full` conflict) doesn't roll back the others.
+  The script prints `✓`/`✗` per hook and a `Booked N, failed N` summary — report both, and retry
+  only the failures.
+- The `video` field marking these as one video's hooks, the `automation.key` shared across them,
+  and the `output/.published` ledger line are all written by the script — nothing left for you to
+  compose or append by hand.
 
-## Step 6 — Record what was booked
+## Step 6 — Report what was booked
 
-Append one line per **successfully** scheduled hook to `output/.published` — the same ledger
-`/post-video` writes, in the same format:
-
-```
-<slug>/<file>.mp4<TAB><scheduled-at-iso>
-```
-
-This is what claims the hook. Once its line exists it can never be posted or scheduled again
-until you delete that line, by either command.
-
-The timestamp is the hook's slot, written as naive local time with seconds
-(`2026-08-16T18:00:00`) to match every other line. It is **informational** — a note of when the
-hook is due out. Nothing reads it: spacing comes from the cockpit's calendar, not from this file.
-
-Never write a line for a hook that appears in the result's `failed` list.
-
-Then report the final schedule, with job ids, in the cockpit's timezone.
+`output/.published` is already updated for every hook the script booked — that's what claims it;
+nothing more to write. Report the final schedule, with job ids, in the cockpit's timezone. For any
+hook the script reported `failed`, no ledger line was written, so it stays eligible for the next
+run once you've addressed why it failed.
 
 ### What this means for `/post-video`
 
