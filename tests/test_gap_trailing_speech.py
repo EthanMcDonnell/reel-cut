@@ -62,6 +62,21 @@ def test_bridges_stop_closure_to_reach_final_syllable():
     assert 0.73 <= speech_end <= 0.77
 
 
+def test_bridges_a_closure_that_starts_at_the_word_end():
+    # "plugins.dat": WhisperX ended `.dat` at the /t/ closure, so the scan opens on
+    # silence and the spoken "dat" sits just past it. Bailing on that first silent
+    # frame handed edl.py the raw word end and the syllable was cut from the render.
+    audio = np.concatenate([
+        _tone(0.40),            # word body, ending exactly at the aligned word end
+        _tone(0.07, amp=0.0),   # stop closure 0.40–0.47 (< max_closure_ms)
+        _tone(0.20),            # stranded syllable 0.47–0.67
+        _tone(0.30, amp=0.0),   # trailing silence
+    ])
+    speech_end = _find_trailing_speech_end(audio, SR, word_end=0.40, gap_end=1.20, config=CutsConfig())
+
+    assert 0.65 <= speech_end <= 0.69
+
+
 def test_does_not_bridge_a_long_pause_to_grab_next_word():
     # A pause longer than a stop-closure (150 ms) is a real word boundary — a later
     # burst (breath or next word) must stay in the cut region.

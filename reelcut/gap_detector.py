@@ -263,11 +263,17 @@ def _find_trailing_speech_end(
     A word can carry a whole trailing syllable past a *stop-closure* — the brief
     silence of a /d/,/t/,/k/… before a final sibilant (e.g. "SS-Dee-z"). WhisperX
     may cut the word at the closure, leaving the last syllable stranded in the gap.
-    So we bridge silences up to `max_closure_ms` when speech resumes, and stop at the
-    first silence longer than that (a real pause — beyond it lies a breath or the next
-    word, not this word). Returns a time in [word_end, min(gap_end, word_end +
-    max_extend)]. Returns word_end unchanged when audio is already silent there
-    (accurate alignment — the common case), so the change is inert for aligned words.
+    So we bridge silences up to `max_closure_ms` and stop at the first silence longer
+    than that (a real pause — beyond it lies a breath or the next word, not this word).
+
+    The budget applies **from the first frame**, not only once speech has been seen.
+    WhisperX truncates a word *at* the closure as readily as after it, in which case the
+    scan opens on silence and the stranded syllable sits just past it — "plugins.dat"
+    aligned to `.dat` = 44.459–44.639s while the spoken "dat" ran 44.729–45.129s. Bailing
+    out on that first silent frame handed the EDL the raw word end and the whole syllable
+    was cut. Returns a time in [word_end, min(gap_end, word_end + max_extend)], and
+    word_end unchanged when the silence outlasts the budget (accurate alignment — the
+    common case), so the scan stays inert for aligned words.
     """
     frame_size = max(64, int(0.010 * sr))  # 10 ms frames
     silence_thresh = float(10 ** (config.silence_threshold_db / 20))
@@ -278,7 +284,6 @@ def _find_trailing_speech_end(
     end_sample = int(limit * sr)
 
     last_speech_end = float(word_end)  # end of the most recent speech frame
-    saw_speech = False                 # has any speech appeared since word_end?
     silence_run = 0                    # consecutive silent samples since last speech
 
     for pos in range(start_sample, end_sample, frame_size):
@@ -287,12 +292,9 @@ def _find_trailing_speech_end(
             break
         is_speech = float(np.mean(np.abs(frame) > silence_thresh)) >= config.failure_tolerance_ratio
         if is_speech:
-            saw_speech = True
             silence_run = 0
             last_speech_end = (pos + frame_size) / sr
         else:
-            if not saw_speech:
-                return word_end  # silent right away — word end was accurate
             silence_run += frame_size
             if silence_run > closure_samples:
                 break  # real pause — the trailing syllable ended at last_speech_end
