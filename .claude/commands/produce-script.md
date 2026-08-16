@@ -321,32 +321,44 @@ Bad: `Lead Magnet (AWS Storage Blog, building multi writer applications on S3 wi
 
 ### Step 3.6.5 — Write the automation spec
 
-*Comment-bait series only.* The keyword and the lead magnet are the whole content of the comment
+*Comment-bait series only.* The keyword and the resources are the whole content of the comment
 automation, so write them down now, while you still hold them — `/post-video` and
 `/schedule-video` both read this file and neither of them can see the vault note.
 
-Write `assets/<video-slug>/automation.json`:
+Every automation this project produces is the same funnel — comment the keyword, get asked to
+follow, reply DONE, receive the resources. Only the **keyword** and the **reward** differ between
+videos, so those two are the only things you write. The rest is fixed in
+`scrape/automation_spec.py` and filled in at post time; do not restate it here and do not invent
+a variation of it.
+
+Write `assets/<video-slug>/automation.json` — exactly these two fields, nothing else:
 
 ```json
 {
-  "key": "<video-slug>",
   "trigger_keywords": ["<KEYWORD>"],
-  "template_type": "comment_to_dm",
-  "config": {
-    "initial_message": "<one line naming the resource, then the lead magnet URL>",
-    "comment_replies": ["Sent 📩", "Check your DMs 🔗"]
-  }
+  "follower_message": "<the resources block from Step 3.6.4, verbatim>"
 }
 ```
 
-- `key` is the slug, always. Every hook of this video joins one flow, created by whichever hook
-  publishes first — that is why the key must not vary per hook.
-- `trigger_keywords` is the keyword from Step 3.6.3, exactly as the CTA says it.
-- `initial_message` sends the **lead magnet** — the first URL in the resources block, the one the
-  CTA promised. Not the article, unless the article *is* the lead magnet.
+- `trigger_keywords` is the keyword from Step 3.6.3, exactly as the CTA says it, and it must be
+  **one word**. The worker matches it as a substring of any comment of ten words or fewer, so a
+  keyword that turns up inside ordinary words fires on people who weren't asking.
+- `follower_message` is the **reward** — the labelled resource list from Step 3.6.4, same labels,
+  same order, lead magnet first. Not one link: the whole block. It is the only written copy in the
+  automation, and an empty one means a confirmed follower is sent nothing at all.
 
 For `follow`, `disagreement` and `misc` there is no keyword and nothing to send, so write no file.
 A missing `automation.json` means the hooks post with no automation, which is the correct result.
+
+Then check it, and fix anything it reports before moving on:
+
+```bash
+.venv/bin/python scrape/validate_automation.py <video-slug>
+```
+
+It checks both halves: the two fields you wrote, and that the reply function and DM pack named in
+`automation_spec.py` still exist in social-cockpit. Nothing rejects a renamed pack at post time —
+the flow is created, fires, and sends an empty message — so this is the only place it gets caught.
 
 Then re-run the linter and confirm it still passes:
 
@@ -488,7 +500,7 @@ Report to the user:
 - Prompt resolved as: [URL / file reference / phrase / bare claim] → [TOPIC] ([SERIES])
 - Script saved to: [file path]
 - CTA & resources: the CTA type the series called for and the line you wrote, plus the shipped links appended to the file. Note any verified candidate you cut, in case the user wants a different lead magnet
-- Automation: the keyword and the URL written to `assets/<slug>/automation.json`, or that none was written and why (the series' CTA type has no keyword)
+- Automation: the keyword, the template and the resources the reward carries, written to `assets/<slug>/automation.json` and validated clean — or that none was written and why (the series' CTA type has no keyword)
 - **If `SOURCE_URLS: none`:** say the source gate skipped Stages 0.4, 4, and 4b, so the video ships with no screenshots and no figures. Skip the four items below
 - Screenshots saved to: `assets/<slug>/`
 - Screenshot results: how many captured (with the exact/fuzzy breakdown), and explicitly list any snippets that were **not found** so the user knows which claims lack on-screen evidence

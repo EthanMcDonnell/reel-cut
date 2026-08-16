@@ -38,7 +38,6 @@ Usage:
 """
 
 import argparse
-import json
 import os
 import sys
 from datetime import datetime, timedelta
@@ -46,6 +45,9 @@ from pathlib import Path
 
 import requests
 from dotenv import load_dotenv
+
+sys.path.insert(0, str(Path(__file__).parent))
+import automation_spec  # noqa: E402
 
 ROOT = Path(__file__).parent.parent
 load_dotenv(ROOT / ".env")
@@ -90,20 +92,17 @@ def caption_for(slug, stem):
 
 
 def automation_for(slug):
-    """Load the optional per-slug comment automation from assets/<slug>/automation.json.
+    """The optional per-slug comment automation, expanded from its two fields.
 
-    Every hook of this slug is a variation of the same video, so they all share a
-    single automation flow: the ``key`` defaults to the slug, and the cockpit
-    creates the flow on the first hook and appends each later hook to it. Returns
-    the spec dict (with ``key`` defaulted), or None when the file is absent — in
-    which case hooks post exactly as before, with no automation.
+    ``assets/<slug>/automation.json`` holds only the trigger keyword and the
+    reward; ``automation_spec.build`` fills in the rest, which is identical for
+    every video this project produces. Every hook of this slug is a variation of
+    the same video, so they all share a single flow: the ``key`` is the slug, and
+    the cockpit creates the flow on the first hook and appends each later hook to
+    it. Returns None when the file is absent — in which case hooks post exactly
+    as before, with no automation.
     """
-    path = ROOT / "assets" / slug / "automation.json"
-    if not path.exists():
-        return None
-    spec = json.loads(path.read_text())
-    spec.setdefault("key", slug)
-    return spec
+    return automation_spec.for_slug(slug)
 
 
 def read_published(log):
@@ -272,9 +271,11 @@ def main():
 
     if automation:
         kws = ", ".join(automation.get("trigger_keywords", [])) or "(none)"
+        reward = automation["config"]["follower_message"]
         print(f"\nAutomation: key={automation['key']!r} keywords=[{kws}] "
-              f"type={automation.get('template_type', 'comment_to_dm')} "
+              f"type={automation['template_type']} "
               f"— all hooks share one flow (created on the first, appended after).")
+        print(f"  reward ({len(reward)} chars): {reward.splitlines()[0] if reward else '(empty)'}")
     else:
         print(f"\nAutomation: none (no assets/{slug}/automation.json) "
               "— posting without an automation.")

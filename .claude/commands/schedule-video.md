@@ -78,14 +78,24 @@ caption of the hook it mirrors.
 ### The automation
 
 `assets/<slug>/automation.json` is the only source of the comment automation. `/produce-script`
-writes it at Step 3.6.5 for comment-bait series, carrying the CTA's keyword and the lead magnet
-URL; it is the same file `/post-video` reads. Nothing here reads the vault note, and nothing here
-invents an automation that file doesn't describe.
+writes it at Step 3.6.5 for comment-bait series, carrying the CTA's keyword and the reward; it is
+the same file `/post-video` reads. Nothing here reads the vault note, and nothing here invents an
+automation that file doesn't describe.
 
-- **File present** → attach it to every hook, with `key` forced to the **slug** (default it when the
-  file omits it, and override a `key` that is anything else). All hooks of a slug share **one**
-  flow: the first to publish creates it, every later one appends. A per-hook key would create a
-  flow per hook, which is the failure this rule exists to prevent.
+**Do not compose the `automation` block yourself.** The file holds two fields; the rest of the spec
+is fixed in `scrape/automation_spec.py`. Ask for the resolved block, which both validates the file
+and prints exactly what to pass:
+
+```bash
+.venv/bin/python scrape/validate_automation.py <slug> --spec
+```
+
+- **Exit 0** → attach the JSON it printed to **every** hook, verbatim. Its `key` is the slug, so all
+  hooks of a slug share **one** flow: the first to publish creates it, every later one appends. A
+  per-hook key would create a flow per hook, which is the failure that rule exists to prevent.
+- **Exit 1** → fix what it reports before Step 3. It is the only check that the reply function and
+  DM pack still exist under those names in social-cockpit; a renamed one is not rejected at booking
+  time, it just sends an empty message days later on a live post.
 - **File absent** → schedule with no `automation` field at all. That is the correct result for
   `follow`, `disagreement` and `misc` series, which have no keyword to trigger on. Say so in
   Step 4 rather than treating it as a problem.

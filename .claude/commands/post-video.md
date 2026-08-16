@@ -49,21 +49,27 @@ duplicate flows, and re-posting is idempotent. No file = posts with no automatio
 `/produce-script` writes this file at Step 3.6.5 for comment-bait series, from the CTA's keyword
 and lead magnet. Series with no keyword get no file, and post without an automation.
 
-`assets/<slug>/automation.json` (all fields except `trigger_keywords`/`config` optional):
+`assets/<slug>/automation.json` holds only what differs between videos:
 
 ```json
 {
   "trigger_keywords": ["GUIDE"],
-  "template_type": "comment_to_dm",
-  "config": {
-    "initial_message": "Here's the link: https://…",
-    "comment_replies": ["Sent 📩", "Check your DMs 🔗"]
-  }
+  "follower_message": "Here you go:\n\n<labelled resource list>"
 }
 ```
 
-See `social-cockpit/docs/publish-with-automation.md` for the full config spec
-(`comment_to_dm` / `comment_to_reply` / `comment_to_follow_dm`).
+`scrape/automation_spec.py` fills in the rest — the `comment_to_follow_dm` template, the
+`casual_replies` reply function, the `casual` DM pack, `DONE`, and `resources` — which is identical
+for every video and so lives in one place rather than in each file.
+`social-cockpit/docs/publish-with-automation.md` covers the publish-time behaviour.
+
+Before posting, confirm it validates. This is also the only check that the packs still exist under
+those names in social-cockpit — a renamed one is not rejected at post time, it just sends an empty
+message:
+
+```bash
+.venv/bin/python scrape/validate_automation.py <video-slug>
+```
 
 ## Prerequisites (set up once, outside this workflow)
 
