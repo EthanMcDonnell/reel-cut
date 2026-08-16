@@ -120,6 +120,13 @@ last 1–2 weeks that the feed missed.
 No DB. The bar is a **real, concrete, named artifact or incident** that survives a thumbnail —
 never an abstract concept. Verify each with `WebSearch` and, where possible, a primary source.
 
+This series is where the Stage 5 mechanism test matters most, because it's the one that accepts
+news. The named artifact has to *be* the technical subject — Ariane 5's 16-bit overflow, Knight
+Capital's stale deploy, the Therac-25 race condition. A dramatic incident that merely happened
+to involve a computer does not qualify. If you find yourself writing a handling note about
+sensitive subject matter, that is a signal to re-run the mechanism test, not a way to keep an
+idea that already failed it.
+
 Check the existing banks before generating: this series drifts hard toward malware/exploits.
 If the existing pool is already malware-heavy, deliberately branch — aviation, finance, space
 hardware, infrastructure, legal, cryptography, detective stories with no attacker at all.
@@ -176,12 +183,34 @@ Hooks** and `.claude/voice/proven-hooks.md` — not a generic phrasing. Each ide
 - **Notes** for anything the user must know: adjacency to an existing idea, a company already
   used, a handling sensitivity, a figure that needs re-checking at produce time.
 
+**The mechanism test.** Before keeping an idea, write its technical core as one sentence: the
+system, algorithm, or engineering decision the video explains. If that sentence contains no
+mechanism — only *what happened* and *to whom* — the idea has nothing to fill 60 seconds with
+and it fails, however striking the outcome. Compare:
+
+- *"The SMTP connect timeout compiled to zero, aborting after ~3ms, and 3 millilightseconds is
+  558 miles"* — a mechanism. The whole video is the explanation.
+- *"Someone typed the wrong username into a records request"* — not a mechanism. It's an
+  outcome. The explanation ends with the hook.
+
+A shocking outcome is what earns the click; the mechanism is what the viewer stays for. An idea
+needs both, and this test is the one that catches ideas carrying only the first.
+
 Drop an idea if any of these fail:
 
 - It collides with the Stage 3 exclusion set.
 - Its source doesn't actually support the hook's claim (see Stage 6).
+- **It fails the mechanism test above** — a news event, court case, or political story with no
+  technical substance under it. Tech that merely *appears* in the story (a username, an app, a
+  device) is not the same as tech the story is *about*.
 - It's a company-origins story, or any other shape the Stage 2 weak tail flagged.
 - It's a reworded version of another idea in the same batch.
+
+This is a judgement call, not a keyword ban. Politics, crime, and law are fine subjects when the
+video is genuinely about the engineering — a court ruling on how a system works, a regulation
+that forces an architectural change, a breach with a real root cause. What doesn't belong is a
+story the channel would be covering purely because it's in the news. When an idea is borderline,
+keep it and say plainly in its **Notes** why it's borderline, so the user makes the call.
 
 ## Stage 6 — The verification gate
 

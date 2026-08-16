@@ -191,27 +191,21 @@ in the batch by a distance and decays fastest.*
 
 ---
 
-## interesting-tech — Interesting Tech (5)
+## interesting-tech — Interesting Tech (4)
 
 *The existing pool for this series is almost entirely malware/exploits. `VIDEO_IDEAS_TBBT_V2.md`
-started branching out (aviation, finance, space); these five continue that and add none of the
+started branching out (aviation, finance, space); these continue that and add none of the
 same incidents. All fact-checked.*
 
-1. **"One missing underscore sent an innocent man to prison for 18 months."** `[share]`
-   A 2018 child-luring investigation out of Madison, Wisconsin was looking for a Kik user named
-   `fus__ro_dah` — two underscores, a Skyrim reference. Police requested records for
-   `fus_ro_dah`, one underscore. That single character pointed at Brandon Klayme in Halifax,
-   Nova Scotia. Police found no evidence of the crime on any of his devices, arrested him anyway
-   in 2020, convicted him in 2023 and sentenced him in 2024. Nobody caught the discrepancy until
-   his own legal team spotted it preparing the appeal. On **July 23, 2026** the Nova Scotia Court
-   of Appeal overturned every conviction and acquitted him.
-   - **Sources:** [Vice](https://www.vice.com/en/article/how-an-underscore-in-a-skyrim-themed-username-sent-an-innocent-man-to-jail-for-18-months/) · [PC Gamer](https://www.pcgamer.com/games/an-innocent-man-spent-18-months-in-prison-because-police-misread-his-skyrim-user-name/) · [Slashdot](https://yro.slashdot.org/story/26/07/28/0037231/a-missing-underscore-sent-innocent-man-to-prison-for-18-months)
-   - **Why:** it's both fresh news *and* the Knight-Capital shape — a single character with a
-     catastrophic blast radius. Strongest idea in this section.
-   - **Handling note:** the underlying offence is child abuse material. Keep the video on the
-     identifier error and the wrongful conviction; don't dwell on the crime.
+*Removed 2026-08-16: "One missing underscore sent an innocent man to prison for 18 months"
+(the `fus__ro_dah` Kik case). Two independent reasons. **No technical substance** — the entire
+mechanism is a mistyped username in a police records request; there is no system, algorithm or
+artifact to explain, which is what every other idea in this section is built on. And the subject
+matter (child abuse material, a wrongful conviction, and as of August a Nova Scotia Attorney
+General review of the prosecution) is a live political story this channel has no reason to touch.
+Do not re-add it.*
 
-2. **"A university found out their email couldn't travel more than 500 miles — and the answer was the speed of light."** `[save]`
+1. **"A university found out their email couldn't travel more than 500 miles — and the answer was the speed of light."** `[save]`
    Trey Harris's 2002 sysadmin classic. The statistics department chair reported mail failing to
    anything over 500 miles away. Cause: a sendmail upgrade left the SMTP connect timeout with no
    compiled default, so it was set to **zero** — which on that machine aborted a connect after
@@ -221,7 +215,7 @@ same incidents. All fact-checked.*
    - **Why:** the "impossible-sounding artifact" the series is built on, and the payoff is a
      genuine delight rather than another exploit.
 
-3. **"A race condition with a window of milliseconds turned the lights off for 55 million people."** `[save]`
+2. **"A race condition with a window of milliseconds turned the lights off for 55 million people."** `[save]`
    The 2003 Northeast blackout. Lines sagged into overgrown trees in northern Ohio around 3:05pm,
    but the reason it cascaded is a race condition in GE Energy's **XA/21** energy management
    system at FirstEnergy's control room: the alarm subsystem silently died, so operators had no
@@ -231,7 +225,7 @@ same incidents. All fact-checked.*
    before that afternoon.
    - **Sources:** [The Register: Tracking the Blackout bug](https://www.theregister.com/2004/04/08/blackout_bug_report/) · [Northeast blackout of 2003 — Wikipedia](https://en.wikipedia.org/wiki/Northeast_blackout_of_2003)
 
-4. **"A developer deleted 11 lines of code and broke builds at Facebook, Netflix and Airbnb."** `[save]`
+3. **"A developer deleted 11 lines of code and broke builds at Facebook, Netflix and Airbnb."** `[save]`
    March 2016: Kik's lawyers demanded Azer Koçulu rename his npm package `kik`; npm sided with
    the trademark holder and reassigned the name; Koçulu unpublished **all 273** of his packages.
    One was `left-pad` — 11 lines that pad a string — and React, Babel and a large slice of the
@@ -243,7 +237,7 @@ same incidents. All fact-checked.*
      lower ceiling than the other four. Include only if the angle goes past the anecdote (the
      real subject is transitive dependency depth, which is what makes it evergreen).
 
-5. **"Intel shipped a chip that got a division wrong, and it cost them nearly half a billion dollars."** `[save]`
+4. **"Intel shipped a chip that got a division wrong, and it cost them nearly half a billion dollars."** `[save]`
    The 1994 Pentium FDIV bug — a lookup table missing five entries, wrong answers rare enough
    that Intel's initial position was that ordinary users would never hit it, and a public
    backlash that forced a no-questions-asked replacement programme and a ~$475M write-off.
@@ -339,11 +333,11 @@ If you ship five things next, these five, in order:
 
 1. `updates` #1 — OpenAI's agent hacking Hugging Face. Biggest story, fastest decay.
 2. `ai-fundamentals` #1 — compaction. Best series on the channel, freshest possible peg.
-3. `interesting-tech` #1 — the missing underscore. Fresh *and* the classic shape.
+3. `tbbt` #1 — Atlassian's events rail. Strongest reframe of the tbbt six.
 4. `ai-fundamentals` #2 — token billing. Direct descendant of the #1 video.
-5. `tbbt` #1 — Atlassian's events rail. Strongest reframe of the tbbt six.
+5. `interesting-tech` #1 — the 500-mile email. Evergreen, and the payoff is a delight.
 
-**28 ideas.** tbbt/updates/interesting-tech are source-verified against full text (one flagged
-exception: `interesting-tech` #5, and two "verify at produce time" notes on fast-decaying
+**27 ideas.** tbbt/updates/interesting-tech are source-verified against full text (one flagged
+exception: `interesting-tech` #4, and two "verify at produce time" notes on fast-decaying
 figures). tech-in-one-breathe and ai-fundamentals are concept picks per their series files.
 Run each through `/produce-script` with its series slug.
