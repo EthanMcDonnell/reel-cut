@@ -122,7 +122,7 @@ Example entry (added to the same images list written in Step 4):
 
 Use the `reelcut timeline` output from Step 1. Read the first several lines of the output and use intuition: hooks are the short, punchy statements at the very start of the video — questions, shocking facts, provocative claims — that grab attention before the body explanation begins. The body starts when the speaker shifts into explaining or narrating (e.g. "Picture a...", "So how does...", "It works by...").
 
-Each distinct hook sentence is one hook. Count them and note the output-timeline start of each. The script file at `{VAULT_VIDEOS_TODO}<slug>.md` can help confirm what the HOOK section contains, but the timeline is the ground truth for timing.
+Each distinct hook sentence is one hook. Count them and note the output-timeline start of each. The script file at `assets/<slug>/script.md` can help confirm what the HOOK section contains, but the timeline is the ground truth for timing.
 
 **2. Locate each hook's boundaries in the output timeline.**
 

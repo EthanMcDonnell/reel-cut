@@ -18,8 +18,8 @@ architectural decision, a concrete outcome, told to engineers who don't need the
 **Dropbox and Reddit are deliberately excluded** — both companies already have shipped
 videos; don't reuse them.
 
-Dedup checked against: `series/tbbt.md`, `VIDEO_IDEAS.md`, the Obsidian vault (`Videos To
-Do` / `Videos Completed` / `Video Ideas`). None of the 10 below overlap with anything
+Dedup checked against: `series/tbbt.md`, `VIDEO_IDEAS.md`, the standing backlog
+(`VIDEO_IDEAS_BACKLOG.md`) and produced slugs. None of the 10 below overlap with anything
 already shipped, queued, or previously proposed.
 
 ---
@@ -120,7 +120,7 @@ concrete, named artifact/incident, fact-checked, that survives the thumbnail.
 
 ## tech-in-one-breathe — 4 New Ideas
 
-Heads up: the Obsidian vault already has ~17 unproduced "-in-one-breath" ideas queued
+Heads up: `VIDEO_IDEAS_BACKLOG.md` already has ~17 unproduced "-in-one-breath" ideas queued
 (CDN, caching, DNS, Docker, event-driven, gRPC, HTTP, load balancing, microservices, Nginx,
 OAuth, rate limiting, Redis, SQL vs NoSQL, TCP vs UDP, WebSockets, APIs) — most of what's
 "missing" from this series is really just an existing backlog nobody's scripted yet. These 4

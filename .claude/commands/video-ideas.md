@@ -75,12 +75,12 @@ generating anything, assemble the full exclusion list:
 
 - **Shipped / produced:** `ls assets/archive/` and `ls output/` — every slug there is done.
 - **Existing idea banks:** read every `VIDEO_IDEAS*.md` and `*_VIDEO_IDEA*.md` at the repo root
-  (`Glob` for `*VIDEO_IDEA*.md` — the set grows each time this command runs).
+  (`Glob` for `*VIDEO_IDEA*.md` — the set grows each time this command runs). This includes
+  `VIDEO_IDEAS_BACKLOG.md`, a large standing backlog of unproduced ideas — much of what looks
+  "missing" from a series is really already queued there.
 - **Series files:** read `series/<slug>.md` for each in-scope series — the **Queued** and
   **Best Hooks** sections list both what is planned and what already shipped.
-- **Obsidian vault:** `Glob` `{VAULT_VIDEO_IDEAS}` and `{VAULT_VIDEOS_TODO}` for `*.md`. The
-  vault holds a large unproduced backlog — much of what looks "missing" from a series is really
-  already queued there.
+- **Scripted but not yet shot:** `assets/*/script.md` — a slug with a script is already written.
 - **Rejected topics:** `.venv/bin/python scrape/query.py rejected --series <series>` — topics
   previously ruled out. Do not re-propose them.
 

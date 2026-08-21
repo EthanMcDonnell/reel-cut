@@ -9,7 +9,7 @@ concept picks per their series files.
 
 **Deduped against:** `VIDEO_IDEAS.md`, `VIDEO_IDEAS_TBBT_V2.md`, `GIT_INTERNALS_VIDEO_IDEAS.md`,
 `SSCD_VIDEO_IDEA.md`, `series/*.md`, and the 16 produced slugs in `assets/archive/`.
-Nothing here repeats those. **Still dedup against the Obsidian vault before producing.**
+Nothing here repeats those. **Still dedup against `VIDEO_IDEAS_BACKLOG.md` before producing.**
 
 ---
 
@@ -249,7 +249,7 @@ Do not re-add it.*
 
 ## tech-in-one-breathe — Tech in One Breath (5)
 
-*No source DB by design. The Obsidian vault already has ~17 unproduced entries (CDN, caching,
+*No source DB by design. `VIDEO_IDEAS_BACKLOG.md` already has ~17 unproduced entries (CDN, caching,
 DNS, Docker, gRPC, HTTP, load balancing, microservices, Nginx, OAuth, rate limiting, Redis,
 SQL vs NoSQL, TCP vs UDP, WebSockets, APIs, event-driven) and rounds 1–2 added Postgres,
 Elasticsearch, Terraform, service mesh, message queues, WebAssembly, vector DBs, consistent

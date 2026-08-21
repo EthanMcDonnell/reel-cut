@@ -2,8 +2,8 @@
 
 Generated against each series' proven hook pattern and the channel's real top-performers
 (see `series/*.md` and `.claude/voice/proven-hooks.md`). Each idea is a **hook** (in the
-series' winning template) plus the **angle** it has to deliver. Dedup against the Obsidian
-Vault (`Videos To Do` / `Videos Completed`) before producing.
+series' winning template) plus the **angle** it has to deliver. Dedup against
+`VIDEO_IDEAS_BACKLOG.md` and `assets/*/script.md` before producing.
 
 Reference winners this is modelled on:
 - `interesting-tech` — "What is 42.zip and why was it so dangerous?" (101k views, 5038 eng)

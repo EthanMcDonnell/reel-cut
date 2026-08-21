@@ -27,7 +27,7 @@ The user drops their footage into `assets/<video-slug>/` before running this com
 
 Output goes to `assets/<slug>/`, named after the footage stem (e.g. `Teleprompter-2026-01-06_20-59-13.captions.json`). The transcription step prints the actual path.
 
-**This is a full reset.** Transcription first wipes everything derived from any prior run — the old `captions.json`, debug reports, and the overlay files `images.json` / `videos.json` / `audio.json` — then re-scaffolds them as fresh stubs. So re-running this command on a slug that already went through `/produce-video` discards those image timings, title cards, and captions (they'd otherwise drift against the new transcript). Source inputs are untouched: the footage, `manifest.json`, and the produce-script screenshots all carry over.
+**This is a full reset.** Transcription first wipes everything derived from any prior run — the old `captions.json`, debug reports, and the overlay files `images.json` / `videos.json` / `audio.json` — then re-scaffolds them as fresh stubs. So re-running this command on a slug that already went through `/produce-video` discards those image timings, title cards, and captions (they'd otherwise drift against the new transcript). Source inputs are untouched: the footage, `script.md`, `manifest.json`, and the produce-script screenshots all carry over.
 
 ## Step 2.5 — Reconcile screenshot manifest (only if one exists)
 
@@ -48,6 +48,14 @@ If no `manifest.json` exists, skip this step.
 ## Step 3 — Assess
 
 Work out the anomalies here, apply the certain ones in Step 4, then report — so the numbers you quote are post-fix.
+
+**Read `assets/<video-slug>/script.md` first — it is what the speaker was reading.** `/produce-script` writes it and it survives the Step 2 reset. It is ground truth for **wording**, never for timing or for which take to keep. Align the surviving transcript against it; it settles three things the confidence digest cannot see, because Whisper is regularly confident *and* wrong:
+
+- **Misheard words** — a transcript token differing from the script's word at the aligned position (`Chachabit` → **ChatGPT**, `unsee` → **un-issue**, `pgKeeper` → **PGKeeper**). Certain fix in Step 4, including casing.
+- **Dropped script sentences** — a script sentence with no surviving transcript span. Usually a cut that reached too far; report it naming the `edl` span that swallowed it.
+- **Inserted tokens** — a transcript word with no script counterpart (a stray `well.` or `it.`).
+
+**Ad-libs are normal and are not anomalies.** The delivery rewords freely ("Before" → "Previously", an added "See," or "usually"), and hooks are often reworded on the fly. Only flag a difference that changes a word's identity, a name's spelling or casing, or a claim. If the slug has no `script.md` (footage predating it, or a slug that never went through `/produce-script`), say so once and assess from the transcript alone.
 
 **Hook takes are intentional.** The user deliberately records several alternate openers back-to-back at the top of the clip (often fully reworded, e.g. "Reddit moved a petabyte…" then "Reddit swapped Kafka onto Kubernetes…"). The retake detector won't cut these because they share little verbatim wording. Do **not** flag them as anomalies or bad cuts — just list the alternate hooks. Only a *truncated false start* (a cut-off opener like "…brokers to re…" immediately followed by its clean completion) is a real anomaly worth flagging as such.
 
@@ -73,9 +81,10 @@ Auto-fix **only** these (if a fix needs guessing which take the user wants, or a
 | Micro keep-segment that is a bare fragment (no full word) | flip → `keep: false` |
 | Missed cut sitting *inside* a keep span, where the digest names the exact dead words | split that one span into three at the surrounding word boundaries (from `words`), middle sub-span → `keep: false` |
 | Misheard word, where the surrounding sentence makes the intended word unambiguous (e.g. "never miss is **riding** commit messages" → `writing`; "**AR** whips up a commit message" → `AI`) | rewrite that `words[i].word` text |
+| Transcript word contradicted by `script.md` at the aligned position — including a proper noun's casing (`Chachabit` → `ChatGPT`, `pgKeeper` → `PGKeeper`) | rewrite that `words[i].word` text to the script's word |
 | Mid-sentence full stop or spurious capital that splits/mangles a caption line | rewrite that `words[i].word` text |
 
-**Never auto-fix** (report only): alternate hook takes (user picks one), low-confidence survivors that are the *correct* word, word swaps where you'd be guessing what was actually said or the swap changes the claim, large kept gaps / ambiguous boundaries that need a human listen, and hard-cap hits.
+**Never auto-fix** (report only): alternate hook takes (user picks one), low-confidence survivors that are the *correct* word, word swaps where you'd be guessing what was actually said or the swap changes the claim, large kept gaps / ambiguous boundaries that need a human listen, and hard-cap hits. The script's **dropped sentences and inserted tokens** are report-only too — fixing either means moving a boundary or adding/removing a `words` entry, which this step never does.
 
 After editing, recompute keep/cut totals from the edited `edl`, then write the fix log to `assets/<slug>/<clip-stem>.debug.7.fixlog.txt` (same `<clip-stem>` as the other `.debug.*` files; `7` sorts it last). Format:
 

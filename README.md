@@ -34,7 +34,7 @@ playwright install chromium    # required for JS-heavy article screenshots
 
 | Phase | Command | What it does |
 |:-----:|:--------|:-------------|
-| **0** | `/produce-script <url/title>` | Article → script (Obsidian) + screenshots (`assets/<slug>/`) |
+| **0** | `/produce-script <url/title>` | Article → script + screenshots (`assets/<slug>/`) |
 | **1** | `/prepare-video <slug>` | Transcribe footage, review and fix the EDL |
 | **2** | `/produce-video <slug>` | Assign image timings, render `output/<slug>.mp4` |
 

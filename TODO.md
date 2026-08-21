@@ -1,11 +1,12 @@
 # ReelCut — PENDING TODO
 
 **Status:** Gap 1 **FIXED** 2026-08-03. Gap 4 **FIXED** 2026-08-15. Gap 5 **FIXED** 2026-08-16.
-Gaps 2 and 3 still proposed, not started. Gap 4 opened and closed 2026-08-15 off
+Gap 2 **ADDRESSED** 2026-08-22 (see below). Gap 3 still proposed, not started. Gap 4 opened and closed 2026-08-15 off
 `ht-ghd-better-gitcli`; Gap 5 opened and closed 2026-08-16 off `vlc-defender-plugin-cache`.
 Opened 2026-08-02 off the `canva-session-revocations-s3` prepare run; Gap 3 added 2026-08-03 off
 `figma-pgkeeper-connection-pooler`. Every gap here was found the same way — by comparing the cut
-transcript against the source script in the Obsidian vault, which the pipeline still never reads.
+transcript against the source script, which until 2026-08-22 lived outside the repo and the
+pipeline never read. Scripts now live at `assets/<slug>/script.md`.
 
 ---
 
@@ -25,7 +26,7 @@ sentence that was never retaken at all.
 
 ### What happened
 
-Script (`Videos To Do/canva-session-revocations-s3.md`):
+Script (`assets/canva-session-revocations-s3/script.md`):
 
 > They moved the list into S3, chopped into timestamped chunks. **A booting gateway grabs only the
 > last 12 hours.** Older ones don't matter, since every cookie refreshes by then…
@@ -128,7 +129,7 @@ content bug. Do not "improve" this by re-adding a length or content threshold �
    - `canva-session-revocations-s3` — the intended fix (35.501s → 31.867s cut).
    - `claude-1m-context-window-trap` — **the same bug, second instance** (38.756s → 35.129s). The
      cut opened at 29.520 and ate `"So the work explodes as the text grows"`, confirmed scripted in
-     `Videos Completed/claude-1m-context-window-trap.md`. That video is **already published** with
+     that slug's script. That video is **already published** with
      the line missing.
 
 ### Follow-up
@@ -140,7 +141,7 @@ edit — or a hand-patch of the single span. Not done yet.
 
 ---
 
-## Gap 2 — nothing checks the transcript against the script
+## Gap 2 — nothing checks the transcript against the script ✅ ADDRESSED 2026-08-22
 
 Two errors in this clip were invisible to the confidence-based digest because Whisper was
 **confident and wrong**:
@@ -151,12 +152,32 @@ Two errors in this clip were invisible to the confidence-based digest because Wh
 | 0:53.924 | `well.` (conf 0.79) | *(nothing — "…from MySQL, stampeding…")* |
 
 "so nothing can **unsee** it" ships as an on-screen caption. `debug.0.review.txt` ranks by
-confidence, so it will never surface either one. Meanwhile the exact source text is sitting in the
-vault at `Videos To Do/<slug>.md`, unused by the pipeline.
+confidence, so it will never surface either one. The exact source text existed, but it was sitting
+in an Obsidian vault outside the repo that no command read.
 
-### Proposed fix
+### What shipped
 
-A reconciliation pass over the script, modelled on the existing
+`/produce-script` Stage 3.5 now saves the script to **`assets/<slug>/script.md`** instead of the
+vault, and `/prepare-video` Step 3 reads it as ground truth for wording before assessing. The
+Obsidian vault is gone from the project — its 115-note idea backlog was exported to
+`VIDEO_IDEAS_BACKLOG.md` at the root.
+
+The check is **agent-run, not a script**: Step 3 aligns the surviving transcript against
+`script.md` and reports the three buckets below; Step 4's fix table gained a row making a
+script-contradicted `words[i].word` a CERTAIN-FIX, casing included — the auto-fix policy amendment
+this gap called for. Dropped sentences and inserted tokens stay report-only, because fixing either
+means moving a boundary or adding/removing a `words` entry, which Step 4 never does.
+`_clean_transcription_artifacts` already ignores `script.md`, so it survives a re-transcribe like
+`manifest.json` — no code change was needed.
+
+**Still open:** this only helps slugs produced *after* 2026-08-22. Existing slugs were not
+backfilled (deliberate — the shipped ones gain nothing), so the verification below has no
+`script.md` to run against and was never executed.
+
+### Original proposal — a deterministic pass (not built)
+
+If the agent-run check proves too loose, the fallback is a reconciliation pass over the script,
+modelled on the existing
 `scrape/reconcile_manifest.py` (same report-buckets shape, same `--slug` interface):
 
 - Align the surviving transcript against the script body, hook lines, conclusion and CTA.
@@ -200,8 +221,8 @@ All hand-fixed in `words[]` this run. The slug also actively *taught* the wrong 
 
 ### Proposed fix
 
-Seed `initial_prompt` from the vault note at `Videos To Do/<slug>.md`, which the pipeline already
-has a deterministic path to and still doesn't read (same root cause as Gap 2).
+Seed `initial_prompt` from `assets/<slug>/script.md`, which the pipeline has a deterministic path
+to and still doesn't read (same root cause as Gap 2, which put the file there).
 
 **Do not feed it the full script.** Whisper's `initial_prompt` is capped at 224 tokens — half the
 448-token decoder context — and a ~200-word script overruns that. Worse, long prose priming
@@ -234,15 +255,16 @@ slugs with no note.
 
 1. Re-transcribe `figma-pgkeeper-connection-pooler` with the note-seeded prompt and require
    `ChatGPT`, `PgBouncer`, `PGKeeper` to come back correct and correctly cased, with no hand-fix.
-2. Re-run every slug under `assets/` and `assets/archive/` — slugs with no vault note must produce
+2. Re-run every slug under `assets/` and `assets/archive/` — slugs with no `script.md` must produce
    a byte-identical transcript to today's, proving the fallback path is inert.
 3. Assert the assembled prompt stays under the 224-token cap; fail loudly rather than let Whisper
    silently truncate it.
 
 ### Note
 
-Overlaps Gap 2 — both need the vault note parsed. Build the note reader **once** and let both use
-it. Gap 3 is the cheaper half and stands alone, so it is the sensible first slice.
+Overlaps Gap 2, which has now put `script.md` in the slug folder. Gap 3 is the remaining half:
+it needs the same file parsed, but in `reelcut/cli.py` at transcribe time rather than by the agent
+at review time.
 
 ---
 
@@ -457,13 +479,12 @@ comes at the same class of defect from the script side.
 Gaps 1 and 2 are `/prepare-video` Step 3/4 concerns. Gap 4 landed in `gap_detector`/`edl`, which
 run during Step 2, so an existing slug only picks it up on a re-transcribe. Gap 3 is earlier — it changes Step 2
 (transcription) itself, so it must land before a run, not after; it cannot be applied as a fix to
-an existing `captions.json`. Gap 2 wants a Step 2.6 (script reconciliation)
-mirroring the existing Step 2.5 (manifest reconciliation), with its wrong-word hits eligible for
-auto-fix and its dropped-sentence hits report-only.
+an existing `captions.json`. Gap 2 landed inside Step 3 rather than as a
+Step 2.6 of its own, with its wrong-word hits eligible for auto-fix and its dropped-sentence hits
+report-only.
 
-Note the current auto-fix policy in `.claude/commands/prepare-video.md` says the **only** editable
-thing is `captions.json` → `edl`. Gap 2's wrong-word fix would edit `words[]` text, so that policy
-needs an explicit amendment before it can apply anything — otherwise it stays report-only.
+Gap 2's wrong-word fix edits `words[]` text, which the auto-fix policy in
+`.claude/commands/prepare-video.md` now explicitly permits.
 
 ## Evidence
 
