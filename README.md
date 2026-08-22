@@ -137,7 +137,24 @@ Telegram "file-exchange"  ──link──▶  phone
 ```
 
 Tailscale only *serves* files, so the upload needs a receiver behind it —
-`scripts/upload_server.py`, stdlib-only, streaming to disk:
+`scripts/upload_server.py`, stdlib-only, streaming to disk.
+
+**Setup — one command, once:**
+
+```bash
+./scripts/install-upload-agent.sh        # --uninstall to remove
+```
+
+That installs a `com.reelcut.upload` LaunchAgent (`RunAtLoad` + `KeepAlive`), registers the
+`/upload` serve path, and probes the result. From then on launchd starts the receiver at every
+login and respawns it if it dies — nothing to remember before a shoot.
+
+The plist is **generated, not committed**: it needs absolute paths, so a checked-in one would
+be wrong on every machine but the author's. It's built from the script's own location — so
+**rerun the installer after moving the repo** or recreating `.venv`. Reinstalling is safe
+(it boots out the old agent first). Logs land in `/tmp/reelcut-upload.{log,err}`.
+
+To run it in the foreground instead — debugging, or a non-macOS host with no launchd:
 
 ```bash
 .venv/bin/python scripts/upload_server.py            # loopback :8770
