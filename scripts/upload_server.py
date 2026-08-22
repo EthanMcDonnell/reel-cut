@@ -8,14 +8,19 @@ The body is the file itself, not multipart — so both the browser page and an i
 Shortcut ("Get Contents of URL", method PUT, request body = file) hit the same route,
 and the server never buffers a 200 MB clip in memory.
 
-Bind stays on loopback; `tailscale serve` fronts it:
+Binds the machine's tailnet IP, so the URL is a plain
+`http://100.x.y.z:8770/upload/<slug>` reachable from any device on the tailnet —
+no MagicDNS, no TLS cert, no `tailscale serve` config to go stale. That address
+lives in the 100.64.0.0/10 CGNAT range and only routes between tailnet peers, so
+binding it does NOT expose the server on local wi-fi.
 
-    .venv/bin/python scripts/upload_server.py
-    tailscale serve --bg --set-path /upload http://127.0.0.1:8770
+    .venv/bin/python scripts/upload_server.py           # auto-detects the tailnet IP
+    .venv/bin/python scripts/upload_server.py 127.0.0.1 # or pin a host
 """
 
 import os
 import re
+import subprocess
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -165,11 +170,26 @@ class Handler(BaseHTTPRequestHandler):
         pass  # uploads log themselves; skip the per-request noise
 
 
+def tailnet_ip() -> str:
+    """This machine's tailnet IP, or loopback if Tailscale isn't up."""
+    try:
+        out = subprocess.run(
+            ["tailscale", "ip", "-4"], capture_output=True, text=True, timeout=5
+        )
+        if ip := out.stdout.strip().splitlines()[:1]:
+            return ip[0]
+    except (OSError, subprocess.SubprocessError):
+        pass
+    print("tailnet IP unavailable — binding loopback (phone uploads won't reach)", flush=True)
+    return "127.0.0.1"
+
+
 def main() -> None:
     if not ASSETS.is_dir():
         sys.exit(f"assets dir not found: {ASSETS}")
-    print(f"upload server on http://127.0.0.1:{PORT}/upload/<slug> → {ASSETS}/<slug>/", flush=True)
-    ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
+    host = sys.argv[1] if len(sys.argv) > 1 else tailnet_ip()
+    print(f"upload server on http://{host}:{PORT}/upload/<slug> → {ASSETS}/<slug>/", flush=True)
+    ThreadingHTTPServer((host, PORT), Handler).serve_forever()
 
 
 if __name__ == "__main__":

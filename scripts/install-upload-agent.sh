@@ -43,6 +43,12 @@ cat > "$PLIST" <<PLIST_EOF
     <string>$SERVER</string>
   </array>
   <key>WorkingDirectory</key><string>$REPO</string>
+  <!-- launchd hands down a minimal PATH; the server shells out to the tailscale
+       CLI to find its bind address, so /usr/local/bin has to be on it. -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
   <!-- Back off between respawns so a crash-on-startup bug can't spin the CPU. -->
@@ -56,24 +62,16 @@ PLIST_EOF
 launchctl bootstrap "$TARGET" "$PLIST"
 echo "installed $LABEL → $PLIST"
 
-# Serve config lives in tailscaled and persists across reboots, so this is
-# idempotent rather than per-boot. Non-fatal: the agent is useful on localhost
-# even if the tailnet isn't up yet.
-if command -v tailscale >/dev/null; then
-  tailscale serve --bg --set-path /upload "http://127.0.0.1:$PORT" >/dev/null \
-    && echo "serving /upload → 127.0.0.1:$PORT" \
-    || echo "tailscale serve failed — need 'sudo tailscale set --operator=\$USER'?"
-else
-  echo "tailscale not installed — upload reachable on localhost only"
-fi
-
 sleep 1
+HOST="$(tailscale ip -4 2>/dev/null | head -1 || true)"
+[[ -n "$HOST" ]] || { echo "tailnet IP unavailable — run 'tailscale up'"; HOST=127.0.0.1; }
+
 # A nonexistent slug must answer 404 — that proves the server is up and routing,
 # without needing a real slug to exist yet.
 code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 \
-       "http://127.0.0.1:$PORT/upload/probe-not-a-slug" || true)
+       "http://$HOST:$PORT/upload/probe-not-a-slug" || true)
 if [[ "$code" == "404" ]]; then
-  echo "upload server responding on :$PORT"
+  echo "ready: http://$HOST:$PORT/upload/<slug>"
 else
   echo "server not responding (got '${code:-no reply}') — check /tmp/reelcut-upload.err"
 fi

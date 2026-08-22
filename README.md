@@ -131,7 +131,7 @@ shoot the take, tap the link, and the clip lands in that slug's folder ready for
 ```
 Telegram "file-exchange"  ──link──▶  phone
                                        │  PUT (raw file body)
-       https://<host>.ts.net/upload/<slug>
+        http://100.x.y.z:8770/upload/<slug>
                                        ▼
                           assets/<slug>/<filename>
 ```
@@ -142,10 +142,14 @@ Telegram "file-exchange"  ──link──▶  phone
 ./scripts/install-upload-agent.sh        # --uninstall to remove
 ```
 
-Installs a `com.reelcut.upload` LaunchAgent (starts at login, respawns on crash), registers the
-`/upload` serve path, probes it. **Rerun after moving the repo** — the generated plist hardcodes
-paths. Logs: `/tmp/reelcut-upload.{log,err}`. Foreground alternative:
-`.venv/bin/python scripts/upload_server.py`.
+Installs a `com.reelcut.upload` LaunchAgent (starts at login, respawns on crash) and prints the
+URL. **Rerun after moving the repo** — the generated plist hardcodes paths. Logs:
+`/tmp/reelcut-upload.{log,err}`.
+
+The server binds this machine's **tailnet IP**, not loopback — so the link works from any
+tailnet device with no MagicDNS, no TLS cert, and no `tailscale serve` config to go stale.
+That 100.64.0.0/10 address routes only between tailnet peers, so it is *not* exposed on local
+wi-fi. Pin a different host with `.venv/bin/python scripts/upload_server.py 127.0.0.1`.
 
 **Notes**
 

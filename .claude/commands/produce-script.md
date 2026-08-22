@@ -505,11 +505,11 @@ tailnet is down, say so in the final report and carry on — the script is alrea
 
 ```bash
 SLUG="<video-slug>"
-TS_HOST=$(tailscale serve status --json | jq -r '.Web | keys[0]' | sed 's/:443$//')
-TS_IP=$(tailscale ip -4)
-url="https://${TS_HOST}/upload/${SLUG}"
-# Only send a link the receiver actually answers — see README "Inbound footage".
-if curl -sf --max-time 15 --resolve "${TS_HOST}:443:${TS_IP}" "$url" -o /dev/null; then
+# Tailnet IP, not the MagicDNS name — the receiver binds it directly, so the link
+# needs no DNS and no cert. See README "Inbound footage".
+url="http://$(tailscale ip -4 | head -1):8770/upload/${SLUG}"
+# Only send a link the receiver actually answers.
+if curl -sf --max-time 15 "$url" -o /dev/null; then
   PAYLOAD=$(jq -n --arg c "🎥 Script ready for ${SLUG}. Upload the take: ${url}" \
     '{content: $c, topic: "file-exchange"}')
   curl -sf {TELEGRAM_API}/telegram/send -H 'Content-Type: application/json' -d "$PAYLOAD"
