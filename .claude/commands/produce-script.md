@@ -499,9 +499,10 @@ figure equivalent of the screenshot manifest — it records the *selection* and 
 
 ## Step 5 — Send the upload link to Telegram
 
-Post the slug's footage-upload link to the `file-exchange` topic, so the script and the place
-to return the take arrive together on your phone. Best-effort: if the upload server or the
-tailnet is down, say so in the final report and carry on — the script is already written.
+Post the slug's footage-upload link to the `file-exchange` topic, so the place to return the
+take is waiting on your phone. Sends the link only — the script itself stays at
+`assets/<slug>/script.md`. Best-effort: if the upload server or the tailnet is down, say so in
+the final report and carry on — the script is already written.
 
 ```bash
 SLUG="<video-slug>"
@@ -534,5 +535,5 @@ Report to the user:
 - Screenshot results: how many captured (with the exact/fuzzy breakdown), and explicitly list any snippets that were **not found** so the user knows which claims lack on-screen evidence
 - Figures: how many charts/diagrams were selected (with `kind` and the beat each supports), the count of candidates harvested vs. kept, and where they were saved (`assets/<slug>/figures/`, `figures.json`). Call out each figure **dropped by the span gate** and the span it fell short by — that means the body never got the sustained passage the diagram needed, and is worth a script edit. Say so if legibility was judged from metadata rather than from reading the images
 - Unsupported claims: any checkable claim you dropped at selection time because the source didn't state it verbatim (Step 4.1.2) — the user may want to re-source or soften it
-- Upload link: the `https://<host>.ts.net/upload/<slug>` URL sent to Telegram — or that it wasn't sent, and why (upload server down, tailnet unreachable)
+- Upload link: the `http://<tailnet-ip>:8770/upload/<slug>` URL sent to Telegram — or that it wasn't sent, and why (upload server down, tailnet unreachable)
 - Any warnings (near-tie runner-up available, low-confidence fuzzy matches, skipped screenshots, etc.)

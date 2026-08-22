@@ -76,9 +76,8 @@ f.onchange=()=>{{
 def slug_dir(path: str) -> Path | None:
     """assets/<slug> for an upload path, or None if the slug is bad or unknown.
 
-    Accepts both `/upload/<slug>` and `/<slug>`: `tailscale serve --set-path /upload`
-    strips the prefix before proxying, so the tailnet and a direct localhost hit
-    arrive with different paths.
+    The `/upload` prefix is optional — a `tailscale serve --set-path /upload` front
+    end strips it before proxying, so both forms are accepted for that setup.
     """
     parts = [p for p in unquote(path).strip("/").split("/") if p]
     if parts[:1] == ["upload"]:
