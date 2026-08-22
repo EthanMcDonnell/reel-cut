@@ -497,6 +497,30 @@ figure equivalent of the screenshot manifest — it records the *selection* and 
   `script_context`, marking where the figure appears and disappears. Same rules as screenshot
   triggers; leave `""` if no clean anchor and produce-video spans the whole line.
 
+## Step 5 — Send the upload link to Telegram
+
+Post the slug's footage-upload link to the `file-exchange` topic, so the script and the place
+to return the take arrive together on your phone. Best-effort: if the upload server or the
+tailnet is down, say so in the final report and carry on — the script is already written.
+
+```bash
+SLUG="<video-slug>"
+TS_HOST=$(tailscale serve status --json | jq -r '.Web | keys[0]' | sed 's/:443$//')
+TS_IP=$(tailscale ip -4)
+url="https://${TS_HOST}/upload/${SLUG}"
+# Only send a link the receiver actually answers — see README "Inbound footage".
+if curl -sf --max-time 15 --resolve "${TS_HOST}:443:${TS_IP}" "$url" -o /dev/null; then
+  PAYLOAD=$(jq -n --arg c "🎥 Script ready for ${SLUG}. Upload the take: ${url}" \
+    '{content: $c, topic: "file-exchange"}')
+  curl -sf {TELEGRAM_API}/telegram/send -H 'Content-Type: application/json' -d "$PAYLOAD"
+else
+  echo "upload endpoint unreachable — start scripts/upload_server.py (see README)"
+fi
+```
+
+The link 404s until `assets/<video-slug>/` exists, which it does by this point — the script and
+screenshots were written there in the earlier steps.
+
 ## Final Output
 
 Report to the user:
@@ -510,4 +534,5 @@ Report to the user:
 - Screenshot results: how many captured (with the exact/fuzzy breakdown), and explicitly list any snippets that were **not found** so the user knows which claims lack on-screen evidence
 - Figures: how many charts/diagrams were selected (with `kind` and the beat each supports), the count of candidates harvested vs. kept, and where they were saved (`assets/<slug>/figures/`, `figures.json`). Call out each figure **dropped by the span gate** and the span it fell short by — that means the body never got the sustained passage the diagram needed, and is worth a script edit. Say so if legibility was judged from metadata rather than from reading the images
 - Unsupported claims: any checkable claim you dropped at selection time because the source didn't state it verbatim (Step 4.1.2) — the user may want to re-source or soften it
+- Upload link: the `https://<host>.ts.net/upload/<slug>` URL sent to Telegram — or that it wasn't sent, and why (upload server down, tailnet unreachable)
 - Any warnings (near-tie runner-up available, low-confidence fuzzy matches, skipped screenshots, etc.)
