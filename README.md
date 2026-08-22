@@ -136,46 +136,27 @@ Telegram "file-exchange"  ──link──▶  phone
                           assets/<slug>/<filename>
 ```
 
-Tailscale only *serves* files, so the upload needs a receiver behind it —
-`scripts/upload_server.py`, stdlib-only, streaming to disk.
-
-**Setup — one command, once:**
+**Setup** — once, after `tailscale up`:
 
 ```bash
 ./scripts/install-upload-agent.sh        # --uninstall to remove
 ```
 
-That installs a `com.reelcut.upload` LaunchAgent (`RunAtLoad` + `KeepAlive`), registers the
-`/upload` serve path, and probes the result. From then on launchd starts the receiver at every
-login and respawns it if it dies — nothing to remember before a shoot.
+Installs a `com.reelcut.upload` LaunchAgent (starts at login, respawns on crash), registers the
+`/upload` serve path, probes it. **Rerun after moving the repo** — the generated plist hardcodes
+paths. Logs: `/tmp/reelcut-upload.{log,err}`. Foreground alternative:
+`.venv/bin/python scripts/upload_server.py`.
 
-The plist is **generated, not committed**: it needs absolute paths, so a checked-in one would
-be wrong on every machine but the author's. It's built from the script's own location — so
-**rerun the installer after moving the repo** or recreating `.venv`. Reinstalling is safe
-(it boots out the old agent first). Logs land in `/tmp/reelcut-upload.{log,err}`.
+**Notes**
 
-To run it in the foreground instead — debugging, or a non-macOS host with no launchd:
-
-```bash
-.venv/bin/python scripts/upload_server.py            # loopback :8770
-tailscale serve --bg --set-path /upload http://127.0.0.1:8770
-```
-
-- **Two ways in, one route.** `GET /upload/<slug>` returns a one-input page for the browser;
-  an iOS Shortcut can `PUT` the file straight from the share sheet. The body is the raw file,
-  not multipart, so neither path buffers the clip in memory.
-- **The slug must already exist** under `assets/` — an unknown slug is a 404, so a typo can't
-  create a junk folder or land footage where `/prepare-video` won't find it.
-- **Nothing is overwritten.** A second upload of the same filename becomes `<name>-2.<ext>`.
-  Note that `reelcut transcribe` on a folder transcribes *every* video in it, so delete the
-  take you don't want before running `/prepare-video`.
-- **Partial uploads never survive.** Bytes stage as `<name>.part` and are renamed only on a
-  complete transfer, so a dropped connection can't leave a truncated clip that looks like
-  real footage.
-- **Quality:** in Safari, *Browse → Files* uploads the original bytes; the photo-library
-  picker may re-encode. The Shortcut route always sends the original.
-- `--set-path /upload` **strips the prefix** before proxying, so the server accepts both
-  `/upload/<slug>` and `/<slug>`.
+- `GET /upload/<slug>` is a browser page; an iOS Shortcut can `PUT` the file from the share
+  sheet. Body is the raw file, not multipart — neither path buffers the clip in memory.
+- Unknown slug → 404, so a typo can't strand footage outside `assets/<slug>/`.
+- Repeat filename → `<name>-2.<ext>`, never an overwrite. `reelcut transcribe` on a folder
+  transcribes *every* video in it, so delete the take you don't want first.
+- Uploads stage as `<name>.part`, renamed only when complete — a dropped connection leaves no
+  truncated clip.
+- In Safari, *Browse → Files* sends original bytes; the photo picker may re-encode.
 
 ---
 
