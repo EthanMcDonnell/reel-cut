@@ -129,12 +129,16 @@ shoot the take, tap the link, and the clip lands in that slug's folder ready for
 `/prepare-video`.
 
 ```
-Telegram "file-exchange"  ──link──▶  phone
-                                       │  PUT (raw file body)
-        http://100.x.y.z:8770/upload/<slug>
-                                       ▼
-                          assets/<slug>/<filename>
+/produce-script ──script + link──▶  Telegram "file-exchange"  ──▶  phone
+                                                                     │  PUT (raw file body)
+                                    http://100.x.y.z:8770/upload/<slug>
+                                                                     ▼
+                                                        assets/<slug>/<filename>
 ```
+
+`scripts/send_script.py <slug>` posts the script body then the upload link (link last, so it's
+newest in the thread). It splits at Telegram's 4096-char cap — the broker doesn't, and an
+oversized message is rejected outright.
 
 **Setup** — once, after `tailscale up`:
 
