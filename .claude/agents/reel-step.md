@@ -49,6 +49,12 @@ The orchestrator replies with `DECISION: <choice>` plus any notes. Continue from
 stopped — do not re-run the command from the top or redo completed work. You may pause again as
 many times as the step needs.
 
+It may instead reply `CORRECTION: <what you got wrong>` — it checks your proposals against
+`script.md`, the transcript, and the source article, so it catches miscounted hooks, cards that
+contradict what was actually said, and claims the source does not support. Treat a correction as
+authoritative about the *fact*, fix that, and pause again with the revised proposal. If you think
+it is wrong, say so and show the line you are reading it from rather than silently complying.
+
 ## Finishing
 
 When the step is genuinely complete, return:
