@@ -1,6 +1,6 @@
 ---
 name: produce-reel
-description: Orchestrate the whole ReelCut pipeline for one slug — spawns a Sonnet reel-step subagent per command (prepare → produce → publish), verifies each subagent's proposals against the script, transcript and source, and puts what's left to you via AskUserQuestion.
+description: Orchestrate the whole ReelCut pipeline for one slug — spawns a reel-step subagent per command (prepare → produce → publish), verifies each subagent's proposals against the script, transcript and source, and puts what's left to you via AskUserQuestion.
 argument-hint: "<video-slug> [--through prepare|produce|schedule|post] [--auto]"
 ---
 
@@ -24,12 +24,12 @@ question channel, and the workers borrow it through you.
 
 ## The chain
 
-| Stage | Command | Notes |
-|---|---|---|
-| `prepare` | `/prepare-video <slug>` | full reset — wipes images.json/videos.json from any prior run |
-| `produce` | `/produce-video <slug>` | asks about title cards + captions |
-| `schedule` | `/schedule-video <slug>` | live calendar — confirms before booking |
-| `post` | `/post-video <slug>` | live account, posts now — confirms before publishing |
+| Stage | Command | Model | Notes |
+|---|---|---|---|
+| `prepare` | `/prepare-video <slug>` | `sonnet` | full reset — wipes images.json/videos.json from any prior run |
+| `produce` | `/produce-video <slug>` | **`opus`** | asks about title cards + captions |
+| `schedule` | `/schedule-video <slug>` | `sonnet` | live calendar — confirms before booking |
+| `post` | `/post-video <slug>` | `sonnet` | live account, posts now — confirms before publishing |
 
 `schedule` and `post` are alternatives, not a sequence: run whichever the user named. Phase 0
 (`/produce-script`) is out of scope — it *creates* the asset folder this command consumes. If the
@@ -41,6 +41,14 @@ slug folder has no footage, say so and stop rather than starting the chain.
    never reusing a previous stage's agent. Prompt it with just the command and the slug, e.g.
    *"Run the `produce-video` command for slug `netflix-cdn-architecture`."* Plus any decisions the
    user already made in this session that the step would otherwise ask about. Keep its agent id.
+
+   **Pass `model` explicitly on every dispatch**, per the table above — the agent definition
+   defaults to `sonnet` and the `model` parameter overrides it. `produce` gets `model: "opus"`
+   because its output is generative rather than mechanical: the literal-noun gag pass
+   (`produce-video:73`), hook detection done by intuition (`:123`), and the title cards and captions
+   themselves (`:228`), whose register is the one a weaker model flattens into "how X did Y". Those
+   are also the parts *no* later check catches — the verify step below is barred from touching
+   wording, so under `--auto` whatever this worker writes is what gets burned into the video.
 
 2. **Verify.** On `NEEDS_DECISION`, do not take the worker's framing at face value — re-derive the
    checkable part yourself, from the files, before doing anything with it. See *Verifying* below.

@@ -7,6 +7,10 @@ model: sonnet
 You execute **one** ReelCut pipeline command for one slug, then stop. Your caller is an orchestrator
 in the main conversation; it is your only channel to the human.
 
+`model: sonnet` above is the default. `/produce-reel` overrides it per stage and runs the
+`produce-video` stage on Opus, whose work is generative (visual gags, hook boundaries, title cards
+and captions) rather than mechanical.
+
 ## Running the step
 
 Invoke the command with the `Skill` tool (e.g. `Skill(skill="prepare-video", args="<slug>")`) and
