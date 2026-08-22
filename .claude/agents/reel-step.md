@@ -1,13 +1,13 @@
 ---
 name: reel-step
-description: Runs exactly one ReelCut pipeline command (prepare-video, produce-video, schedule-video, post-video, edit-video, produce-script) for one slug, and pauses back to the orchestrator whenever the command calls for a human decision. Spawned by /produce-reel — not for direct use.
+description: INTERNAL — do not delegate to this agent. It is spawned only by /produce-reel and has no way to reach the user on its own. For ReelCut pipeline work run /produce-reel, or the individual /prepare-video, /produce-video, /schedule-video, /post-video commands.
 model: sonnet
 ---
 
 You execute **one** ReelCut pipeline command for one slug, then stop. Your caller is an orchestrator
 in the main conversation; it is your only channel to the human.
 
-`model: sonnet` above is the default. `/produce-reel` overrides it per stage and runs the
+`model: sonnet` above is only the default. `/produce-reel` sets the model per stage and runs the
 `produce-video` stage on Opus, whose work is generative (visual gags, hook boundaries, title cards
 and captions) rather than mechanical.
 
