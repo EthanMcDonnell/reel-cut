@@ -34,8 +34,10 @@ calendar before posting, and Step 3 here walks the slot requests forward one gap
 short-circuit that walk into a single `count: N` call, the spacing silently disappears and the later
 hooks get throttled — which is the whole failure this command was written to avoid.
 
-There is no `--gap` argument, on purpose. The number lives in the cockpit's settings so this command
-and `/post-video` read the same one. Change it there, not per run.
+There is no `--gap` argument, on purpose. The number is meant to live in the cockpit's settings so
+this command and `/post-video` read the same one — but social-cockpit dropped `min_same_video_days`
+from `/api/schedule/settings` (its b96b23d), so today the real number is `FALLBACK_MIN_GAP_DAYS` in
+`scrape/post_video.py`. Change it there until the cockpit brings the setting back.
 
 ## Prerequisites
 
@@ -52,7 +54,9 @@ which reports the same banner).
 - `scheduler_enabled: false` → **stop.** Jobs would be stored and never published. Tell the user.
 - `dry_run: true` → warn: jobs will run the pipeline but post nothing.
 - Note the **timezone**. Every time you state back to the user must be in that zone.
-- Note **`min_same_video_days`** — Step 3 needs it. Absent means 2.
+- Note **`min_same_video_days`** — Step 3 needs it. Absent (the norm now — social-cockpit removed
+  the setting) means `FALLBACK_MIN_GAP_DAYS` from `scrape/post_video.py` (currently 1.25 days / 30
+  hours).
 
 ## Step 2 — Work out what still needs posting
 
@@ -143,9 +147,10 @@ throttled. `count: <all hooks>` in one call is therefore wrong, however convenie
 
 Instead, walk the hooks and make **one call per hook**, each starting after the last one landed:
 
-1. Read `min_same_video_days` from the settings banner in Step 1. If the cockpit doesn't supply it,
-   use **2** — the same fallback `scrape/post_video.py` uses (`FALLBACK_MIN_GAP_DAYS`), so the two
-   commands can't drift on the one number that decides whether a hook gets throttled.
+1. Read `min_same_video_days` from the settings banner in Step 1. The cockpit doesn't supply it
+   today (removed there), so use **`FALLBACK_MIN_GAP_DAYS`** from `scrape/post_video.py` — currently
+   1.25 days (30 hours) — so the two commands can't drift on the one number that decides whether a
+   hook gets throttled.
 2. First hook: `suggest_slots  count: 1  earliest: <now + 15 minutes, or --start if later>`.
 3. Each hook after: `suggest_slots  count: 1  earliest: <previous slot + min_same_video_days>`.
 
@@ -179,8 +184,8 @@ Pass the returned `scheduled_at` strings through to Step 5 unchanged. If a call 
 at the daily limit, that is worth repeating to the user, but it is not a problem — it is the policy
 working.
 
-If the output warns that the cockpit returned no policy, it is running a build without these
-settings — report that instead of silently using fallbacks.
+The cockpit reporting no `min_same_video_days` policy is expected now (social-cockpit removed it),
+not a build anomaly — use `FALLBACK_MIN_GAP_DAYS` without flagging it each run.
 
 ### Posting more than once a day
 
@@ -197,8 +202,9 @@ the first holds 09:30. Two hooks of *one* video on the same day is the thing to 
 `suggest_slots` won't stop you, Step 3's one-call-per-hook walk is what keeps them apart. Raising
 `max_posts_per_day` makes that walk more necessary, not less.
 
-`min_same_video_days` lives in the same settings object and is read by `/post-video` and Step 3
-here. The cockpit stores it; nothing in the cockpit acts on it.
+`min_same_video_days` used to live in the same settings object; social-cockpit removed it, so
+`FALLBACK_MIN_GAP_DAYS` in `scrape/post_video.py` is what `/post-video` and Step 3 here actually
+read. Nothing in the cockpit acts on it either way.
 
 ## Step 4 — Show the plan and confirm
 

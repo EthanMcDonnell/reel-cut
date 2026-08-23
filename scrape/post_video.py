@@ -53,10 +53,11 @@ ROOT = Path(__file__).parent.parent
 load_dotenv(ROOT / ".env")
 
 COCKPIT = os.environ.get("COCKPIT_URL", "http://localhost:3000").rstrip("/")
-# Fallback spacing, used only when the cockpit can't tell us its own setting
-# (older build, or unreachable). The real value lives in social-cockpit so one
-# change covers this script and /schedule-video alike -- see min_gap_days().
-FALLBACK_MIN_GAP_DAYS = 2
+# Same-video spacing. social-cockpit dropped its min_same_video_days setting
+# (see b96b23d in that repo), so /api/schedule/settings never returns it and
+# this constant -- not the cockpit -- is now the actual source of truth. See
+# min_gap_days().
+FALLBACK_MIN_GAP_DAYS = 30 / 24  # 30 hours
 # When automation is attached the cockpit waits up to 5 min for the reel to
 # finish processing (so it can return a media_id and attach), so allow headroom.
 REQUEST_TIMEOUT_S = 360
@@ -129,11 +130,12 @@ def read_published(log):
 
 
 def min_gap_days():
-    """The configured same-video spacing, from social-cockpit.
+    """The configured same-video spacing.
 
-    Kept in the cockpit rather than here so that this script, ``/schedule-video``
-    and the scheduler itself cannot drift apart on the one number that decides
-    whether a hook gets throttled.
+    Still checks the cockpit's setting first in case a future build brings it
+    back, but social-cockpit no longer serves ``min_same_video_days`` (removed
+    in that repo's b96b23d), so this always falls through to
+    ``FALLBACK_MIN_GAP_DAYS`` today.
     """
     try:
         settings = requests.get(f"{COCKPIT}/api/schedule/settings", timeout=15).json()
