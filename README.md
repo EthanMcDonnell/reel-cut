@@ -160,8 +160,9 @@ wi-fi. Pin a different host with `.venv/bin/python scripts/upload_server.py 127.
 **Notes**
 
 - `GET /script/<slug>` lays the script out for filming: hooks numbered as separate takes,
-  spoken prose in reading type, references small because they are never read aloud. An
-  **Upload the take** button at the bottom goes straight to that slug's upload page.
+  spoken prose in reading type, references small because they are never read aloud. A
+  **Copy the whole script** button copies the raw `script.md`, and an **Upload the take**
+  button below it goes straight to that slug's upload page.
 - An open script page polls `GET /script/<slug>?mtime=1` every 5s and shows a reload banner
   when the file changes underneath it, so a page left open mid-shoot can't serve stale lines.
 - `GET /upload/<slug>` is a browser page; an iOS Shortcut can `PUT` the file from the share

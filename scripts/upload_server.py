@@ -101,16 +101,32 @@ SCRIPT_PAGE = """<!doctype html>
  .refs a{{color:#5a9bd8;word-break:break-all}}
  .up{{display:block;margin-top:2.5rem;padding:1rem;border-radius:12px;background:#1d4ed8;
       color:#fff;text-align:center;text-decoration:none;font-size:1rem}}
+ .copy{{display:block;width:100%;margin-top:1rem;padding:1rem;border:0;border-radius:12px;
+      background:#2a2a2a;color:#eee;font:inherit;font-size:1rem;-webkit-appearance:none}}
+ #raw{{position:fixed;left:-9999px;top:0}}
  #stale{{position:fixed;left:0;right:0;bottom:0;padding:.9rem;background:#b45309;
       color:#fff;text-align:center;font-size:.9rem;display:none}}
 </style>
 <h1>{slug}</h1>
 {body}
+<button class=copy id=copy>Copy the whole script</button>
 <a class=up href="/upload/{slug}">Upload the take</a>
+<textarea id=raw readonly>{raw}</textarea>
 <div id=stale>Script updated. Tap to reload.</div>
 <script>
 const seen='{mtime}',bar=document.getElementById('stale');
 bar.onclick=()=>location.reload();
+const btn=document.getElementById('copy'),raw=document.getElementById('raw');
+btn.onclick=async()=>{{
+  // navigator.clipboard is undefined over plain http on a tailnet IP, so the
+  // select-and-execCommand path is the one that actually runs there.
+  try{{
+    if(navigator.clipboard) await navigator.clipboard.writeText(raw.value);
+    else{{raw.select();raw.setSelectionRange(0,raw.value.length);document.execCommand('copy');}}
+    btn.textContent='Copied';
+  }}catch(e){{btn.textContent='Copy failed — select by hand';}}
+  setTimeout(()=>btn.textContent='Copy the whole script',2000);
+}};
 setInterval(async()=>{{
   try{{
     const r=await fetch(location.pathname+'?mtime=1',{{cache:'no-store'}});
@@ -177,9 +193,11 @@ def script_body(text: str) -> str:
 
 def script_page(script: Path) -> str:
     """The full page. Read at request time, so an edit is live on the next refresh."""
+    text = script.read_text()
     return SCRIPT_PAGE.format(
         slug=script.parent.name,
-        body=script_body(script.read_text()),
+        body=script_body(text),
+        raw=escape(text),
         mtime=script.stat().st_mtime,
     )
 
