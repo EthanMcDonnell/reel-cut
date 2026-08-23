@@ -1,13 +1,8 @@
 # Path Glossary
 
-Single source of truth for the **machine-specific absolute paths** used by the ReelCut
-command workflows (`produce-script`, `prepare-video`, `produce-video`, `debug-video`,
-`voice-profile`, `video-ideas`). Commands reference these by `{TOKEN}`; resolve each token to the value
-below before running. Update a path here **once** and every command picks it up.
+Single source of truth for the **machine-specific absolute paths** used by the ReelCut command workflows (`produce-script`, `prepare-video`, `produce-video`, `debug-video`, `voice-profile`, `video-ideas`). Commands reference these by `{TOKEN}`; resolve each token to the value below before running. Update a path here **once** and every command picks it up.
 
-Repo-relative paths (`scrape/…`, `assets/<slug>/`, `assets/<slug>/script.md`, `output/`,
-`series/…`, `.claude/…`, `tests/…`, `config.yaml`) are **not** tokenized — they stay written inline in the commands,
-resolved against `{PROJECT_ROOT}`.
+Repo-relative paths (`scrape/…`, `assets/<slug>/`, `assets/<slug>/script.md`, `output/`, `series/…`, `.claude/…`, `tests/…`, `config.yaml`) are **not** tokenized — they stay written inline in the commands, resolved against `{PROJECT_ROOT}`.
 
 ## Machine-specific absolute paths
 

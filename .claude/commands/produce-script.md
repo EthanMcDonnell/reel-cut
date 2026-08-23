@@ -177,9 +177,11 @@ Present the shortlist: for each hook show its `TEXT`, its `PATTERN`, and one lin
 
 Invoke the `scripts` skill and `tellcheck` skill, use the full `topic_package`, the chosen `SPINE`, and the confirmed `HOOK_SET` to create a captivating short form content script for platforms like Instagram Reels. Write the body to the `SPINE`: explain its crux, deliver the payoff (the *how*, drawn from `HOW_IT_WAS_SOLVED`), and land its turn. A body that only states the problem and names the fix has failed the spine — the payoff is the video. Pass the resolved `SERIES` to the `scripts` skill — it applies the series file's voice profile (register, target length) and layers the user's delivery voice from `.claude/voice/voice-profile.md` on top; for `misc` it uses its default voice. The CTA is not written here: Stage 3.6 appends it once the series' policy has been read.
 
-**Write every hook from `HOOK_SET` into the script.** You record all of them in one take and split them into separate videos later, so the `**HOOK**` section holds the full set, numbered and ordered best-first, one hook per line:
+**Write every hook from `HOOK_SET` into the script.** You record all of them in one take and split them into separate videos later, so the `**HOOK**` section holds the full set, numbered and ordered best-first, one hook per line. Lead the file with a `**VIDEO TYPE**` section holding the resolved `SERIES` slug — it's the only record of which series the saved file belongs to:
 
 ```
+**VIDEO TYPE**
+<SERIES>
 **HOOK**
 HOOK 1: <HOOK_1 text>
 HOOK 2: <HOOK_2 text>
@@ -210,7 +212,7 @@ After the script is written, save it:
 
 1. Save to `assets/<video-slug>/script.md` — the slug already fixed in Stage 0, so it sits beside that slug's screenshots and figures. Create the folder if Stage 0.4 didn't
 2. No empty lines in the saved file
-3. **`/prepare-video` reads this file as the ground truth for what was said**, so the body must be the spoken words exactly as scripted — same `**HOOK**` / `**SCRIPT**` / `**CONCLUSION**` / `**CTA**` / `**REFERENCES:**` / `**VIEWER RESOURCES:**` headings, same one-line-per-hook shape. Keep proper nouns in their real casing (`ChatGPT`, `PgBouncer`, `PGKeeper`) — that casing is what the transcript gets checked against
+3. **`/prepare-video` reads this file as the ground truth for what was said**, so the body must be the spoken words exactly as scripted — same `**VIDEO TYPE**` / `**HOOK**` / `**SCRIPT**` / `**CONCLUSION**` / `**CTA**` / `**REFERENCES:**` / `**VIEWER RESOURCES:**` headings, same one-line-per-hook shape. Keep proper nouns in their real casing (`ChatGPT`, `PgBouncer`, `PGKeeper`) — that casing is what the transcript gets checked against
 4. **Re-flow the body to one sentence per line.** The `**SCRIPT**` and `**CONCLUSION**` sections are written as one paragraph, which is hard to read off a phone while filming. This rewrites the line breaks only, never the wording, and every other section is left alone:
 
    ```bash
@@ -327,15 +329,9 @@ Bad: `Lead Magnet (AWS Storage Blog, building multi writer applications on S3 wi
 
 ### Step 3.6.5 — Write the automation spec
 
-*Comment-bait series only.* The keyword and the resources are the whole content of the comment
-automation, so write them down now, while you still hold them — `/post-video` and
-`/schedule-video` both read this file and neither of them can see the vault note.
+*Comment-bait series only.* The keyword and the resources are the whole content of the comment automation, so write them down now, while you still hold them — `/post-video` and `/schedule-video` both read this file and neither of them can see the vault note.
 
-Every automation this project produces is the same funnel — comment the keyword, get asked to
-follow, reply DONE, receive the resources. Only the **keyword** and the **reward** differ between
-videos, so those two are the only things you write. The rest is fixed in
-`scrape/automation_spec.py` and filled in at post time; do not restate it here and do not invent
-a variation of it.
+Every automation this project produces is the same funnel — comment the keyword, get asked to follow, reply DONE, receive the resources. Only the **keyword** and the **reward** differ between videos, so those two are the only things you write. The rest is fixed in `scrape/automation_spec.py` and filled in at post time; do not restate it here and do not invent a variation of it.
 
 Write `assets/<video-slug>/automation.json` — exactly these two fields, nothing else:
 
@@ -346,20 +342,11 @@ Write `assets/<video-slug>/automation.json` — exactly these two fields, nothin
 }
 ```
 
-- `trigger_keywords` is the keyword from Step 3.6.3, exactly as the CTA says it, and it must be
-  **one word**. The worker matches it as a substring of any comment of ten words or fewer, so a
-  keyword that turns up inside ordinary words fires on people who weren't asking.
-- `follower_message` is the **reward** — the `**VIEWER RESOURCES:**` block you just wrote into the
-  note, copied **character-for-character**, except insert one blank line between entries (the
-  script file's no-blank-line rule is for the linter and doesn't apply to this DM). Every entry,
-  including the `Video reference article:` line, in the same order, with the same labels. Do not
-  reword a label, do not merge two entries into a sentence, and do not send only the lead magnet —
-  this is what the follower actually receives, and an empty one means they are sent nothing at all.
-- **Check the count before moving on:** the reward must contain exactly as many URLs as the block
-  in the note. Dropping the go-deeper resource or the reference article is the way this goes wrong.
+- `trigger_keywords` is the keyword from Step 3.6.3, exactly as the CTA says it, and it must be **one word**. The worker matches it as a substring of any comment of ten words or fewer, so a keyword that turns up inside ordinary words fires on people who weren't asking.
+- `follower_message` is the **reward** — the `**VIEWER RESOURCES:**` block you just wrote into the note, copied **character-for-character**, except insert one blank line between entries (the script file's no-blank-line rule is for the linter and doesn't apply to this DM). Every entry, including the `Video reference article:` line, in the same order, with the same labels. Do not reword a label, do not merge two entries into a sentence, and do not send only the lead magnet — this is what the follower actually receives, and an empty one means they are sent nothing at all.
+- **Check the count before moving on:** the reward must contain exactly as many URLs as the block in the note. Dropping the go-deeper resource or the reference article is the way this goes wrong.
 
-For `follow`, `disagreement` and `misc` there is no keyword and nothing to send, so write no file.
-A missing `automation.json` means the hooks post with no automation, which is the correct result.
+For `follow`, `disagreement` and `misc` there is no keyword and nothing to send, so write no file. A missing `automation.json` means the hooks post with no automation, which is the correct result.
 
 Then check it, and fix anything it reports before moving on:
 
@@ -367,9 +354,7 @@ Then check it, and fix anything it reports before moving on:
 .venv/bin/python scrape/validate_automation.py <video-slug>
 ```
 
-It checks both halves: the two fields you wrote, and that the reply function and DM pack named in
-`automation_spec.py` still exist in social-cockpit. Nothing rejects a renamed pack at post time —
-the flow is created, fires, and sends an empty message — so this is the only place it gets caught.
+It checks both halves: the two fields you wrote, and that the reply function and DM pack named in `automation_spec.py` still exist in social-cockpit. Nothing rejects a renamed pack at post time — the flow is created, fires, and sends an empty message — so this is the only place it gets caught.
 
 Then re-run the linter and confirm it still passes:
 
@@ -428,60 +413,35 @@ The JSON result includes a `snippets` array — one entry per requested snippet 
 
 ## Stage 4b — Match Figures to Script Beats
 
-The usable charts and diagrams were already harvested and judged in Stage 0.4 and carried
-forward as `FIGURES_AVAILABLE`. If it is `none`, skip to Final Output. This stage does the half
-that needed a finished script: anchoring each figure to the beat it supports.
+The usable charts and diagrams were already harvested and judged in Stage 0.4 and carried forward as `FIGURES_AVAILABLE`. If it is `none`, skip to Final Output. This stage does the half that needed a finished script: anchoring each figure to the beat it supports.
 
 ### Step 4b.1: Match to a script beat
 
 Match by kind:
 
-- **`chart` → the stat beat** whose exact number the chart visualises (highest priority — it
-  proves the "shocking number" a hook makes).
-- **`diagram` → the sustained walk-through passage** Stage 3 wrote for it. Anchor it to the
-  *whole* passage, not one clause.
+- **`chart` → the stat beat** whose exact number the chart visualises (highest priority — it proves the "shocking number" a hook makes).
+- **`diagram` → the sustained walk-through passage** Stage 3 wrote for it. Anchor it to the *whole* passage, not one clause.
 
 ### Step 4b.2: Apply the span gate
 
-`script_context` is a ceiling, not a hint: produce-video can only hold a figure inside the span
-you give it, so a short span means a flashed figure or one stretched over narration that has
-moved on. Measure the span you're about to write — `trigger_show_word` through
-`trigger_go_away_word` — and check it against its kind:
+`script_context` is a ceiling, not a hint: produce-video can only hold a figure inside the span you give it, so a short span means a flashed figure or one stretched over narration that has moved on. Measure the span you're about to write — `trigger_show_word` through `trigger_go_away_word` — and check it against its kind:
 
-- **`diagram`: the anchored span must be 25+ words** (roughly 8s of speech) and stay on that one
-  system throughout. Multi-sentence is normal and expected here.
+- **`diagram`: the anchored span must be 25+ words** (roughly 8s of speech) and stay on that one system throughout. Multi-sentence is normal and expected here.
 - **`chart`: 10+ words.** A chart proves one number, so it can leave sooner — but never a flash.
 
-If a diagram's span falls short, in this order: **widen** it to take in the neighbouring
-sentences, provided they're still about the same system; if they aren't, **drop the figure**. Do
-not pad the span with adjacent narration just to clear the number — a diagram held over words
-about something else is worse than no diagram. Report every figure dropped this way in the Final
-Output, since it usually means Stage 3 didn't write the passage the diagram needed.
+If a diagram's span falls short, in this order: **widen** it to take in the neighbouring sentences, provided they're still about the same system; if they aren't, **drop the figure**. Do not pad the span with adjacent narration just to clear the number — a diagram held over words about something else is worse than no diagram. Report every figure dropped this way in the Final Output, since it usually means Stage 3 didn't write the passage the diagram needed.
 
-**One overlay on screen at a time.** Never plan a figure and a screenshot to be visible together.
-The viewer can only read one thing while you narrate one thing, and the script never describes two
-at once. The renderer does displace an overlapping screenshot to a corner rather than dropping it
-(`_assign_slots` in `reelcut/image_overlay.py`), but that is a safety net for accidental pile-ups,
-not a layout to design for.
+**One overlay on screen at a time.** Never plan a figure and a screenshot to be visible together. The viewer can only read one thing while you narrate one thing, and the script never describes two at once. The renderer does displace an overlapping screenshot to a corner rather than dropping it (`_assign_slots` in `reelcut/image_overlay.py`), but that is a safety net for accidental pile-ups, not a layout to design for.
 
-So when a screenshot from Stage 4 falls inside a figure's passage, **the figure keeps the span and
-the screenshot is removed** — delete that entry from `manifest.json`. Do not resolve it the other
-way by shortening the figure: truncating a diagram to dodge a screenshot is the main way it ends up
-flashed on one sentence, which is what this gate exists to prevent. Losing the text crop costs
-little, since a diagram covering that passage usually shows the same number the screenshot proved.
-List every screenshot removed this way in the Final Output.
+So when a screenshot from Stage 4 falls inside a figure's passage, **the figure keeps the span and the screenshot is removed** — delete that entry from `manifest.json`. Do not resolve it the other way by shortening the figure: truncating a diagram to dodge a screenshot is the main way it ends up flashed on one sentence, which is what this gate exists to prevent. Losing the text crop costs little, since a diagram covering that passage usually shows the same number the screenshot proved. List every screenshot removed this way in the Final Output.
 
 ### Step 4b.3: Select
 
-**Cap at ≤3 figures per video**, and drop redundant ones (two figures of the same system → keep
-the more legible / higher-resolution). Figures hold longer and take more screen space than a
-text pop, so fewer-and-stronger wins.
+**Cap at ≤3 figures per video**, and drop redundant ones (two figures of the same system → keep the more legible / higher-resolution). Figures hold longer and take more screen space than a text pop, so fewer-and-stronger wins.
 
 ### Step 4b.4: Write `figures.json`
 
-Write the selected figures to `assets/<video-slug>/figures.json` (a JSON list). This is the
-figure equivalent of the screenshot manifest — it records the *selection* and *anchors*;
-`produce-video` computes the actual timings later. Each entry:
+Write the selected figures to `assets/<video-slug>/figures.json` (a JSON list). This is the figure equivalent of the screenshot manifest — it records the *selection* and *anchors*; `produce-video` computes the actual timings later. Each entry:
 
 ```json
 [
@@ -497,30 +457,20 @@ figure equivalent of the screenshot manifest — it records the *selection* and 
 ]
 ```
 
-- `script_context` — copy the supported script line **verbatim** from the script. For a `diagram`,
-  copy the **whole walk-through passage** (the several sentences that explain the system), not one
-  line, so `trigger_go_away_word` can sit at the end of the walk-through and clear the span gate.
-- `trigger_show_word` / `trigger_go_away_word` — short verbatim anchors from **inside**
-  `script_context`, marking where the figure appears and disappears. Same rules as screenshot
-  triggers; leave `""` if no clean anchor and produce-video spans the whole line.
+- `script_context` — copy the supported script line **verbatim** from the script. For a `diagram`, copy the **whole walk-through passage** (the several sentences that explain the system), not one line, so `trigger_go_away_word` can sit at the end of the walk-through and clear the span gate.
+- `trigger_show_word` / `trigger_go_away_word` — short verbatim anchors from **inside** `script_context`, marking where the figure appears and disappears. Same rules as screenshot triggers; leave `""` if no clean anchor and produce-video spans the whole line.
 
 ## Step 5 — Send the script and upload links to Telegram
 
-Post the slug's script link and footage-upload link to the `file-exchange` topic, so you can
-read the script off your phone and send the take straight back from the same thread.
+Post the slug's script link and footage-upload link to the `file-exchange` topic, so you can read the script off your phone and send the take straight back from the same thread.
 
 ```bash
 .venv/bin/python scripts/send_script.py <video-slug>
 ```
 
-Best-effort: if it fails (upload server down, tailnet unreachable, broker off), say so in the
-final report and carry on — the script is already written to disk.
+Best-effort: if it fails (upload server down, tailnet unreachable, broker off), say so in the final report and carry on — the script is already written to disk.
 
-The helper sends **one** message holding both links. The script body is not pasted into the
-thread: `scripts/upload_server.py` serves `assets/<slug>/script.md` at
-`http://<tailnet-ip>:8770/script/<slug>`, reading it on every request, so any edit made after
-this step is live on the phone at the next refresh. That is also why a later fix to the
-script needs no re-send — the link already points at the current file.
+The helper sends **one** message holding both links. The script body is not pasted into the thread: `scripts/upload_server.py` serves `assets/<slug>/script.md` at `http://<tailnet-ip>:8770/script/<slug>`, reading it on every request, so any edit made after this step is live on the phone at the next refresh. That is also why a later fix to the script needs no re-send — the link already points at the current file.
 
 ## Final Output
 

@@ -11,8 +11,7 @@ Debug a reelcut pipeline run for a video slug.
 
 Arguments: `$ARGUMENTS` — expected format: `<video-slug>`
 
-Available slugs in `assets/`:
-!`ls -1 assets/ | grep -vE '^audio$|\.json$'`
+Available slugs in `assets/`: !`ls -1 assets/ | grep -vE '^audio$|\.json$'`
 
 If `$ARGUMENTS` is empty, ask the user which of the slugs above to use.
 
@@ -65,14 +64,8 @@ Pipeline order: 0.review → 1.raw → 1b.sentences → 2.post-retrans → 3.pos
 
 ### TIMELINE (read `*.debug.5.timeline.txt`)
 - `KEEP [too short]` → gap below threshold; raise `min_silence_ms` or accept
-- `KEEP [measured onset leaves nothing to cut]` → the next word is low-confidence, so its onset was
-  measured from the audio rather than trusted, and the measured onset leaves no room past
-  `speech_pad_ms`. Usually a breath running straight into the word — nothing to remove
-- `KEEP [mid_sentence_floor]` → gap detector said CUT but EDL suppressed it; lower
-  `mid_sentence_cut_floor_ms`. **Also fires spuriously**: the label is emitted whenever
-  `gap.speech_end` is missing from the EDL cut boundaries, and `edl.py`'s `min_keep_ms` floor can
-  move that boundary — so a cut that *did* happen gets reported as kept. Check the EDL entries
-  before trusting this one
+- `KEEP [measured onset leaves nothing to cut]` → the next word is low-confidence, so its onset was measured from the audio rather than trusted, and the measured onset leaves no room past `speech_pad_ms`. Usually a breath running straight into the word — nothing to remove
+- `KEEP [mid_sentence_floor]` → gap detector said CUT but EDL suppressed it; lower `mid_sentence_cut_floor_ms`. **Also fires spuriously**: the label is emitted whenever `gap.speech_end` is missing from the EDL cut boundaries, and `edl.py`'s `min_keep_ms` floor can move that boundary — so a cut that *did* happen gets reported as kept. Check the EDL entries before trusting this one
 - `KEEP [preserve_start/preserve_end]` → within protected region
 
 ### EDL ENTRIES

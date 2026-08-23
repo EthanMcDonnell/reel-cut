@@ -10,8 +10,7 @@ Populates image overlays in images.json and renders one video per hook (each hoo
 
 Arguments: `$ARGUMENTS` — expected format: `<video-slug>`
 
-Available slugs in `assets/`:
-!`ls -1 assets/ | grep -vE '^audio$|\.json$'`
+Available slugs in `assets/`: !`ls -1 assets/ | grep -vE '^audio$|\.json$'`
 
 If `$ARGUMENTS` is empty, ask the user which of the slugs above to use.
 
@@ -83,31 +82,17 @@ A few quirky Wikipedia image can add a fun extra dimension — drop a literal ph
 
 ## Step 3d — Assign figure timings (from figures.json)
 
-If `assets/<video-slug>/figures.json` exists, add one `type:"figure"` entry to the images list
-for each figure in it (charts/diagrams harvested from the article). Timing works exactly like
-screenshots:
+If `assets/<video-slug>/figures.json` exists, add one `type:"figure"` entry to the images list for each figure in it (charts/diagrams harvested from the article). Timing works exactly like screenshots:
 
 1. Use the figure's `script_context` to find the moment it supports in the `words` array.
-2. **Bound the on-screen window** with `trigger_show_word` / `trigger_go_away_word` (search within
-   the `script_context` span so they can't match a duplicate elsewhere): `start` = the matched
-   `trigger_show_word`'s `start`, `end` = the matched `trigger_go_away_word`'s `end`. If a trigger
-   is empty or not found, span the full matched sentence; if even that fails, use ~5s centred on
-   the anchor moment. **Skip any figure whose `script_context` can't be matched — don't invent a
-   placement.**
-3. Emit `type: "figure"`, `kind` copied from the figures.json entry, `source_clip` from the anchor
-   words, `name: ""`, and `path` = the absolute path `{PROJECT_ROOT}/assets/<video-slug>/<file>`
-   where `<file>` is the entry's `file` (e.g. `figures/figure-01.png`).
+2. **Bound the on-screen window** with `trigger_show_word` / `trigger_go_away_word` (search within the `script_context` span so they can't match a duplicate elsewhere): `start` = the matched `trigger_show_word`'s `start`, `end` = the matched `trigger_go_away_word`'s `end`. If a trigger is empty or not found, span the full matched sentence; if even that fails, use ~5s centred on the anchor moment. **Skip any figure whose `script_context` can't be matched — don't invent a placement.**
+3. Emit `type: "figure"`, `kind` copied from the figures.json entry, `source_clip` from the anchor words, `name: ""`, and `path` = the absolute path `{PROJECT_ROOT}/assets/<video-slug>/<file>` where `<file>` is the entry's `file` (e.g. `figures/figure-01.png`).
 
-**Figures are held, not flashed.** A figure renders on a padded card (sized by
-`figure_overlay_size_pct`) and has to be *read*, so after step 2 enforce a minimum on-screen hold:
-- **`diagram`: at least 5s** (target 5–8s). A diagram has to be *studied*. If the speaker keeps
-  discussing the same system past `trigger_go_away_word`, extend `end` forward to the last word of
-  that explanation — hold the diagram across the whole walk-through instead of cutting it at the
-  single line.
+**Figures are held, not flashed.** A figure renders on a padded card (sized by `figure_overlay_size_pct`) and has to be *read*, so after step 2 enforce a minimum on-screen hold:
+- **`diagram`: at least 5s** (target 5–8s). A diagram has to be *studied*. If the speaker keeps discussing the same system past `trigger_go_away_word`, extend `end` forward to the last word of that explanation — hold the diagram across the whole walk-through instead of cutting it at the single line.
 - **`chart`: at least 3s.** A chart proves one number, so it can leave sooner — but never a flash.
 
-Widen the window by pushing `end` later (and only if needed, nudging `start` a touch earlier) to
-reach the floor, staying inside the same `source_clip` and not overrunning the next hard cut.
+Widen the window by pushing `end` later (and only if needed, nudging `start` a touch earlier) to reach the floor, staying inside the same `source_clip` and not overrunning the next hard cut.
 
 Example entry (added to the same images list written in Step 4):
 ```json
@@ -170,14 +155,14 @@ One **base entry per hook** (same order as `hook_windows` from Step 3c), plus �
 
 ```json
 [
-  { "id": "tokens", "title": "What Are\nAI Tokens?", "subtitle": "Tech Behind Big Tech Day {n:tbbt}",
+  { "id": "tokens", "title": "What Are\nAI Tokens?", "subtitle": "<series/<slug>.md Title Card Subtitle>",
     "start": 0.0, "end": 3.1, "scrim": true,
     "caption": "what are ai tokens? 🤔", "filename": "what-are-ai-tokens" },
 
   { "id": "tokens-flipped", "of": "tokens", "title": "The Hidden\nCost Of A Word",
     "caption": "you pay by the syllable 💸", "filename": "pay-by-the-syllable" },
 
-  { "id": "syllable", "title": "Why ChatGPT\nBills Per Word", "subtitle": "Tech Behind Big Tech Day {n:tbbt}",
+  { "id": "syllable", "title": "Why ChatGPT\nBills Per Word", "subtitle": "<series/<slug>.md Title Card Subtitle>",
     "start": 3.1, "end": 6.4, "scrim": true,
     "caption": "big tech bills you by the syllable 🤫", "filename": "billed-by-the-syllable" }
 ]
@@ -196,7 +181,7 @@ Field reference:
 **Inputs to draw from:**
 - `hook_windows` from Step 3c — one window per hook, each with its output-timeline `(start, end)` — **plus that hook's spoken text** (from the Step 1 timeline). Every entry for hook N is derived from hook N's angle.
 - The video slug and topic; the manifest `topic` / `hook` fields if present
-- The series (from the manifest or inferred from the slug — check SERIES.md for the tone of each series)
+- The series (from the manifest or inferred from the slug — read `series/<slug>.md`'s `## Title Card` section for this series' card style and subtitle; SERIES.md indexes the files)
 
 ### Every entry gets its OWN title and caption
 
@@ -204,21 +189,13 @@ Field reference:
 
 A mirror entry is a *second angle on the same hook*, not a different video: it sits over the same spoken words, so it must stay true to them.
 
-**Title card style** — punchy, tailored to that hook's angle, in the series tone (a stylized 2–3-second card, not the hook's verbatim wording):
-- *tbbt*: punchy question or shocking statement about the architecture
-- *updates*: news-style headline
-- *interesting-tech / Interesting Tech*: the "impossible thing" framing ("Can a prime number be illegal?")
-- *AI Fundamentals*: first-principles question the viewer is already asking
+**Title card style** — punchy, tailored to that hook's angle, in the series tone (a stylized 2–3-second card, not the hook's verbatim wording). Read the **Style** line under `series/<slug>.md`'s `## Title Card` section for this series' framing — do not invent one here.
 
 Use `\n` for line breaks (2 lines usually reads better on mobile). Keep each title short enough to read in 2–3 seconds.
 
 **A card may compress the claim but never contradict it.** The card is burned in, so an error here can only be fixed by re-rendering and re-uploading. Before proposing, check each card against the spoken body from the Step 1 timeline and against the source article: every number, count, and singular/plural in the card has to survive that check. If the body says "chunks", the card may not say "one file". The failure mode to watch for is a card that states the approach the source *rejected* — it will read as the most striking option precisely because it's wrong. See rule 10 in the `hooks` skill.
 
-**The subtitle stays constant across all cards** — it carries the series branding, so keep it identical for every entry (varying the big gold title is what makes the cards visually distinct; the subtitle keeps the brand recognisable):
-- *tbbt*: `Tech Behind Big Tech Day {n:tbbt}` (the literal words "Tech Behind Big Tech Day" followed by the episode number — not `#`, and never just `Day {n:tbbt}` on its own)
-- *updates*: `Tech & AI Updates #{n:updates}` (the series name followed by the episode number)
-- *interesting-tech / Interesting Tech*: subtitle can include the series day count
-- *AI Fundamentals*: a short tagline
+**The subtitle stays constant across all cards** — it carries the series branding, so keep it identical for every entry (varying the big gold title is what makes the cards visually distinct; the subtitle keeps the brand recognisable). Use the **Subtitle** line from `series/<slug>.md`'s `## Title Card` section verbatim, `{n:<slug>}` token included.
 
 **Caption style:**
 - **all lowercase**
@@ -242,67 +219,37 @@ Examples of the register: `the cloud? never heard of it` · `dropbox unsubscribe
 .venv/bin/reelcut render-hooks config.yaml "assets/<video-slug>/<actual-captions-filename>.captions.json"
 ```
 
-`render-hooks` reads the titled base entries of `videos.json` (one per hook, from Step 4b) and
-renders **one video per hook** — each is `hook_i + body`, with the other hooks cut out. The
-outputs are grouped in a per-slug folder and named by their entry's `filename`:
-`output/<video-slug>/<filename>.mp4` (falling back to the entry's `caption`, then its `id`). Music,
-captions, and the title card behave exactly as in a normal render; there is no concatenation.
+`render-hooks` reads the titled base entries of `videos.json` (one per hook, from Step 4b) and renders **one video per hook** — each is `hook_i + body`, with the other hooks cut out. The outputs are grouped in a per-slug folder and named by their entry's `filename`: `output/<video-slug>/<filename>.mp4` (falling back to the entry's `caption`, then its `id`). Music, captions, and the title card behave exactly as in a normal render; there is no concatenation.
 
-**More files than hooks?** That is `output.flip` in `config.yaml`. With `apply: duplicate` a
-flipped hook is written *twice* — so `mode: all` turns 3 hooks into 6 files; with
-`apply: in_place` the count is unchanged and the selected hooks are simply mirrored. The mirror
-is applied to the footage only, never to the captions or title card. `/post-video` picks the
-extra files up automatically.
+**More files than hooks?** That is `output.flip` in `config.yaml`. With `apply: duplicate` a flipped hook is written *twice* — so `mode: all` turns 3 hooks into 6 files; with `apply: in_place` the count is unchanged and the selected hooks are simply mirrored. The mirror is applied to the footage only, never to the captions or title card. `/post-video` picks the extra files up automatically.
 
-A duplicate described by a mirror entry (`of`, Step 4b) is written under that entry's own name,
-card and caption, and is its own render pass. A duplicate with no mirror entry is cheap — named
-`<filename><flip-suffix>.mp4`, it shares the hook's overlay frames and segment extraction (~80% of a
-render), repeats only the encode, and posts with the hook's caption.
+A duplicate described by a mirror entry (`of`, Step 4b) is written under that entry's own name, card and caption, and is its own render pass. A duplicate with no mirror entry is cheap — named `<filename><flip-suffix>.mp4`, it shares the hook's overlay frames and segment extraction (~80% of a render), repeats only the encode, and posts with the hook's caption.
 
 Report all output paths when done.
 
-*(To render the old single combined video instead — all hooks in sequence — use
-`reelcut render config.yaml <captions.json>`, which writes `output/<video-slug>.mp4`.)*
+*(To render the old single combined video instead — all hooks in sequence — use `reelcut render config.yaml <captions.json>`, which writes `output/<video-slug>.mp4`.)*
 
 ## Step 6 — Lock in a regression fixture
 
-Capture this clip's full word list as a committed real-clip test fixture, so its retake
-detection and sentence segmentation are pinned against future regressions (this is how the
-"retake cut swallowed the whole body" class of bug gets caught — a synthetic unit test
-can't, only a real full-length clip can). Cheap: the data already exists in the transcription
-debug report.
+Capture this clip's full word list as a committed real-clip test fixture, so its retake detection and sentence segmentation are pinned against future regressions (this is how the "retake cut swallowed the whole body" class of bug gets caught — a synthetic unit test can't, only a real full-length clip can). Cheap: the data already exists in the transcription debug report.
 
 ```bash
 grep -E "→.*conf=" assets/<video-slug>/*.debug.4.post-vad.txt > tests/fixtures/retake/<video-slug>.txt
 .venv/bin/python -m pytest tests/test_real_clips.py -q
 ```
 
-The generic invariants in `tests/test_real_clips.py` (no runaway retake cut; sane sentence
-count) pick up the new fixture automatically via glob — no test edit needed, and they must
-pass. If the clip has a distinctive line spoken exactly once that you want pinned as
-"must survive", copy `test_billion_laughs_unique_content_survives` for the new slug with its
-own survivor words. Note: this fixture exercises the *detector/segmenter* on real words; it
-does NOT re-run Whisper, so it can't catch transcription-side regressions — those still
-require an actual transcribe run to verify.
+The generic invariants in `tests/test_real_clips.py` (no runaway retake cut; sane sentence count) pick up the new fixture automatically via glob — no test edit needed, and they must pass. If the clip has a distinctive line spoken exactly once that you want pinned as "must survive", copy `test_billion_laughs_unique_content_survives` for the new slug with its own survivor words. Note: this fixture exercises the *detector/segmenter* on real words; it does NOT re-run Whisper, so it can't catch transcription-side regressions — those still require an actual transcribe run to verify.
 
 Commit the fixture alongside the video's other artifacts.
 
 ## Step 7 — Publish to Tailscale & notify Telegram
 
-Make every rendered `output/<video-slug>/*.mp4` reachable over Tailscale, then post a
-link for each **not-yet-notified** hook video **of this slug** to the Telegram `file-exchange`
-topic. The loop is scoped to the current slug's folder so other videos' hooks are never
-touched; a `.notified` log additionally dedupes across renders, so re-running only posts newly
-rendered hooks. The Telegram caption is the entry's `caption` from `videos.json`, so a mirrored
-duplicate posts under its own.
+Make every rendered `output/<video-slug>/*.mp4` reachable over Tailscale, then post a link for each **not-yet-notified** hook video **of this slug** to the Telegram `file-exchange` topic. The loop is scoped to the current slug's folder so other videos' hooks are never touched; a `.notified` log additionally dedupes across renders, so re-running only posts newly rendered hooks. The Telegram caption is the entry's `caption` from `videos.json`, so a mirrored duplicate posts under its own.
 
 **Prerequisites** (set up once, outside this workflow):
 - Tailscale installed and this machine joined to the tailnet (`tailscale up`).
-- **Operator rights granted**, so `tailscale serve` runs without root:
-  `sudo tailscale set --operator=$USER`. Without this, step 1 below fails with
-  `401 Unauthorized: must be root` on *every* render and the serve config silently goes stale.
-- The local Telegram bot API server running on `{TELEGRAM_API}` (same server used by
-  `scrape/telegram.py`).
+- **Operator rights granted**, so `tailscale serve` runs without root: `sudo tailscale set --operator=$USER`. Without this, step 1 below fails with `401 Unauthorized: must be root` on *every* render and the serve config silently goes stale.
+- The local Telegram bot API server running on `{TELEGRAM_API}` (same server used by `scrape/telegram.py`).
 
 ```bash
 # 1. Serve the output directory over Tailscale (idempotent — safe to re-run every render).
@@ -359,17 +306,7 @@ done
 ```
 
 Notes:
-- `--set-path /reels` serves privately **within your tailnet** — the link resolves only on
-  your own devices. Swap `tailscale serve` → `tailscale funnel` if the link must work
-  off-tailnet (public internet).
-- `topic` is a **name** the broker resolves to a Telegram thread id via its `config.yaml`
-  `projects:` list — `file-exchange` is the configured video topic. A raw numeric id in this
-  field fails with `unknown topic name`.
-- `output/.notified` records the basename of every hook video already posted. To re-send a
-  link, delete its line (or the whole file). `curl -sf` only logs a video as notified when
-  the POST returns 2xx, so a failed send is retried on the next run.
-- **Renaming this Mac breaks `/reels`.** The serve handler stays keyed to the old
-  `<name>.<tailnet>.ts.net:443` vhost, which MagicDNS stops resolving (NXDOMAIN), so every
-  link 404s while `tailscale status` still reports a healthy node. Step 2's vhost-vs-DNSName
-  check catches this; the fix is re-running step 1 (needs operator rights). If the stale key
-  lingers, `tailscale serve reset` then re-run step 1.
+- `--set-path /reels` serves privately **within your tailnet** — the link resolves only on your own devices. Swap `tailscale serve` → `tailscale funnel` if the link must work off-tailnet (public internet).
+- `topic` is a **name** the broker resolves to a Telegram thread id via its `config.yaml` `projects:` list — `file-exchange` is the configured video topic. A raw numeric id in this field fails with `unknown topic name`.
+- `output/.notified` records the basename of every hook video already posted. To re-send a link, delete its line (or the whole file). `curl -sf` only logs a video as notified when the POST returns 2xx, so a failed send is retried on the next run.
+- **Renaming this Mac breaks `/reels`.** The serve handler stays keyed to the old `<name>.<tailnet>.ts.net:443` vhost, which MagicDNS stops resolving (NXDOMAIN), so every link 404s while `tailscale status` still reports a healthy node. Step 2's vhost-vs-DNSName check catches this; the fix is re-running step 1 (needs operator rights). If the stale key lingers, `tailscale serve reset` then re-run step 1.
