@@ -119,6 +119,8 @@ The script and the saved file must both use this exact format — bold headers, 
 ```
 This is not a documentation template — it is the literal output format. Do not substitute plain text labels, do not add blank lines between sections, do not reformat when saving to file.
 
+The one exception is line breaks inside the spoken body: once saved, `format_script.py` re-flows `**SCRIPT**` and `**CONCLUSION**` to one sentence per line so the script is readable off a phone while filming. Those breaks are correct — never collapse the body back into a paragraph when editing a saved script.
+
 ## Process
 - **Questions to raise:** ask the user before writing if any requirement is vague, doesn't make sense, or contradicts another.
 - **Mandatory post-write review:** after writing and before saving or delivering, invoke the **tellcheck** skill on the output and fix every issue it flags. Do not skip this step. Two findings recur on every script and are not defects: `bold_overuse` fires on the mandated `**HOOK**` / `**SCRIPT**` / `**CONCLUSION**` headers, because the no-blank-lines format makes the whole file one paragraph, and `magic_adverbs` fires on "literally" wherever a hook uses the channel's proven `So [X] literally [absurd action]` template. Leave both, and never write a `tellcheck-disable-line` comment into a script to silence them — the file is parsed by `lint_script.py` and by produce-video, and a stray line breaks the format.

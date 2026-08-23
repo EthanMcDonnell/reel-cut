@@ -211,7 +211,14 @@ After the script is written, save it:
 1. Save to `assets/<video-slug>/script.md` — the slug already fixed in Stage 0, so it sits beside that slug's screenshots and figures. Create the folder if Stage 0.4 didn't
 2. No empty lines in the saved file
 3. **`/prepare-video` reads this file as the ground truth for what was said**, so the body must be the spoken words exactly as scripted — same `**HOOK**` / `**SCRIPT**` / `**CONCLUSION**` / `**CTA**` / `**REFERENCES:**` / `**VIEWER RESOURCES:**` headings, same one-line-per-hook shape. Keep proper nouns in their real casing (`ChatGPT`, `PgBouncer`, `PGKeeper`) — that casing is what the transcript gets checked against
-4. **Run the deterministic QC linter and block on it.** It catches mechanical defects (em dashes, banned throat-clearing openers, missing apostrophes, format and blank-line violations) that self-review keeps missing:
+4. **Re-flow the body to one sentence per line.** The `**SCRIPT**` and `**CONCLUSION**` sections are written as one paragraph, which is hard to read off a phone while filming. This rewrites the line breaks only, never the wording, and every other section is left alone:
+
+   ```bash
+   .venv/bin/python .claude/skills/scripts/scripts/format_script.py "<saved_file_path>"
+   ```
+
+   Run it after every save of this file, including any re-save made to fix a linter error. Re-running is safe.
+5. **Run the deterministic QC linter and block on it.** It catches mechanical defects (em dashes, banned throat-clearing openers, missing apostrophes, format and blank-line violations) that self-review keeps missing:
 
    ```bash
    .venv/bin/python .claude/skills/scripts/scripts/lint_script.py "<saved_file_path>" --series <SERIES>
