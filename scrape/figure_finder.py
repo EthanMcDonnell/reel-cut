@@ -268,6 +268,7 @@ async def _prepare(ctx, url: str):
     """Open a desktop-viewport page, load the URL, dismiss overlays, expand truncations."""
     sys.path.insert(0, str(ROOT / "scrape"))
     from screenshot import _dismiss_overlays, _expand_truncations
+    from playwright_utils import wait_out_challenge
 
     page = await ctx.new_page()
     await page.set_viewport_size({"width": 1280, "height": 2000})
@@ -277,6 +278,7 @@ async def _prepare(ctx, url: str):
         await page.goto(url, wait_until="load", timeout=30000)
     await page.wait_for_load_state("load")
     await page.wait_for_timeout(600)
+    await wait_out_challenge(page)  # proof-of-work walls clear themselves; the rest fall to the retry loop
     for step in (_dismiss_overlays, _expand_truncations):
         try:
             await step(page)

@@ -85,6 +85,21 @@ _JS_TARGET_RECT = (
     " const b = t.getBoundingClientRect(); return [b.x, b.y, b.width, b.height]; }"
 )
 
+# The highlighted region set by _ss_highlight.js: a Range for a tight match, the block Element
+# for a whole_block fallback. Both answer getBoundingClientRect, so one pair of helpers covers
+# them. Centring on the region rather than the block is what keeps the proof in frame: a tight
+# highlight near the end of a tall paragraph falls outside a crop centred on that paragraph.
+_JS_SCROLL_REGION = (
+    "() => { const r = window.__ssRegion; if (!r || !r.getBoundingClientRect) return false;"
+    " const b = r.getBoundingClientRect(); if (!b.width && !b.height) return false;"
+    " window.scrollBy(0, b.top + b.height / 2 - window.innerHeight / 2); return true; }"
+)
+_JS_REGION_RECT = (
+    "() => { const r = window.__ssRegion; if (!r || !r.getBoundingClientRect) return null;"
+    " const b = r.getBoundingClientRect(); if (!b.width && !b.height) return null;"
+    " return [b.x, b.y, b.width, b.height]; }"
+)
+
 # Per-snippet match metadata set on window by _ss_find.js (found / confidence / matchType).
 _JS_LASTMATCH = "() => window.__ssLastMatch || {found: false, confidence: 0, matchType: 'none'}"
 
@@ -222,6 +237,8 @@ async def _prepare_page(ctx, url: str):
         await page.goto(url, wait_until="load", timeout=30000)
     await page.wait_for_load_state("load")
     await page.wait_for_timeout(600)  # brief settle for late layout shifts / lazy content
+    from playwright_utils import wait_out_challenge
+    await wait_out_challenge(page)  # proof-of-work walls clear themselves; the rest fall to the retry loop
     try:
         await _dismiss_overlays(page)
     except Exception:
@@ -282,15 +299,22 @@ async def _capture_snippet(
         if not el or await page.evaluate(_JS_ISNULL, el):
             return _miss("text not found on page", meta)
 
-        # Highlight first: this locates the snippet across inline tags and marks it. Then
-        # re-centre on the tagged *element* and measure its live rect, rather than trusting the
-        # highlighter's Range rect — on pages that reflow after scrolling (Reddit), the Range
-        # rect goes stale and the crop lands on the wrong element. See _JS_TARGET_RECT.
+        # Highlight first: this locates the snippet across inline tags and marks it. Then centre
+        # on the highlighted *region* and measure its rect only after the scroll has settled —
+        # on pages that reflow after scrolling (Reddit), a rect read before the scroll goes stale
+        # and the crop lands on the wrong place. Centring on the block instead is what put a
+        # highlight near the end of a long paragraph outside its own crop, so fall back to the
+        # tagged element only when there is no usable region.
         await page.evaluate(js_highlight, {"anchor": anchor, "snippet": raw})
-        await page.evaluate(_JS_SCROLL_TARGET)
-        await page.wait_for_timeout(700)
-
-        r = await page.evaluate(_JS_TARGET_RECT)
+        if await page.evaluate(_JS_SCROLL_REGION):
+            await page.wait_for_timeout(700)
+            r = await page.evaluate(_JS_REGION_RECT)
+        else:
+            r = None
+        if not r:
+            await page.evaluate(_JS_SCROLL_TARGET)
+            await page.wait_for_timeout(700)
+            r = await page.evaluate(_JS_TARGET_RECT)
         if not r or r[2] == 0:
             return _miss("matched element has no size", meta)
         vw, vh = 390, 844

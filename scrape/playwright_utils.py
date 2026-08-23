@@ -1,5 +1,7 @@
 """Shared Playwright stealth helpers to reduce bot-detection."""
 
+import time
+
 STEALTH_ARGS = [
     "--disable-blink-features=AutomationControlled",
     "--no-sandbox",
@@ -27,6 +29,8 @@ _BLOCK_MARKERS = (
     "Attention Required! | Cloudflare",
     "Access Denied",
     "Pardon Our Interruption",
+    "Checking your browser...",
+    "X-Hashcash-Solution",
 )
 
 
@@ -39,9 +43,42 @@ def is_bot_block(html: str) -> bool:
 
 # Whether a request gets walled is decided per request, not per source: the same URL and
 # the same stealth profile can sail through one attempt and get challenged on the next.
-# The interstitial never resolves on its own (polled one for 15s, the HTML never changed),
-# so waiting longer is useless and only a fresh context gets another roll of the dice.
+# A DataDome/Cloudflare interstitial never resolves on its own (polled one for 15s, the
+# HTML never changed), so only a fresh context gets another roll of the dice. Proof-of-work
+# walls are the exception and clear themselves — see wait_out_challenge, which runs first.
 BOT_BLOCK_RETRIES = 3
+
+
+async def wait_out_challenge(page, timeout_ms: int = 20000) -> bool:
+    """Give a self-resolving anti-bot interstitial time to clear. True if the page is through.
+
+    Hashcash proof-of-work walls ("Checking your browser...") solve in the page and reload
+    themselves, typically in 3-5s. Without this wait the caller screenshots the challenge or
+    reads an empty body, and every snippet then misses with a misleading "text not found"
+    rather than a block. Returns immediately when the page was never walled, so the cost on
+    an unblocked page is one content() read.
+    """
+    deadline = time.monotonic() + timeout_ms / 1000
+    walled = False
+    while True:
+        try:
+            if not is_bot_block(await page.content()):
+                if walled:
+                    # The challenge clears by reloading, so the replacement document can still
+                    # be in flight here — long enough for document.body to read as null and
+                    # crash whatever JS the caller runs next. Settle before handing it back.
+                    try:
+                        await page.wait_for_load_state("load", timeout=10000)
+                        await page.wait_for_function("() => !!document.body", timeout=10000)
+                    except Exception:
+                        pass
+                return True
+        except Exception:
+            pass  # content() throws mid-reload, which is exactly what we are waiting for
+        walled = True
+        if time.monotonic() >= deadline:
+            return False
+        await page.wait_for_timeout(500)
 
 
 _CONTEXT_OPTS = dict(
