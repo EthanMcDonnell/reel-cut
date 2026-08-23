@@ -122,23 +122,25 @@ output/<slug>.mp4 ──(tailscale serve)──▶ https://<host>.ts.net/reels/<
 
 ---
 
-## Inbound footage (phone → `assets/`)
+## Script out, footage in (phone ↔ `assets/`)
 
-The reverse of Step 7. `/produce-script` ends by sending you an upload link on Telegram; you
-shoot the take, tap the link, and the clip lands in that slug's folder ready for
-`/prepare-video`.
+The reverse of Step 7. `/produce-script` ends by sending you two links on Telegram; you read
+the script off the phone, shoot the take, tap through to upload, and the clip lands in that
+slug's folder ready for `/prepare-video`.
 
 ```
-/produce-script ──script + link──▶  Telegram "file-exchange"  ──▶  phone
-                                                                     │  PUT (raw file body)
-                                    http://100.x.y.z:8770/upload/<slug>
-                                                                     ▼
-                                                        assets/<slug>/<filename>
+/produce-script ────links────▶  Telegram "file-exchange"  ────▶  phone
+                                                                   │
+                                http://100.x.y.z:8770/script/<slug> ┤  GET (read while filming)
+                                http://100.x.y.z:8770/upload/<slug> ┘  PUT (raw file body)
+                                                                   ▼
+                                                      assets/<slug>/<filename>
 ```
 
-`scripts/send_script.py <slug>` posts the script body then the upload link (link last, so it's
-newest in the thread). It splits at Telegram's 4096-char cap — the broker doesn't, and an
-oversized message is rejected outright.
+`scripts/send_script.py <slug>` posts one message holding both links. The script itself is
+**not** pasted into the thread — the server reads `assets/<slug>/script.md` on every request,
+so an edit made after the message was sent is live at the next refresh instead of frozen into
+whatever was current at produce time.
 
 **Setup** — once, after `tailscale up`:
 
@@ -157,6 +159,11 @@ wi-fi. Pin a different host with `.venv/bin/python scripts/upload_server.py 127.
 
 **Notes**
 
+- `GET /script/<slug>` lays the script out for filming: hooks numbered as separate takes,
+  spoken prose in reading type, references small because they are never read aloud. An
+  **Upload the take** button at the bottom goes straight to that slug's upload page.
+- An open script page polls `GET /script/<slug>?mtime=1` every 5s and shows a reload banner
+  when the file changes underneath it, so a page left open mid-shoot can't serve stale lines.
 - `GET /upload/<slug>` is a browser page; an iOS Shortcut can `PUT` the file from the share
   sheet. Body is the raw file, not multipart — neither path buffers the clip in memory.
 - Unknown slug → 404, so a typo can't strand footage outside `assets/<slug>/`.

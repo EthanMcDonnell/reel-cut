@@ -497,10 +497,10 @@ figure equivalent of the screenshot manifest — it records the *selection* and 
   `script_context`, marking where the figure appears and disappears. Same rules as screenshot
   triggers; leave `""` if no clean anchor and produce-video spans the whole line.
 
-## Step 5 — Send the script and upload link to Telegram
+## Step 5 — Send the script and upload links to Telegram
 
-Post the script body and the slug's footage-upload link to the `file-exchange` topic, so you
-can read the script off your phone and send the take straight back from the same thread.
+Post the slug's script link and footage-upload link to the `file-exchange` topic, so you can
+read the script off your phone and send the take straight back from the same thread.
 
 ```bash
 .venv/bin/python scripts/send_script.py <video-slug>
@@ -509,10 +509,11 @@ can read the script off your phone and send the take straight back from the same
 Best-effort: if it fails (upload server down, tailnet unreachable, broker off), say so in the
 final report and carry on — the script is already written to disk.
 
-The helper reads `assets/<slug>/script.md`, splits it if it exceeds Telegram's 4096-char
-message cap — the broker does **not** split, so an unsplit long script is rejected outright —
-and sends the upload link **last**, so it's the newest message in the topic and one tap from
-the bottom of the thread.
+The helper sends **one** message holding both links. The script body is not pasted into the
+thread: `scripts/upload_server.py` serves `assets/<slug>/script.md` at
+`http://<tailnet-ip>:8770/script/<slug>`, reading it on every request, so any edit made after
+this step is live on the phone at the next refresh. That is also why a later fix to the
+script needs no re-send — the link already points at the current file.
 
 ## Final Output
 
@@ -527,5 +528,5 @@ Report to the user:
 - Screenshot results: how many captured (with the exact/fuzzy breakdown), and explicitly list any snippets that were **not found** so the user knows which claims lack on-screen evidence
 - Figures: how many charts/diagrams were selected (with `kind` and the beat each supports), the count of candidates harvested vs. kept, and where they were saved (`assets/<slug>/figures/`, `figures.json`). Call out each figure **dropped by the span gate** and the span it fell short by — that means the body never got the sustained passage the diagram needed, and is worth a script edit. Say so if legibility was judged from metadata rather than from reading the images
 - Unsupported claims: any checkable claim you dropped at selection time because the source didn't state it verbatim (Step 4.1.2) — the user may want to re-source or soften it
-- Telegram: the script (and in how many messages) plus the `http://<tailnet-ip>:8770/upload/<slug>` link sent to `file-exchange` — or that nothing was sent, and why (upload server down, tailnet unreachable, broker off)
+- Telegram: the `http://<tailnet-ip>:8770/script/<slug>` and `/upload/<slug>` links sent to `file-exchange` — or that nothing was sent, and why (upload server down, tailnet unreachable, broker off)
 - Any warnings (near-tie runner-up available, low-confidence fuzzy matches, skipped screenshots, etc.)

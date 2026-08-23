@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Send a slug's script and its footage-upload link to the Telegram file-exchange topic.
+"""Send links to a slug's script and its footage upload page, over the tailnet.
 
     .venv/bin/python scripts/send_script.py <slug>
 
-The link goes last so it's the newest message in the topic — one tap from the
-bottom of the thread when you've finished reading and want to send the take back.
+The script is served live by upload_server.py rather than pasted into the thread,
+so a later edit is on the phone at the next refresh instead of being frozen into
+whatever was sent at produce time.
 """
 
 import subprocess
@@ -18,37 +19,6 @@ TOPIC = "file-exchange"
 PORT = 8770
 REPO = Path(__file__).resolve().parent.parent
 
-# Telegram's sendMessage hard-caps at 4096 chars and the broker doesn't split,
-# so anything longer is dropped outright. Leave room for the chunk counter.
-LIMIT = 3900
-
-
-def chunk(text: str, limit: int = LIMIT) -> list[str]:
-    """Split on paragraph breaks, then lines, keeping every piece under `limit`."""
-    if len(text) <= limit:
-        return [text]
-
-    out: list[str] = []
-    current = ""
-    for para in text.split("\n\n"):
-        # A single paragraph over the limit still has to be broken somewhere.
-        pieces = [para] if len(para) <= limit else para.splitlines(keepends=True)
-        for piece in pieces:
-            candidate = f"{current}\n\n{piece}" if current else piece
-            if len(candidate) <= limit:
-                current = candidate
-            else:
-                if current:
-                    out.append(current)
-                # A single line longer than the limit: hard-cut it.
-                while len(piece) > limit:
-                    out.append(piece[:limit])
-                    piece = piece[limit:]
-                current = piece
-    if current:
-        out.append(current)
-    return out
-
 
 def tailnet_ip() -> str | None:
     try:
@@ -60,34 +30,26 @@ def tailnet_ip() -> str | None:
         return None
 
 
-def send(client: httpx.Client, content: str) -> None:
-    resp = client.post(TELEGRAM_API, json={"content": content, "topic": TOPIC})
-    resp.raise_for_status()
-
-
 def main() -> None:
     if len(sys.argv) != 2:
         sys.exit("usage: send_script.py <slug>")
     slug = sys.argv[1]
 
-    script = REPO / "assets" / slug / "script.md"
-    if not script.is_file():
-        sys.exit(f"no script at {script}")
-    body = script.read_text().strip()
+    if not (REPO / "assets" / slug / "script.md").is_file():
+        sys.exit(f"no script at assets/{slug}/script.md")
 
     ip = tailnet_ip()
     if not ip:
         sys.exit("tailnet IP unavailable — run 'tailscale up'")
-    url = f"http://{ip}:{PORT}/upload/{slug}"
+    script_url = f"http://{ip}:{PORT}/script/{slug}"
+    upload_url = f"http://{ip}:{PORT}/upload/{slug}"
 
-    parts = chunk(body)
+    message = f"📄 {slug}\n\nScript: {script_url}\nUpload the take: {upload_url}"
     with httpx.Client(timeout=15) as client:
-        for i, part in enumerate(parts, 1):
-            header = f"📄 {slug}" if len(parts) == 1 else f"📄 {slug} ({i}/{len(parts)})"
-            send(client, f"{header}\n\n{part}")
-        send(client, f"🎥 Upload the take: {url}")
+        resp = client.post(TELEGRAM_API, json={"content": message, "topic": TOPIC})
+        resp.raise_for_status()
 
-    print(f"sent script ({len(parts)} message(s)) + link to {TOPIC}: {url}")
+    print(f"sent script + upload links to {TOPIC}: {script_url}")
 
 
 if __name__ == "__main__":
