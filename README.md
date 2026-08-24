@@ -175,21 +175,25 @@ body; its intake receipt tells `/produce-reel` that the missing script is intent
 
 This installs `com.reelcut.upload` (the Tailnet receiver) and `com.reelcut.produce` (the one-job
 production worker). They start at login and respawn after a crash. Rerun the installer after
-moving the repo; it writes absolute paths into the plists. Logs are
+moving the repo; it writes absolute paths into the plists. The LaunchAgent logs are
 `/tmp/reelcut-upload.{log,err}` and `/tmp/reelcut-produce.{log,err}`.
 
 The receiver binds this machine's **tailnet IP**, not loopback, so links work from any Tailnet
 device but are not exposed on local wi-fi. The worker uses `scripts/worker-settings.json`: a
 scoped Claude tool allowlist with no permission-bypass mode. If the workflow needs an unapproved
-tool, the job is left failed with its log instead of silently expanding permissions.
+tool, the job is left failed with its Claude output instead of silently expanding permissions.
 
 **Status and recovery**
 
-- Each completed upload returns a `/job/<id>` page that polls `queued`, `running`, `rendered`,
+- Each completed upload returns a `/job/<id>` page that polls `pending`, `running`, `succeeded`,
   `blocked`, `failed`, or `interrupted` status. Telegram receives the same lifecycle updates.
-- Queue state and per-job Claude logs live under `.reelcut/production-queue/` and are local-only.
+- The job page reveals **View Claude output** as soon as the worker creates its combined
+  stdout/stderr log. The link is available only over the Tailnet and serves
+  `/job/<id>/log`.
+- Queue state and per-job Claude logs live under `.reelcut/production-queue/`. Retrying a job
+  replaces its log with the latest attempt's output.
 - A worker restart moves an in-flight job to `interrupted`; it never retries model or render work
-  automatically. Inspect the log, then run
+  automatically. Inspect the job's Claude output, then run
   `.venv/bin/python scripts/production_queue.py retry <job-id>` to requeue it deliberately.
 - Uploads stage as `<name>.part`, renamed only when complete. Only `.mp4`, `.mov`, and `.mkv`
   files are accepted; the server never buffers the body in memory.

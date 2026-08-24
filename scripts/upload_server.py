@@ -5,6 +5,8 @@ GET  /script/<slug>            → assets/<slug>/script.md, read fresh, laid out
 GET  /script/<slug>?mtime=1    → that file's mtime, so an open page can spot an edit
 GET  /upload/<slug>            → a one-input page (tap the Telegram link, pick the clip)
 PUT  /upload/<slug>?name=<fn>  → streams the raw request body to assets/<slug>/<fn>
+GET  /job/<id>                 → a production job's status and Claude output link
+GET  /job/<id>/log             → the worker's captured Claude output, once it exists
 
 The script is read on every request rather than pasted into Telegram at produce time,
 so an edit made after the script was sent is live on the phone at the next refresh.
@@ -39,7 +41,7 @@ REPO = Path(__file__).resolve().parent.parent
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
-from production_queue import enqueue, find_job
+from production_queue import QUEUE_ROOT, enqueue, find_job
 from reelcut.config import load_config
 
 PORT = 8770
@@ -104,14 +106,16 @@ JOB_PAGE = """<!doctype html>
 <style>
  body{{font:17px -apple-system,sans-serif;margin:0;padding:2rem 1.5rem;background:#111;color:#eee}}
  h1{{font-size:1.1rem;margin:0 0 1.5rem}} dt{{color:#888;margin-top:1rem}} dd{{margin:.2rem 0;word-break:break-word}}
+ a{{display:inline-block;margin-top:1.5rem;color:#93c5fd}}
 </style>
-<h1>Production job</h1><dl id=job>Loading…</dl>
+<h1>Production job</h1><dl id=job>Loading…</dl><a id=log hidden>View Claude output</a>
 <script>
 const fields=['asset_slug','status','created_at','updated_at','reason','error'];
 async function refresh(){{
   const r=await fetch(location.pathname+'?json=1',{{cache:'no-store'}}); if(!r.ok)return;
-  const job=await r.json(), box=document.getElementById('job');
+  const job=await r.json(), box=document.getElementById('job'), link=document.getElementById('log');
   box.innerHTML=fields.filter(k=>job[k]).map(k=>'<dt>'+k.replace('_',' ')+'</dt><dd>'+job[k]+'</dd>').join('');
+  if(job.log_url){{ link.href=job.log_url; link.hidden=false; }}
   if(!['succeeded','blocked','failed','interrupted'].includes(job.status)) setTimeout(refresh,2000);
 }}
 refresh();
@@ -348,13 +352,22 @@ class Handler(BaseHTTPRequestHandler):
                 self._reply(200, script_page(script), "text/html; charset=utf-8")
             return
 
-        if parts[:1] == ["job"] and len(parts) == 2 and JOB_ID_RE.fullmatch(parts[1]):
+        if parts[:1] == ["job"] and len(parts) in (2, 3) and JOB_ID_RE.fullmatch(parts[1]):
             found = find_job(parts[1])
             if found is None:
                 self._reply(404, "no such job")
                 return
+            log_path = QUEUE_ROOT / "logs" / f"{parts[1]}.log"
+            if len(parts) == 3:
+                if parts[2] != "log" or not log_path.is_file():
+                    self._reply(404, "no worker output yet")
+                else:
+                    self._reply(200, log_path.read_text(errors="replace"), "text/plain; charset=utf-8")
+                return
             _, job = found
             public = {key: job[key] for key in ("id", "asset_slug", "status", "created_at", "updated_at", "reason", "error") if key in job}
+            if log_path.is_file():
+                public["log_url"] = f"/job/{parts[1]}/log"
             if parse_qs(url.query).get("json"):
                 self._reply_json(200, public)
             else:
