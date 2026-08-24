@@ -161,7 +161,7 @@ def run_job(path: Path, repo: Path = REPO, queue_root: Path = QUEUE_ROOT) -> str
     log_path.parent.mkdir(parents=True, exist_ok=True)
     prompt = f"/produce-reel {job['asset_slug']} --auto"
     # Production stages run as Claude background tasks and may transcribe for over 10 minutes.
-    environment = os.environ | {"CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS": "0"}
+    environment = os.environ | {"CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS": "3600000"}
 
     notify(f"⏳ processing: {job['asset_slug']} ({job['id'][:8]})")
     try:

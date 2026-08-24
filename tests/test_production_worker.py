@@ -14,7 +14,7 @@ def test_worker_waits_for_long_running_claude_background_tasks(tmp_path, monkeyp
     intake.write_text("{}")
 
     def fake_run(_args, **kwargs):
-        assert kwargs["env"]["CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"] == "0"
+        assert kwargs["env"]["CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"] == "3600000"
         return SimpleNamespace(returncode=0)
 
     monkeypatch.setattr(production_queue, "notify", lambda _: None)
