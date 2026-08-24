@@ -3,8 +3,8 @@
 Called by the Telegram bot when a user clicks Keep or Delete.
 Payload is passed as JSON on stdin.
 
-  Keep   → marks article as viewed in the series DB table
-  Delete → adds URL to rejected and removes from the series table
+  Keep   → marks an article or video idea as viewed
+  Delete → rejects the article or video idea for future selection
 """
 
 import json
@@ -14,6 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from db import get_db
+from ideas import record_idea_response
 
 LOG_PATH = Path(__file__).parent / "db" / "responses.log"
 
@@ -35,6 +36,19 @@ def main() -> None:
     metadata = body.get("metadata") or {}
     url = metadata.get("url", "")
     article_id = metadata.get("article_id", "")
+
+    if metadata.get("kind") == "video_idea":
+        idea_id = metadata.get("idea_id", "")
+        if not idea_id:
+            log.warning("Video-idea response received without an idea ID")
+            sys.exit(1)
+        try:
+            status = record_idea_response(get_db(), idea_id, response)
+        except ValueError as exc:
+            log.warning(str(exc))
+            sys.exit(1)
+        log.info(f"Marked video idea {idea_id} as {status}")
+        return
 
     if response == "delete":
         if not url:

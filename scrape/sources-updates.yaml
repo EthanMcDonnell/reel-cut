@@ -134,7 +134,7 @@ excluded_url_patterns:
 min_relevance_score: 0
 
 # Tighter lookback — update videos should cover recent news
-lookback_days: 3
+lookback_days: 5
 
 # Rolling retention — articles older than this many days are pruned from the db on each merge
-db_retention_days: 4
+db_retention_days: 7

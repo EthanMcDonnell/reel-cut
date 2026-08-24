@@ -10,6 +10,15 @@ DB_PATH = ROOT / "scrape" / "db" / "influencer.db"
 
 VALID_SERIES = {"tbbt", "updates"}
 VALID_STATUSES = {"new", "viewed", "done"}
+VALID_IDEA_SERIES = {
+    "tbbt",
+    "updates",
+    "tech-in-one-breathe",
+    "interesting-tech",
+    "ai-fundamentals",
+    "hot-takes",
+}
+VALID_IDEA_STATUSES = {"new", "viewed", "done", "rejected"}
 
 
 def get_db(path: Path | None = None) -> sqlite3.Connection:
@@ -66,11 +75,49 @@ def init_db(conn: sqlite3.Connection) -> None:
             UNIQUE(slug, series)
         );
 
+        CREATE TABLE IF NOT EXISTS video_idea_batches (
+            id TEXT PRIMARY KEY,
+            generated_at TEXT NOT NULL,
+            bank_path TEXT NOT NULL UNIQUE,
+            telegram_digest_sent_at TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS video_ideas (
+            id TEXT PRIMARY KEY,
+            batch_id TEXT NOT NULL REFERENCES video_idea_batches(id),
+            series TEXT NOT NULL,
+            slug TEXT NOT NULL,
+            hook TEXT NOT NULL,
+            angle TEXT NOT NULL,
+            why TEXT,
+            intent TEXT,
+            notes TEXT,
+            status TEXT NOT NULL DEFAULT 'new',
+            created_at TEXT NOT NULL,
+            telegram_sent_at TEXT,
+            UNIQUE(series, slug)
+        );
+
+        CREATE TABLE IF NOT EXISTS video_idea_sources (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            idea_id TEXT NOT NULL REFERENCES video_ideas(id),
+            title TEXT,
+            url TEXT NOT NULL,
+            publication TEXT,
+            published_date TEXT,
+            article_id TEXT,
+            telegram_sent_at TEXT,
+            UNIQUE(idea_id, url)
+        );
+
     """)
     conn.executescript("""
         CREATE INDEX IF NOT EXISTS idx_tbbt_url ON tbbt(url);
         CREATE INDEX IF NOT EXISTS idx_updates_url ON updates(url);
         CREATE INDEX IF NOT EXISTS idx_rejected_source_url ON rejected(source_url);
+        CREATE INDEX IF NOT EXISTS idx_video_ideas_batch ON video_ideas(batch_id);
+        CREATE INDEX IF NOT EXISTS idx_video_ideas_status ON video_ideas(status);
+        CREATE INDEX IF NOT EXISTS idx_video_idea_sources_url ON video_idea_sources(url);
     """)
     _migrate_rejected_schema(conn)
     _migrate_article_status(conn)

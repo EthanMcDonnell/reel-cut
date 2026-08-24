@@ -799,7 +799,11 @@ def save_run_stage(run_dir: Path, filename: str, articles: list[dict], run_type:
 # Main
 # ---------------------------------------------------------------------------
 
-async def main(filter_name: str | None = None, sources_file: Path | None = None) -> None:
+async def main(
+    filter_name: str | None = None,
+    sources_file: Path | None = None,
+    send_telegram: bool = True,
+) -> None:
     config = load_config(sources_file)
     sources: list[dict] = config["sources"]
     rejected_urls = load_rejected()
@@ -917,7 +921,10 @@ async def main(filter_name: str | None = None, sources_file: Path | None = None)
     log.info(f"Inserted {len(passing)} passing articles into {run_type} DB (new articles only)")
 
     new_passing = [a for a in passing if a["id"] not in prev_by_id]
-    send_articles_to_telegram(_annotate(new_passing, "passing"), run_type)
+    if send_telegram:
+        send_articles_to_telegram(_annotate(new_passing, "passing"), run_type)
+    else:
+        log.info("Telegram article notifications suppressed")
 
 
 # ---------------------------------------------------------------------------
@@ -928,6 +935,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Article Aggregator")
     parser.add_argument("--config", metavar="FILE", help="Path to sources YAML (default: scrape/sources.yaml)")
     parser.add_argument("--source", metavar="NAME", help="Scrape only this source (by name)")
+    parser.add_argument(
+        "--no-telegram",
+        action="store_true",
+        help="Store candidates without sending raw article cards",
+    )
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--mark-read", metavar="URL", help="Mark a single article as read")
     group.add_argument("--mark-all-read", action="store_true", help="Mark all articles as read")
@@ -951,4 +963,10 @@ if __name__ == "__main__":
     else:
         if not args.config:
             parser.error("--config is required. Example: python scrape/scraper.py --config scrape/sources-tbbt.yaml")
-        asyncio.run(main(filter_name=args.source, sources_file=sources_file))
+        asyncio.run(
+            main(
+                filter_name=args.source,
+                sources_file=sources_file,
+                send_telegram=not args.no_telegram,
+            )
+        )

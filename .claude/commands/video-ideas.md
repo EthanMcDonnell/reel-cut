@@ -7,16 +7,31 @@ permissionMode: default
 ---
 Produce a new dated batch of video ideas, grounded in what is **actually performing** on the channel right now rather than in what seems interesting. Each idea is a **hook** in its series' winning pattern, plus the **angle** it has to deliver, plus (where the series requires one) a **verified source**.
 
-This command does not write scripts. Its output is a dated idea bank at the **repo root** (Stage 7), which is where `/produce-script` looks when a prompt names an idea rather than a URL. Keep the bank at the root and keep the `## <series-slug> — <Series Name>` headings intact: `/produce-script` reads the series straight off the heading of the entry it matches.
+This command does not write scripts. It creates a **persisted, Telegram-delivered idea batch** and also writes a dated idea bank at the **repo root** (Stage 7), which is where `/produce-script` looks when a prompt names an idea rather than a URL. Keep the bank at the root and keep the `## <series-slug> — <Series Name>` headings intact: `/produce-script` reads the series straight off the heading of the entry it matches.
 
 **Paths:** `{TOKEN}` references are machine-specific paths defined in [glossary.md](glossary.md) — resolve each before running. Repo-relative paths (`scrape/…`, `series/…`, `.claude/…`) are written inline. Run all `.venv/bin/…` commands from `{PROJECT_ROOT}`.
 
 The user's prompt (optional) is: `$ARGUMENTS` — it may narrow the run. Honour any of:
 - **a series slug** (`tbbt`, `updates`, `tech-in-one-breathe`, `interesting-tech`, `ai-fundamentals`, `hot-takes`) → only that series
 - **a count** ("5 per series", "20 ideas") → override the defaults in Stage 5
-- **a focus** ("only shareable", "lean into ai-fundamentals", "no news") → weight selection accordingly Default with no arguments: **all six series, ~5–6 ideas each**.
+- **a focus** ("only shareable", "lean into ai-fundamentals", "no news") → weight selection accordingly
+
+Default with no arguments: **5 `updates` ideas and 3 ideas in every other series**. `hot-takes` may be below three only when fewer than three user-authored opinions survive the sourcing gate; state the shortfall plainly rather than inventing a take.
 
 ---
+
+## Stage 0 — Refresh the article candidates silently
+
+This command is the curated alternative to raw article notifications. Refresh the existing source lists before looking for `tbbt` and `updates` ideas, but **never send their individual article cards**:
+
+```bash
+.venv/bin/python scrape/scraper.py --config scrape/sources-tbbt.yaml --no-telegram
+.venv/bin/python scrape/prune_db.py --series tbbt --config scrape/sources-tbbt.yaml
+.venv/bin/python scrape/scraper.py --config scrape/sources-updates.yaml --no-telegram
+.venv/bin/python scrape/prune_db.py --series updates --config scrape/sources-updates.yaml
+```
+
+The configured sites remain the source of truth. `updates` has a five-day lookback to leave margin around this command's roughly three-day cadence. If either refresh fails, stop and report it rather than silently building a supposedly fresh batch from old candidates.
 
 ## Stage 1 — Pull the analytics
 
@@ -51,6 +66,7 @@ An idea that repeats something shipped, queued, or already proposed is worthless
 - **Series files:** read `series/<slug>.md` for each in-scope series — the **Queued** and **Best Hooks** sections list both what is planned and what already shipped.
 - **Scripted but not yet shot:** `assets/*/script.md` — a slug with a script is already written.
 - **Rejected topics:** `.venv/bin/python scrape/query.py rejected --series <series>` — topics previously ruled out. Do not re-propose them.
+- **Persisted ideas:** `.venv/bin/python scrape/ideas.py list --status all` — these are the durable record of prior proposals, their approval state, and their sources. Do not repeat their semantic topic, slug, or supporting article as a new idea.
 
 Record the exclusion set. Every idea in the final file must clear it.
 
@@ -107,7 +123,7 @@ Present every hot-takes idea as a **candidate for the user to confirm, edit, or 
 
 ## Stage 5 — Generate and select
 
-For each in-scope series, generate **wide then cut** — do not write five ideas and keep five. Aim for ~2× the target, then drop everything that fails the checks below. Default target is **5–6 ideas per series**, adjusted by `$ARGUMENTS`.
+For each in-scope series, generate **wide then cut** — do not write the target count and keep all of it. Aim for ~2× the target, then drop everything that fails the checks below. The default target is **5 for `updates` and 3 for every other series**, adjusted only by an explicit count in `$ARGUMENTS`.
 
 Write each idea in the series' own winning hook pattern, taken from `series/<slug>.md` **Best Hooks** and `.claude/voice/proven-hooks.md` — not a generic phrasing. Each idea needs:
 
@@ -147,7 +163,7 @@ This is the stage that makes the output trustworthy. Apply it before writing the
 
 ## Stage 7 — Write the file
 
-Write to `VIDEO_IDEAS_<YYYY-MM-DD>.md` at the repo root (today's date). **Never overwrite an existing bank** — each run is a new dated file, so prior batches stay readable and the Stage 3 glob keeps picking them all up.
+Write to `VIDEO_IDEAS_<YYYY-MM-DD>.md` at the repo root (today's date). **Never overwrite an existing bank** — each run is a new dated file, so prior batches stay readable and the Stage 3 glob keeps picking them all up. If a bank already exists for today, add a numeric suffix such as `VIDEO_IDEAS_<YYYY-MM-DD>_2.md`.
 
 Structure:
 
@@ -156,6 +172,46 @@ Structure:
 3. **One section per series** — heading `## <series-slug> — <Series Name> (<count>)`, its pattern restated in one italic line, then the numbered ideas. Each idea is a bolded hook, a paragraph of angle and detail, and a `- **Source:** [title](url)` line where the series requires one. `/produce-script` resolves against exactly this shape — it reads the series off the heading and the source off that line — so keep the slug in the heading and the format steady.
 4. **Recommended production order** — the top ~5 across all series, ranked, each with a one-line reason. Freshness-sensitive ideas rank higher; the best idea in the weakest series does not.
 5. **Footer** — total count, and a plain statement of which sections are source-verified, which are concept picks, and which individual ideas carry an unverified flag.
+
+## Stage 8 — Persist and deliver the batch
+
+After writing the Markdown bank, create a temporary JSON payload and persist it before reporting success. Every final idea must have one object; use an empty `sources` list only for a genuine concept or user-authored hot take. `slug` is a stable, lowercase, hyphen-separated description of the underlying topic — not a reworded hook — because it is the cross-run dedupe key.
+
+```json
+{
+  "batch_id": "ideas-<YYYY-MM-DD[-N]>",
+  "generated_at": "<UTC ISO-8601 timestamp>",
+  "bank_path": "VIDEO_IDEAS_<YYYY-MM-DD>.md",
+  "ideas": [
+    {
+      "series": "updates",
+      "slug": "stable-topic-slug",
+      "hook": "The exact hook from the Markdown bank",
+      "angle": "What the video has to explain",
+      "why": "Why this fits a real top performer",
+      "intent": "share",
+      "notes": "Optional production caveat",
+      "sources": [
+        {
+          "title": "Verified article title",
+          "url": "https://…",
+          "publication": "Publication or company",
+          "published_date": "YYYY-MM-DD",
+          "article_id": "optional scraped DB ID"
+        }
+      ]
+    }
+  ]
+}
+```
+
+Use the bank filename's date and optional numeric suffix in `batch_id`: for example, `VIDEO_IDEAS_2026-08-24_2.md` uses `ideas-2026-08-24-2`. Write the payload to a temporary JSON file, then run:
+
+```bash
+.venv/bin/python scrape/ideas.py import /tmp/video-ideas-<YYYY-MM-DD>.json --send
+```
+
+This sends one grouped digest, then an individual **Keep/Delete** approval card for every new idea, then one supporting-article link per unique source URL. Keep marks the idea `viewed` and, for `tbbt`/`updates`, marks its matching source article viewed too; Delete marks the idea `rejected` and adds its topic to the permanent reject set. The command is retry-safe: rerunning the same payload sends only messages that were not successfully delivered.
 
 ## Final Output
 
@@ -167,3 +223,4 @@ Report to the user:
 - The recommended top ~5, with one line each
 - **Every flag, stated plainly:** unverified figures, ideas that overlap an existing bank entry (and which one to drop), companies already used recently, handling sensitivities, and anything that will decay before it ships
 - Whether anything was deliberately excluded and why (rejected topics, vault collisions)
+- SQLite and Telegram delivery results: batch ID, ideas newly persisted, digest/card/source-link counts, and any failed delivery that needs a retry
