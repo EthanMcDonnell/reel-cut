@@ -160,6 +160,8 @@ def run_job(path: Path, repo: Path = REPO, queue_root: Path = QUEUE_ROOT) -> str
     log_path = queue_root / "logs" / f"{job['id']}.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
     prompt = f"/produce-reel {job['asset_slug']} --auto"
+    # Production stages run as Claude background tasks and may transcribe for over 10 minutes.
+    environment = os.environ | {"CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS": "0"}
 
     notify(f"⏳ processing: {job['asset_slug']} ({job['id'][:8]})")
     try:
@@ -167,6 +169,7 @@ def run_job(path: Path, repo: Path = REPO, queue_root: Path = QUEUE_ROOT) -> str
             result = subprocess.run(
                 [claude_binary(), "-p", prompt, "--settings", str(WORKER_SETTINGS), "--permission-mode", "default"],
                 cwd=repo,
+                env=environment,
                 stdout=log,
                 stderr=subprocess.STDOUT,
                 text=True,
