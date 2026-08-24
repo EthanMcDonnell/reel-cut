@@ -214,3 +214,6 @@ whisper.cpp/
 
 # Persistent browser profile for single_scrape.py --solve-captcha
 scrape/.captcha-profile/
+
+# Local phone-upload production queue and job logs.
+.reelcut/

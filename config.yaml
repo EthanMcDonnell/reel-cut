@@ -1,6 +1,15 @@
 assets:
   location: ./assets               # working files per video (captions.json, debug.txt, screenshots, manifest)
 
+# Permanent direct-recording upload links. Each key is served at /upload/<key>
+# and creates a fresh flat assets/<slug_prefix>-<timestamp>/ job.
+inbound:
+  series:
+    hot-take:
+      slug_prefix: hot-take
+      series: hot-takes
+      hook_policy: single
+
 cuts:
   # --- What gets cut ---
   min_silence_ms: 200              # gaps longer than this are cut (main pipeline). Also the minimum

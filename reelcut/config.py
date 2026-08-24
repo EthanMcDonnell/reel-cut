@@ -1,6 +1,7 @@
 """Config loader — YAML schema, validation, and default config generation."""
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Literal
 
@@ -248,6 +249,38 @@ class AssetsConfig(BaseModel):
     location: str = "./assets"
 
 
+class InboundSeriesConfig(BaseModel):
+    """A permanent upload link for direct-to-camera recordings."""
+
+    slug_prefix: str
+    series: str
+    hook_policy: Literal["single"] = "single"
+
+    @field_validator("slug_prefix", "series")
+    @classmethod
+    def safe_slug(cls, value: str) -> str:
+        if not re.fullmatch(r"[a-z0-9][a-z0-9-]*", value):
+            raise ValueError(f"inbound series values must be lowercase slugs: {value!r}")
+        return value
+
+
+class InboundConfig(BaseModel):
+    series: dict[str, InboundSeriesConfig] = Field(default_factory=dict)
+
+    @field_validator("series", mode="before")
+    @classmethod
+    def empty_series(cls, series):
+        return series or {}
+
+    @field_validator("series")
+    @classmethod
+    def safe_series_names(cls, series: dict[str, InboundSeriesConfig]) -> dict[str, InboundSeriesConfig]:
+        for name in series:
+            if not re.fullmatch(r"[a-z0-9][a-z0-9-]*", name):
+                raise ValueError(f"inbound series name must be a lowercase slug: {name!r}")
+        return series
+
+
 class AudioTrack(BaseModel):
     """A background track — a source file plus its playback tuning, not its use in any one video."""
     path: str = ""              # audio file; omit to auto-discover from assets/audio/<name>.*
@@ -277,6 +310,7 @@ class ReelCutConfig(BaseModel):
     cuts: CutsConfig = Field(default_factory=CutsConfig)
     output: OutputConfig = Field(default_factory=OutputConfig)
     assets: AssetsConfig = Field(default_factory=AssetsConfig)
+    inbound: InboundConfig = Field(default_factory=InboundConfig)
     captions: CaptionsConfig = Field(default_factory=CaptionsConfig)
     images: ImagesConfig = Field(default_factory=ImagesConfig)
     headings: HeadingsConfig = Field(default_factory=HeadingsConfig)

@@ -23,20 +23,32 @@ binding it does NOT expose the server on local wi-fi.
     .venv/bin/python scripts/upload_server.py 127.0.0.1 # or pin a host
 """
 
+import json
 import os
 import re
+import shutil
 import subprocess
 import sys
+from datetime import datetime, timezone
 from html import escape
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
+REPO = Path(__file__).resolve().parent.parent
+if str(REPO) not in sys.path:
+    sys.path.insert(0, str(REPO))
+
+from production_queue import enqueue, find_job
+from reelcut.config import load_config
+
 PORT = 8770
-ASSETS = Path(__file__).resolve().parent.parent / "assets"
+ASSETS = REPO / "assets"
 CHUNK = 1024 * 1024
+VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv"}
 
 SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+JOB_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 HEADING_RE = re.compile(r"^\*\*(.+?):?\*\*$")
 HOOK_PREFIX_RE = re.compile(r"^HOOK\s+\d+:\s*")
 UNSAFE_RE = re.compile(r"[^A-Za-z0-9._-]+")
@@ -72,11 +84,37 @@ f.onchange=()=>{{
   const x=new XMLHttpRequest();
   x.open('PUT','?name='+encodeURIComponent(file.name));
   x.upload.onprogress=e=>{{ if(e.lengthComputable) bar.value=e.loaded/e.total*100; }};
-  x.onload=()=>{{ msg.textContent=x.status===201?'✅ '+x.responseText:'❌ '+x.responseText;
-                 bar.style.display='none'; }};
+  x.onload=()=>{{
+    if(x.status===202){{
+      const job=JSON.parse(x.responseText);
+      msg.innerHTML='✅ Queued · <a href="'+job.job_url+'">View progress</a>';
+    }}else msg.textContent='❌ '+x.responseText;
+    bar.style.display='none';
+  }};
   x.onerror=()=>{{ msg.textContent='❌ upload failed'; bar.style.display='none'; }};
   x.send(file);
 }};
+</script>
+"""
+
+
+JOB_PAGE = """<!doctype html>
+<meta name=viewport content="width=device-width,initial-scale=1">
+<title>Production job</title>
+<style>
+ body{{font:17px -apple-system,sans-serif;margin:0;padding:2rem 1.5rem;background:#111;color:#eee}}
+ h1{{font-size:1.1rem;margin:0 0 1.5rem}} dt{{color:#888;margin-top:1rem}} dd{{margin:.2rem 0;word-break:break-word}}
+</style>
+<h1>Production job</h1><dl id=job>Loading…</dl>
+<script>
+const fields=['asset_slug','status','created_at','updated_at','reason','error'];
+async function refresh(){{
+  const r=await fetch(location.pathname+'?json=1',{{cache:'no-store'}}); if(!r.ok)return;
+  const job=await r.json(), box=document.getElementById('job');
+  box.innerHTML=fields.filter(k=>job[k]).map(k=>'<dt>'+k.replace('_',' ')+'</dt><dd>'+job[k]+'</dd>').join('');
+  if(!['succeeded','blocked','failed','interrupted'].includes(job.status)) setTimeout(refresh,2000);
+}}
+refresh();
 </script>
 """
 
@@ -201,19 +239,68 @@ def script_page(script: Path) -> str:
         mtime=script.stat().st_mtime,
     )
 
-def slug_dir(path: str) -> Path | None:
-    """assets/<slug> for an upload path, or None if the slug is bad or unknown.
-
-    The `/upload` prefix is optional — a `tailscale serve --set-path /upload` front
-    end strips it before proxying, so both forms are accepted for that setup.
-    """
+def upload_target(path: str) -> str | None:
+    """The one safe target segment from an upload URL, if present."""
     parts = [p for p in unquote(path).strip("/").split("/") if p]
     if parts[:1] == ["upload"]:
         parts = parts[1:]
-    if len(parts) != 1 or not SLUG_RE.match(parts[0]):
+    if len(parts) != 1 or not SLUG_RE.fullmatch(parts[0]):
         return None
-    target = ASSETS / parts[0]
-    return target if target.is_dir() else None
+    return parts[0]
+
+
+def new_asset_dir(prefix: str) -> Path:
+    """Allocate a flat assets/<prefix>-<UTC timestamp> directory."""
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    candidate = ASSETS / f"{prefix}-{stamp}"
+    n = 2
+    while candidate.exists():
+        candidate = ASSETS / f"{prefix}-{stamp}-{n}"
+        n += 1
+    candidate.mkdir()
+    return candidate
+
+
+def copy_script_context(source: Path, destination: Path) -> None:
+    """Copy the durable script inputs, but never an old take or derived run output."""
+    derived = {"images.json", "videos.json", "audio.json", "retranscribe-clips"}
+    for item in source.iterdir():
+        if item.name in derived or item.name.endswith(".captions.json") or ".debug." in item.name:
+            continue
+        if item.suffix.lower() in VIDEO_EXTENSIONS or item.name.startswith("."):
+            continue
+        if item.is_dir():
+            shutil.copytree(item, destination / item.name)
+        else:
+            shutil.copy2(item, destination / item.name)
+
+
+def allocate_upload(target: str) -> tuple[Path, dict[str, str]] | None:
+    """Create one isolated asset workspace for a direct series or script-linked take."""
+    config = load_config(REPO / "config.yaml")
+    if series := config.inbound.series.get(target):
+        directory = new_asset_dir(series.slug_prefix)
+        return directory, {"kind": "direct", "series": series.series, "hook_policy": series.hook_policy}
+
+    source = ASSETS / target
+    if not (source / "script.md").is_file():
+        return None
+    directory = new_asset_dir(f"{target}-take")
+    copy_script_context(source, directory)
+    return directory, {"kind": "scripted", "source_slug": target, "hook_policy": "script"}
+
+
+def write_intake(directory: Path, metadata: dict[str, str], filename: str) -> Path:
+    """Leave the worker and Claude an explicit record of why this asset exists."""
+    path = directory / ".reelcut-intake.json"
+    path.write_text(json.dumps({
+        "schema_version": 1,
+        "asset_slug": directory.name,
+        "filename": filename,
+        "received_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        **metadata,
+    }, indent=2) + "\n")
+    return path
 
 
 def safe_name(raw: str) -> str | None:
@@ -245,6 +332,9 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(payload)
 
+    def _reply_json(self, code: int, data: dict[str, object]) -> None:
+        self._reply(code, json.dumps(data), "application/json; charset=utf-8")
+
     def do_GET(self) -> None:
         url = urlparse(self.path)
         parts = [p for p in unquote(url.path).strip("/").split("/") if p]
@@ -258,17 +348,34 @@ class Handler(BaseHTTPRequestHandler):
                 self._reply(200, script_page(script), "text/html; charset=utf-8")
             return
 
-        directory = slug_dir(url.path)
-        if directory is None:
-            self._reply(404, "no such slug")
+        if parts[:1] == ["job"] and len(parts) == 2 and JOB_ID_RE.fullmatch(parts[1]):
+            found = find_job(parts[1])
+            if found is None:
+                self._reply(404, "no such job")
+                return
+            _, job = found
+            public = {key: job[key] for key in ("id", "asset_slug", "status", "created_at", "updated_at", "reason", "error") if key in job}
+            if parse_qs(url.query).get("json"):
+                self._reply_json(200, public)
+            else:
+                self._reply(200, JOB_PAGE, "text/html; charset=utf-8")
             return
-        self._reply(200, PAGE.format(slug=directory.name), "text/html; charset=utf-8")
+
+        target = upload_target(url.path)
+        if target is None:
+            self._reply(404, "no such upload target")
+            return
+        config = load_config(REPO / "config.yaml")
+        if target not in config.inbound.series and not (ASSETS / target / "script.md").is_file():
+            self._reply(404, "no such upload target")
+            return
+        self._reply(200, PAGE.format(slug=target), "text/html; charset=utf-8")
 
     def do_PUT(self) -> None:
         url = urlparse(self.path)
-        directory = slug_dir(url.path)
-        if directory is None:
-            self._reply(404, "no such slug")
+        target = upload_target(url.path)
+        if target is None:
+            self._reply(404, "no such upload target")
             return
 
         raw = (parse_qs(url.query).get("name") or [""])[0]
@@ -276,12 +383,32 @@ class Handler(BaseHTTPRequestHandler):
         if not name:
             self._reply(400, "missing ?name=<filename>")
             return
+        if Path(name).suffix.lower() not in VIDEO_EXTENSIONS:
+            self._reply(415, "supported video types: .mp4, .mov, .mkv")
+            return
 
         length = self.headers.get("Content-Length")
         if length is None:
             self._reply(411, "Content-Length required")
             return
-        remaining = int(length)
+        try:
+            remaining = int(length)
+        except ValueError:
+            self._reply(400, "invalid Content-Length")
+            return
+        if remaining < 0:
+            self._reply(400, "invalid Content-Length")
+            return
+
+        try:
+            allocated = allocate_upload(target)
+        except Exception as exc:
+            self._reply(500, f"could not prepare upload: {exc}")
+            return
+        if allocated is None:
+            self._reply(404, "no script or inbound series for that target")
+            return
+        directory, metadata = allocated
 
         # Stage as .part so a dropped connection never leaves a truncated clip that
         # `reelcut transcribe` would happily pick up as real footage.
@@ -297,13 +424,21 @@ class Handler(BaseHTTPRequestHandler):
                     remaining -= len(block)
         except Exception as exc:
             part.unlink(missing_ok=True)
+            shutil.rmtree(directory, ignore_errors=True)
             self._reply(500, f"upload failed: {exc}")
             return
 
         part.replace(dest)
+        try:
+            intake = write_intake(directory, metadata, dest.name)
+            job = enqueue(directory.name, intake)
+        except Exception as exc:
+            self._reply(500, f"upload saved but could not queue it: {exc}")
+            return
+
         rel = dest.relative_to(ASSETS.parent)
-        print(f"received {rel} ({dest.stat().st_size / 1e6:.1f} MB)", flush=True)
-        self._reply(201, str(rel))
+        print(f"received {rel} ({dest.stat().st_size / 1e6:.1f} MB) → {job['id'][:8]}", flush=True)
+        self._reply_json(202, {"asset_slug": directory.name, "job_id": job["id"], "job_url": f"/job/{job['id']}"})
 
     def log_message(self, fmt: str, *args) -> None:
         pass  # uploads log themselves; skip the per-request noise

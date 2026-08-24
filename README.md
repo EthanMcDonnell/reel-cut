@@ -124,54 +124,75 @@ output/<slug>.mp4 ──(tailscale serve)──▶ https://<host>.ts.net/reels/<
 
 ## Script out, footage in (phone ↔ `assets/`)
 
-The reverse of Step 7. `/produce-script` ends by sending you two links on Telegram; you read
-the script off the phone, shoot the take, tap through to upload, and the clip lands in that
-slug's folder ready for `/prepare-video`.
+`/produce-script` sends a script page and an upload link to Telegram. The script is served live
+from `assets/<slug>/script.md`; edits made after it is sent appear after a phone-page refresh.
 
 ```
-/produce-script ────links────▶  Telegram "file-exchange"  ────▶  phone
-                                                                   │
-                                http://100.x.y.z:8770/script/<slug> ┤  GET (read while filming)
-                                http://100.x.y.z:8770/upload/<slug> ┘  PUT (raw file body)
-                                                                   ▼
-                                                      assets/<slug>/<filename>
+/produce-script ────links────▶ Telegram "file-exchange" ────▶ phone
+                                                              │
+                     http://100.x.y.z:8770/script/<slug> ────┤ read while filming
+                     http://100.x.y.z:8770/upload/<slug> ────┘ upload one take
+                                                              ▼
+                                              assets/<slug>-take-<timestamp>/
+                                                              ▼
+                                                serial Claude production queue
 ```
 
-`scripts/send_script.py <slug>` posts one message holding both links. The script itself is
-**not** pasted into the thread — the server reads `assets/<slug>/script.md` on every request,
-so an edit made after the message was sent is live at the next refresh instead of frozen into
-whatever was current at produce time.
+Every returned script take gets an isolated flat asset slug. Its script context and source
+screenshots are copied in, its footage is uploaded there, and the production worker runs:
+
+```bash
+claude -p "/produce-reel <take-slug> --auto"
+```
+
+A later take sent through the same link waits in the FIFO queue; it never resets or mixes with a
+previous take.
+
+### Permanent direct-recording links
+
+The same `/upload/<target>` endpoint also serves configured direct-recording series. Each key in
+`config.yaml` under `inbound.series` is a permanent link, for example:
+
+```yaml
+inbound:
+  series:
+    hot-take:
+      slug_prefix: hot-take
+      series: hot-takes
+      hook_policy: single
+```
+
+`http://100.x.y.z:8770/upload/hot-take` creates a fresh flat
+`assets/hot-take-<timestamp>/` job every time. No code is specific to `hot-take`: add another
+profile for another permanent series link. A direct recording must be one finished hook plus
+body; its intake receipt tells `/produce-reel` that the missing script is intentional.
 
 **Setup** — once, after `tailscale up`:
 
 ```bash
-./scripts/install-upload-agent.sh        # --uninstall to remove
+./scripts/install-upload-agent.sh        # --uninstall to remove both agents
 ```
 
-Installs a `com.reelcut.upload` LaunchAgent (starts at login, respawns on crash) and prints the
-URL. **Rerun after moving the repo** — the generated plist hardcodes paths. Logs:
-`/tmp/reelcut-upload.{log,err}`.
+This installs `com.reelcut.upload` (the Tailnet receiver) and `com.reelcut.produce` (the one-job
+production worker). They start at login and respawn after a crash. Rerun the installer after
+moving the repo; it writes absolute paths into the plists. Logs are
+`/tmp/reelcut-upload.{log,err}` and `/tmp/reelcut-produce.{log,err}`.
 
-The server binds this machine's **tailnet IP**, not loopback — so the link works from any
-tailnet device with no MagicDNS, no TLS cert, and no `tailscale serve` config to go stale.
-That 100.64.0.0/10 address routes only between tailnet peers, so it is *not* exposed on local
-wi-fi. Pin a different host with `.venv/bin/python scripts/upload_server.py 127.0.0.1`.
+The receiver binds this machine's **tailnet IP**, not loopback, so links work from any Tailnet
+device but are not exposed on local wi-fi. The worker uses `scripts/worker-settings.json`: a
+scoped Claude tool allowlist with no permission-bypass mode. If the workflow needs an unapproved
+tool, the job is left failed with its log instead of silently expanding permissions.
 
-**Notes**
+**Status and recovery**
 
-- `GET /script/<slug>` lays the script out for filming: hooks numbered as separate takes,
-  spoken prose in reading type, references small because they are never read aloud. A
-  **Copy the whole script** button copies the raw `script.md`, and an **Upload the take**
-  button below it goes straight to that slug's upload page.
-- An open script page polls `GET /script/<slug>?mtime=1` every 5s and shows a reload banner
-  when the file changes underneath it, so a page left open mid-shoot can't serve stale lines.
-- `GET /upload/<slug>` is a browser page; an iOS Shortcut can `PUT` the file from the share
-  sheet. Body is the raw file, not multipart — neither path buffers the clip in memory.
-- Unknown slug → 404, so a typo can't strand footage outside `assets/<slug>/`.
-- Repeat filename → `<name>-2.<ext>`, never an overwrite. `reelcut transcribe` on a folder
-  transcribes *every* video in it, so delete the take you don't want first.
-- Uploads stage as `<name>.part`, renamed only when complete — a dropped connection leaves no
-  truncated clip.
+- Each completed upload returns a `/job/<id>` page that polls `queued`, `running`, `rendered`,
+  `blocked`, `failed`, or `interrupted` status. Telegram receives the same lifecycle updates.
+- Queue state and per-job Claude logs live under `.reelcut/production-queue/` and are local-only.
+- A worker restart moves an in-flight job to `interrupted`; it never retries model or render work
+  automatically. Inspect the log, then run
+  `.venv/bin/python scripts/production_queue.py retry <job-id>` to requeue it deliberately.
+- Uploads stage as `<name>.part`, renamed only when complete. Only `.mp4`, `.mov`, and `.mkv`
+  files are accepted; the server never buffers the body in memory.
 - In Safari, *Browse → Files* sends original bytes; the photo picker may re-encode.
 
 ---

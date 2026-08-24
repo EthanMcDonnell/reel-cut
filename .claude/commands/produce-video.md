@@ -44,6 +44,10 @@ The manifest maps each `snippet-NN.png` to these fields:
 
 Use `script_context` as the primary guide when locating the timestamp — it directly names the script line being visualised. Fall back to matching words from `article_snippet` against the `words` array if `script_context` is absent.
 
+### Direct-recording intake
+
+If `assets/<video-slug>/.reelcut-intake.json` exists with `kind: "direct"` and `hook_policy: "single"`, read it before continuing. Its `series` chooses `series/<series>.md` for the title-card style and subtitle. There is intentionally no `script.md`, source article, manifest, or screenshot reconciliation: the surviving transcript is authoritative for title and caption claims. The recording contract guarantees exactly one hook plus body; in Step 3c, identify only the hook-to-body boundary and create one hook window. Do not treat a later emphatic sentence as an alternate hook or ask the user to choose one.
+
 ## Step 3 — Assign image timings
 
 Image timings are stored in **source-clip time** (same as `words` and `edl`). The renderer remaps them to output-timeline at render time.

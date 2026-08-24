@@ -27,6 +27,17 @@ Subagents have **no `AskUserQuestion` tool** — a spawned orchestrator could no
 
 `schedule` and `post` are alternatives, not a sequence: run whichever the user named. Phase 0 (`/produce-script`) is out of scope — it *creates* the asset folder this command consumes. If the slug folder has no footage, say so and stop rather than starting the chain.
 
+## Direct-recording intake
+
+A phone upload may have `.reelcut-intake.json` in its asset folder. Read it before dispatching any stage.
+
+- `kind: "scripted"` means this is an isolated returned take. Its copied `script.md` remains authoritative exactly as for a normal script-created asset.
+- `kind: "direct"` with `hook_policy: "single"` means the absent `script.md` is intentional. This is one finished hook plus body, so it has **exactly one hook**. Do not infer alternate hooks, ask the user to select one, or stop merely because no script exists.
+- For a direct recording, transcript wording is the authority for cards and captions. There is no source article, manifest, screenshot reconciliation, or script-based proper-noun correction. Still stop for malformed intake metadata, missing footage, unusable transcription, or a real failure outside the declared single-hook contract.
+- Include the intake kind, series, and hook policy in every dispatched step prompt. This overrides the later non-script caveat for a declared direct single-hook receipt.
+
+An asset with no `script.md` **and no valid direct intake receipt** is still ambiguous: stop and report rather than guessing.
+
 ## Per stage
 
 1. **Dispatch.** Spawn one `reel-step` subagent (`subagent_type: "reel-step"`), one per stage, never reusing a previous stage's agent. Prompt it with just the command and the slug, e.g. *"Run the `produce-video` command for slug `netflix-cdn-architecture`."* Plus any decisions the user already made in this session that the step would otherwise ask about. Keep its agent id.
