@@ -97,14 +97,19 @@ launchctl bootstrap "$TARGET" "$UPLOAD_PLIST"
 launchctl bootstrap "$TARGET" "$PRODUCE_PLIST"
 echo "installed $UPLOAD_LABEL and $PRODUCE_LABEL"
 
-sleep 1
 HOST="$(tailscale ip -4 2>/dev/null | sed -n '1p' || true)"
 [[ -n "$HOST" ]] || { echo "tailnet IP unavailable — run 'tailscale up'"; HOST=127.0.0.1; }
 
 # A nonexistent target must answer 404 — that proves the receiver is up and routing,
-# without needing a real asset folder to exist yet.
-code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 \
-       "http://$HOST:$PORT/upload/probe-not-a-slug" || true)
+# without needing a real asset folder to exist yet. Importing the worker/config modules
+# can take longer than one second on a cold launch, so wait briefly instead of false-failing.
+code=""
+for _ in {1..10}; do
+  code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 \
+         "http://$HOST:$PORT/upload/probe-not-a-slug" || true)
+  [[ "$code" == "404" ]] && break
+  sleep 1
+done
 if [[ "$code" == "404" ]]; then
   echo "ready: http://$HOST:$PORT/upload/<script-slug-or-series>"
 else
