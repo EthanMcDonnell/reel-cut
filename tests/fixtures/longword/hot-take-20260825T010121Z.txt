@@ -1,0 +1,12 @@
+# Over-long aligned words for hot-take-20260825T010121Z, taken from its
+# .debug.3.post-align report (pre-clamp spans — the input _build_gaps mutates).
+#
+# assets/ is gitignored, so the waveform cannot travel with the test. The pre-pass
+# reads exactly one thing out of it: a speech/silence verdict per 10 ms frame. That
+# envelope is pinned instead of the wav, the same trade tests/fixtures/edl makes.
+#
+# Envelope is run-length: S<n> = n frames of speech, .<n> = n frames of silence,
+# at the config's silence_threshold_db / failure_tolerance_ratio.
+#
+# word    start     end       envelope
+GitHub    18.366    19.932    S11 .113 S33
