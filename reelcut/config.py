@@ -249,6 +249,12 @@ class AssetsConfig(BaseModel):
     location: str = "./assets"
 
 
+class ProductionConfig(BaseModel):
+    """Which agent CLI runs the unattended production job an upload triggers."""
+
+    ai_provider: Literal["claude-cli", "mission-control"] = "claude-cli"
+
+
 class InboundSeriesConfig(BaseModel):
     """A permanent upload link for direct-to-camera recordings."""
 
@@ -310,6 +316,7 @@ class ReelCutConfig(BaseModel):
     cuts: CutsConfig = Field(default_factory=CutsConfig)
     output: OutputConfig = Field(default_factory=OutputConfig)
     assets: AssetsConfig = Field(default_factory=AssetsConfig)
+    production: ProductionConfig = Field(default_factory=ProductionConfig)
     inbound: InboundConfig = Field(default_factory=InboundConfig)
     captions: CaptionsConfig = Field(default_factory=CaptionsConfig)
     images: ImagesConfig = Field(default_factory=ImagesConfig)

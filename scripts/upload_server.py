@@ -8,6 +8,10 @@ PUT  /upload/<slug>?name=<fn>  → streams the raw request body to assets/<slug>
 GET  /job/<id>                 → a production job's status and Claude output link
 GET  /job/<id>/log             → the worker's captured Claude output, once it exists
 
+config.yaml's production.ai_provider picks what a finished upload triggers: the
+queued `claude-cli` worker (job tracking, Telegram status, the routes above) or a
+fire-and-forget `mission-control` session per upload, with none of that tracking.
+
 The script is read on every request rather than pasted into Telegram at produce time,
 so an edit made after the script was sent is live on the phone at the next refresh.
 
@@ -89,7 +93,7 @@ f.onchange=()=>{{
   x.onload=()=>{{
     if(x.status===202){{
       const job=JSON.parse(x.responseText);
-      msg.innerHTML='✅ Queued · <a href="'+job.job_url+'">View progress</a>';
+      msg.innerHTML=job.job_url?'✅ Queued · <a href="'+job.job_url+'">View progress</a>':'✅ Sent';
     }}else msg.textContent='❌ '+x.responseText;
     bar.style.display='none';
   }};
@@ -294,6 +298,22 @@ def allocate_upload(target: str) -> tuple[Path, dict[str, str]] | None:
     return directory, {"kind": "scripted", "source_slug": target, "hook_policy": "script"}
 
 
+def spawn_mission_control(slug: str) -> None:
+    """Fire-and-forget: open a Mission Control session that runs the pipeline.
+
+    `--no-wait` returns as soon as the session exists, without waiting for the
+    command to be typed in or for the pipeline to finish — there is no queue,
+    no status tracking, and no log capture on this path; progress is watched
+    in the Mission Control dashboard instead.
+    """
+    subprocess.Popen(
+        ["mission-control", "--no-wait", "--", "/produce-reel", slug, "--auto"],
+        cwd=REPO,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+
 def write_intake(directory: Path, metadata: dict[str, str], filename: str) -> Path:
     """Leave the worker and Claude an explicit record of why this asset exists."""
     path = directory / ".reelcut-intake.json"
@@ -444,12 +464,27 @@ class Handler(BaseHTTPRequestHandler):
         part.replace(dest)
         try:
             intake = write_intake(directory, metadata, dest.name)
+        except Exception as exc:
+            self._reply(500, f"upload saved but could not prepare it: {exc}")
+            return
+
+        rel = dest.relative_to(ASSETS.parent)
+        provider = load_config(REPO / "config.yaml").production.ai_provider
+        if provider == "mission-control":
+            try:
+                spawn_mission_control(directory.name)
+            except Exception as exc:
+                self._reply(500, f"upload saved but could not start production: {exc}")
+                return
+            print(f"received {rel} ({dest.stat().st_size / 1e6:.1f} MB) → mission-control", flush=True)
+            self._reply_json(202, {"asset_slug": directory.name})
+            return
+
+        try:
             job = enqueue(directory.name, intake)
         except Exception as exc:
             self._reply(500, f"upload saved but could not queue it: {exc}")
             return
-
-        rel = dest.relative_to(ASSETS.parent)
         print(f"received {rel} ({dest.stat().st_size / 1e6:.1f} MB) → {job['id'][:8]}", flush=True)
         self._reply_json(202, {"asset_slug": directory.name, "job_id": job["id"], "job_url": f"/job/{job['id']}"})
 

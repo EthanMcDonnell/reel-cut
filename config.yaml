@@ -1,6 +1,13 @@
 assets:
   location: ./assets               # working files per video (captions.json, debug.txt, screenshots, manifest)
 
+# Which agent CLI an upload's production job runs on. claude-cli: the queued,
+# single-worker `claude -p` flow with Telegram status and a captured log.
+# mission-control: fire-and-forget — opens a session in the `mission-control`
+# dashboard immediately per upload, no queue, no status notifications.
+production:
+  ai_provider: mission-control
+
 # Permanent direct-recording upload links. Each key is served at /upload/<key>
 # and creates a fresh flat assets/<slug_prefix>-<timestamp>/ job.
 inbound:

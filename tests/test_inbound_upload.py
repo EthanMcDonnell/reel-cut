@@ -14,7 +14,7 @@ import production_queue  # noqa: E402
 import upload_server  # noqa: E402
 
 
-def _config(repo: Path, series: str = ""):
+def _config(repo: Path, series: str = "", ai_provider: str = ""):
     body = "inbound:\n  series:\n"
     if series:
         body += (
@@ -23,6 +23,8 @@ def _config(repo: Path, series: str = ""):
             f"      series: {series}\n"
             "      hook_policy: single\n"
         )
+    if ai_provider:
+        body += f"production:\n  ai_provider: {ai_provider}\n"
     (repo / "config.yaml").write_text(body)
 
 
@@ -52,6 +54,40 @@ def test_direct_series_link_queues_a_flat_take_workspace(tmp_path, monkeypatch):
     assert re.fullmatch(r"hot-take-\d{8}T\d{6}Z(?:-\d+)?", directory.name)
     assert receipt["series"] == "hot-takes"
     assert (directory / "take.mov").read_bytes() == b"video"
+
+
+def test_mission_control_provider_spawns_without_queueing(tmp_path, monkeypatch):
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    _config(tmp_path, "hot-takes", ai_provider="mission-control")
+    monkeypatch.setattr(upload_server, "REPO", tmp_path)
+    monkeypatch.setattr(upload_server, "ASSETS", assets)
+
+    def fail_enqueue(*args, **kwargs):
+        raise AssertionError("mission-control uploads must not use the claude-cli queue")
+
+    monkeypatch.setattr(upload_server, "enqueue", fail_enqueue)
+    spawned = []
+    monkeypatch.setattr(upload_server.subprocess, "Popen", lambda *a, **kw: spawned.append((a, kw)))
+    server = ThreadingHTTPServer(("127.0.0.1", 0), upload_server.Handler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        connection = http.client.HTTPConnection(*server.server_address)
+        connection.request("PUT", "/upload/hot-take?name=take.mov", body=b"video")
+        response = connection.getresponse()
+        body = json.loads(response.read())
+    finally:
+        server.shutdown()
+        thread.join()
+
+    assert response.status == 202
+    assert body == {"asset_slug": body["asset_slug"]}
+    assert "job_url" not in body
+    [(args, kwargs)] = spawned
+    assert args[0] == ["mission-control", "--no-wait", "--", "/produce-reel", body["asset_slug"], "--auto"]
+    assert kwargs["cwd"] == tmp_path
 
 
 def test_script_upload_copies_context_without_copying_old_footage(tmp_path, monkeypatch):
