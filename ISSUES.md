@@ -34,26 +34,32 @@ today, but an invisible side effect inside a `detect_*` function — a trap for
 anyone who reorders the pipeline. Now mutates both edges, so the blast radius
 is wider than when this was filed.
 
-### 4. Re-transcribe wipes overlay files that do not depend on the transcript (`cli.py:1056`)
+### 4. Overlay reset is coarser than the drift it guards against (`cli.py:1056`)
 `_clean_transcription_artifacts` deletes `images.json` / `videos.json` /
-`audio.json` on every `transcribe` run, justified in its docstring as "keyed to
-the old transcript". That holds for the captions doc, the debug reports and
-`retranscribe-clips/`, but not for the overlays:
+`audio.json` on every `transcribe` run. This is deliberate — `4d005bd`,
+"reset overlay files on every run for a clean re-run" — it is covered by
+`tests/test_clean_artifacts.py`, and `/prepare-video` warns about it in bold.
+The rationale is that the overlays are keyed to the old transcript and would
+drift. That is only half true:
 
-- `images.json` entries carry `source_clip` plus **source-clip** timestamps,
-  which are invariant under re-transcription — the renderer remaps them through
-  the new EDL.
-- `videos.json` is authoring content: title cards, captions, `filename` slugs.
-  Only the hook `end` boundary is transcript-derived.
+- `videos.json` `start`/`end` are the hook window on the **output timeline**
+  (`video_spec.py:8`), which does shift whenever the EDL changes. Resetting
+  these is correct.
+- `images.json` `start`/`end` are **source-clip** time, remapped through the new
+  EDL at render (`image_spec.py:4`). They cannot drift. Nor can the authoring
+  fields on `videos.json`: `title`, `subtitle`, `scrim`, `caption`, `filename`,
+  `of`.
 
-So a re-run to verify a one-word timing fix destroys every image cue and title
-card for the slug. `assets/` is gitignored, so there is no undo. Hit while
-re-transcribing `hot-take-20260825T010121Z`; both files were only recoverable
-because their contents happened to be quoted in an earlier session transcript.
+So a re-run to verify a one-word timing fix discards every image cue and title
+card in the slug to protect two floats that only `videos.json` carries.
+`assets/` is gitignored, so there is no undo — after re-transcribing
+`hot-take-20260825T010121Z` both files were only recoverable because their
+contents happened to be quoted in an earlier session transcript.
 
-Keep the wipe for the transcript-derived artifacts; for the overlays, rename to
-`.bak` rather than unlink, or keep them and warn that the hook window may need
-rechecking.
+Narrow the reset to the fields that actually drift: blank `start`/`end` on
+`videos.json` base entries and leave the rest, or rename the overlays to `.bak`
+instead of unlinking. Note this only bites when `reelcut transcribe` is invoked
+directly — going through `/prepare-video` surfaces the warning first.
 
 ## Performance
 
