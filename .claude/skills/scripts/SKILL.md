@@ -91,6 +91,7 @@ Take the viewer on a journey of discovery, not a lecture — they should feel li
 - "So you might be wondering…" (before the payoff)
 
 ## Script Structure
+**VIDEO TYPE** — the series slug, one line, first thing in the file. It's the only record of which series the saved script belongs to once it's sitting in `assets/`, so it has to be right.
 **HOOK** — comes first. **If the hook leaves "why should I care?" unanswered, the next sentence answers it** — who's affected, the scale of impact, or the concrete personal threat. Reveal the stakes, not the explanation. Check the hook first rather than writing this line by reflex: a hook that already names the stakes ("if you install this month's Windows update, it is likely bricking your PC") or that stakes a claim the viewer holds an opinion about has done this job, and a stakes sentence after it is a sentence about nothing. That is what "you push, pull and merge every single day, and that's what this is about" was — restating the hook's premise as if it were new. When the hook has covered it, open on the content instead.
 **SETUP** — why this matters. Build curiosity, open loops, delay the HOW.
 **EXTRA** — any prerequisite tech or context the viewer needs (only if required).
@@ -106,6 +107,8 @@ Take the viewer on a journey of discovery, not a lecture — they should feel li
 ## Exact Output Format
 The script and the saved file must both use this exact format — bold headers, no blank lines between sections, no deviations. SETUP, EXTRA, and PAYOFF fold into the single **SCRIPT** block. `**CTA**` is optional; include it only when there is a CTA, and always between **CONCLUSION** and **REFERENCES**:
 ```
+**VIDEO TYPE**
+[series slug, or misc]
 **HOOK**
 [CONTENT]
 **SCRIPT**

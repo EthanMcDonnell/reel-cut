@@ -30,14 +30,21 @@ PROJECT_ROOT = Path(__file__).resolve().parents[4]
 # no series and is deliberately loose.
 DEFAULT_WORD_CAP = 190
 
-REQUIRED_HEADERS = ["**HOOK**", "**SCRIPT**", "**CONCLUSION**", "**REFERENCES:**"]
+REQUIRED_HEADERS = ["**VIDEO TYPE**", "**HOOK**", "**SCRIPT**", "**CONCLUSION**", "**REFERENCES:**"]
 # Optional headers, allowed but not required. **CTA**, when present, holds the
 # spoken comment-bait line and sits between CONCLUSION and REFERENCES.
 OPTIONAL_HEADERS = ["**CTA**"]
 ALL_HEADERS = REQUIRED_HEADERS + OPTIONAL_HEADERS
-# Sections whose content is excluded from the body word-count cap: every hook
-# variant (split into separate videos) and the appended CTA tag.
-NON_BODY_SECTIONS = {"**HOOK**", "**CTA**"}
+# Sections whose content is excluded from the body word-count cap: the series
+# tag, every hook variant (split into separate videos), and the appended CTA tag.
+NON_BODY_SECTIONS = {"**VIDEO TYPE**", "**HOOK**", "**CTA**"}
+
+# Valid **VIDEO TYPE** values — the series slugs plus misc, which has no
+# series file. Kept in sync with produce-script.md's SERIES field by hand.
+KNOWN_SERIES = {
+    "tbbt", "updates", "tech-in-one-breathe", "interesting-tech",
+    "ai-fundamentals", "hot-takes", "misc",
+}
 
 # Throat-clearing openers (banned). Deliberately narrow so it never catches the
 # open-loop phrase "But here's the part nobody talks about", which is legitimate
@@ -174,6 +181,23 @@ def lint(lines, cap=DEFAULT_WORD_CAP, cap_label=None, slug=None):
             errors.append((ln, "header-corrupt", f"`{h}` is not on its own line (stray characters around it?)"))
         else:
             errors.append((0, "header-missing", f"required header `{h}` not found"))
+
+    # **VIDEO TYPE** must lead the file, and its one content line is the series
+    # slug this script was written for — check it against a known slug, and
+    # against --series when the caller passed one, so a stale or mistyped tag
+    # can't drift from the value the rest of the file was actually written to.
+    if "**VIDEO TYPE**" in stripped:
+        vt = stripped.index("**VIDEO TYPE**")
+        if vt != 0:
+            errors.append((vt + 1, "video-type-order", "**VIDEO TYPE** must be the first line in the file"))
+        value = stripped[vt + 1] if vt + 1 < len(stripped) else ""
+        if not value or value in ALL_HEADERS:
+            errors.append((vt + 2, "video-type-missing", "**VIDEO TYPE** has no value on the line below it"))
+        else:
+            if value not in KNOWN_SERIES:
+                errors.append((vt + 2, "video-type-unknown", f'"{value}" is not a known series slug'))
+            if slug and value != slug:
+                errors.append((vt + 2, "video-type-mismatch", f'**VIDEO TYPE** says "{value}" but --series was "{slug}"'))
 
     in_refs = False
     for i, line in enumerate(lines, 1):
