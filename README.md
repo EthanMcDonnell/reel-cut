@@ -166,6 +166,10 @@ inbound:
 profile for another permanent series link. A direct recording must be one finished hook plus
 body; its intake receipt tells `/produce-reel` that the missing script is intentional.
 
+The upload page has an optional name field for a direct-series link — type e.g. `ai-bubble-take`
+to land in `assets/ai-bubble-take/` instead of a timestamped folder. Like a script slug, naming
+it reuses that folder once; a second take under the same name is refused (`409`).
+
 **Setup** — once, after `tailscale up`:
 
 ```bash

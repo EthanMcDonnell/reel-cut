@@ -57,6 +57,120 @@ def test_direct_series_link_queues_a_flat_take_workspace(tmp_path, monkeypatch):
     assert (directory / "take.mov").read_bytes() == b"video"
 
 
+def test_upload_page_offers_a_name_field_only_for_a_direct_series(tmp_path, monkeypatch):
+    assets = tmp_path / "assets"
+    source = assets / "edge-cache"
+    source.mkdir(parents=True)
+    (source / "script.md").write_text("**HOOK**\nA hook")
+    _config(tmp_path, "hot-takes")
+    monkeypatch.setattr(upload_server, "REPO", tmp_path)
+    monkeypatch.setattr(upload_server, "ASSETS", assets)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), upload_server.Handler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        connection = http.client.HTTPConnection(*server.server_address)
+        connection.request("GET", "/upload/hot-take")
+        direct_page = connection.getresponse().read().decode()
+        connection = http.client.HTTPConnection(*server.server_address)
+        connection.request("GET", "/upload/edge-cache")
+        scripted_page = connection.getresponse().read().decode()
+    finally:
+        server.shutdown()
+        thread.join()
+
+    assert 'id=slugname' in direct_page
+    assert 'id=slugname' not in scripted_page
+
+
+def test_named_hot_take_reuses_its_folder_then_refuses_a_second_take(tmp_path, monkeypatch):
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    _config(tmp_path, "hot-takes")
+    monkeypatch.setattr(upload_server, "REPO", tmp_path)
+    monkeypatch.setattr(upload_server, "ASSETS", assets)
+    monkeypatch.setattr(upload_server, "enqueue", lambda slug, receipt: {"id": "a" * 32})
+    server = ThreadingHTTPServer(("127.0.0.1", 0), upload_server.Handler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        connection = http.client.HTTPConnection(*server.server_address)
+        connection.request("PUT", "/upload/hot-take?name=take.mov&slug=ai-bubble-take", body=b"video")
+        first = connection.getresponse()
+        first_body = json.loads(first.read())
+
+        connection = http.client.HTTPConnection(*server.server_address)
+        connection.request("PUT", "/upload/hot-take?name=retake.mov&slug=ai-bubble-take", body=b"second")
+        second = connection.getresponse()
+        second.read()
+    finally:
+        server.shutdown()
+        thread.join()
+
+    directory = assets / "ai-bubble-take"
+    receipt = json.loads((directory / ".reelcut-intake.json").read_text())
+    assert first.status == 202
+    assert first_body["asset_slug"] == "ai-bubble-take"
+    assert receipt["kind"] == "direct" and receipt["series"] == "hot-takes"
+    assert second.status == 409
+    assert not (directory / "retake.mov").exists()
+
+
+def test_hot_take_name_colliding_with_a_script_slug_is_refused(tmp_path, monkeypatch):
+    assets = tmp_path / "assets"
+    source = assets / "edge-cache"
+    source.mkdir(parents=True)
+    (source / "script.md").write_text("**HOOK**\nA hook")
+    _config(tmp_path, "hot-takes")
+    monkeypatch.setattr(upload_server, "REPO", tmp_path)
+    monkeypatch.setattr(upload_server, "ASSETS", assets)
+
+    def fail_enqueue(*args, **kwargs):
+        raise AssertionError("a refused upload must never reach the queue")
+
+    monkeypatch.setattr(upload_server, "enqueue", fail_enqueue)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), upload_server.Handler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        connection = http.client.HTTPConnection(*server.server_address)
+        connection.request("PUT", "/upload/hot-take?name=take.mov&slug=edge-cache", body=b"video")
+        response = connection.getresponse()
+        response.read()
+    finally:
+        server.shutdown()
+        thread.join()
+
+    assert response.status == 409
+    assert not (source / "take.mov").exists()
+
+
+def test_invalid_custom_slug_is_rejected(tmp_path, monkeypatch):
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    _config(tmp_path, "hot-takes")
+    monkeypatch.setattr(upload_server, "REPO", tmp_path)
+    monkeypatch.setattr(upload_server, "ASSETS", assets)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), upload_server.Handler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        connection = http.client.HTTPConnection(*server.server_address)
+        connection.request("PUT", "/upload/hot-take?name=take.mov&slug=AI_Bubble!", body=b"video")
+        response = connection.getresponse()
+        response.read()
+    finally:
+        server.shutdown()
+        thread.join()
+
+    assert response.status == 400
+    assert list(assets.iterdir()) == []
+
+
 def test_mission_control_provider_spawns_without_queueing(tmp_path, monkeypatch):
     assets = tmp_path / "assets"
     assets.mkdir()

@@ -3,8 +3,11 @@
 
 GET  /script/<slug>            → assets/<slug>/script.md, read fresh, laid out for filming
 GET  /script/<slug>?mtime=1    → that file's mtime, so an open page can spot an edit
-GET  /upload/<slug>            → a one-input page (tap the Telegram link, pick the clip)
-PUT  /upload/<slug>?name=<fn>  → streams the raw request body to assets/<slug>/<fn>
+GET  /upload/<slug>            → a one-input page (tap the Telegram link, pick the clip);
+                                  a direct series link also offers an optional name field
+PUT  /upload/<slug>?name=<fn>&slug=<custom>
+                                → streams the raw request body to assets/<slug-or-custom>/<fn>;
+                                  `slug` only applies to a direct series link (ignored otherwise)
 GET  /job/<id>                 → a production job's status and Claude output link
 GET  /job/<id>/log             → the worker's captured Claude output, once it exists
 
@@ -58,6 +61,12 @@ HEADING_RE = re.compile(r"^\*\*(.+?):?\*\*$")
 HOOK_PREFIX_RE = re.compile(r"^HOOK\s+\d+:\s*")
 UNSAFE_RE = re.compile(r"[^A-Za-z0-9._-]+")
 
+NAME_FIELD = """<label class=namefield>Name (optional)
+  <input type=text id=slugname placeholder="leave blank for {slug}-&lt;timestamp&gt;"
+         autocapitalize=none autocorrect=off spellcheck=false>
+</label>
+"""
+
 PAGE = """<!doctype html>
 <meta name=viewport content="width=device-width,initial-scale=1">
 <title>Upload · {slug}</title>
@@ -68,13 +77,17 @@ PAGE = """<!doctype html>
  p{{color:#888;margin:0 0 2rem;font-size:.9rem}}
  label{{display:block;padding:2rem;border:2px dashed #444;border-radius:14px;
         text-align:center;color:#aaa}}
- input{{display:none}}
+ input[type=file]{{display:none}}
+ .namefield{{padding:0;border:0;text-align:left;font-size:.85rem;margin-bottom:1.25rem}}
+ .namefield input{{display:block;width:100%;box-sizing:border-box;margin-top:.4rem;
+      padding:.7rem;border-radius:8px;border:1px solid #444;background:#1a1a1a;
+      color:#eee;font:inherit}}
  progress{{width:100%;height:10px;margin-top:1.5rem;display:none}}
  #msg{{margin-top:1rem;text-align:center}}
 </style>
 <h1>{slug}</h1>
 <p>Pick the take. Browse → Files uploads the original; the photo picker may re-encode.</p>
-<label>
+{name_field}<label>
   <input type=file accept="video/*" id=f>
   Choose video
 </label>
@@ -82,12 +95,15 @@ PAGE = """<!doctype html>
 <div id=msg></div>
 <script>
 const f=document.getElementById('f'),bar=document.getElementById('bar'),
-      msg=document.getElementById('msg');
+      msg=document.getElementById('msg'),nameInput=document.getElementById('slugname');
 f.onchange=()=>{{
   const file=f.files[0]; if(!file) return;
   bar.style.display='block'; msg.textContent='Uploading '+file.name;
   const x=new XMLHttpRequest();
-  x.open('PUT','?name='+encodeURIComponent(file.name));
+  let url='?name='+encodeURIComponent(file.name);
+  const wanted=nameInput&&nameInput.value.trim();
+  if(wanted) url+='&slug='+encodeURIComponent(wanted);
+  x.open('PUT',url);
   x.upload.onprogress=e=>{{ if(e.lengthComputable) bar.value=e.loaded/e.total*100; }};
   x.onload=()=>{{
     if(x.status===202){{
@@ -269,22 +285,40 @@ def new_asset_dir(prefix: str) -> Path:
 
 
 class FootageAlreadyUploaded(Exception):
-    """A script-linked slug already has a video file — refuse a second take, don't isolate it."""
+    """A slug already has a video file — refuse a second take, don't isolate it."""
 
 
-def allocate_upload(target: str) -> tuple[Path, dict[str, str]] | None:
+class SlugConflict(Exception):
+    """A custom hot-take name collides with an existing script-created asset slug."""
+
+
+def allocate_upload(target: str, custom_slug: str = "") -> tuple[Path, dict[str, str]] | None:
     """The workspace for a direct series or script-linked upload, or None if no such target.
 
-    A permanent series link (`hot-take`) always gets a fresh flat folder — it is meant to
-    take many recordings over time. A script-linked slug uploads straight into its own
-    assets/<target>/, once: a second video for the same slug is refused via
-    FootageAlreadyUploaded rather than silently isolated into a `-take-<timestamp>`
-    folder, so a slug's footage is never ambiguous. Delete the existing clip to retake.
+    A permanent series link (`hot-take`) gets a fresh flat folder every time by default — it
+    is meant to take many recordings over time. Naming it via `custom_slug` instead reuses
+    assets/<custom_slug>/ across calls, but only once: a second video for that same name is
+    refused via FootageAlreadyUploaded, same as a script-linked slug below, and a name that
+    collides with an existing script slug is refused via SlugConflict rather than mixing a
+    direct recording's receipt into a script's own folder.
+
+    A script-linked slug uploads straight into its own assets/<target>/, once: a second video
+    for the same slug is refused via FootageAlreadyUploaded rather than silently isolated into
+    a `-take-<timestamp>` folder, so a slug's footage is never ambiguous. Delete the existing
+    clip to retake.
     """
     config = load_config(REPO / "config.yaml")
     if series := config.inbound.series.get(target):
-        directory = new_asset_dir(series.slug_prefix)
-        return directory, {"kind": "direct", "series": series.series, "hook_policy": series.hook_policy}
+        metadata = {"kind": "direct", "series": series.series, "hook_policy": series.hook_policy}
+        if not custom_slug:
+            return new_asset_dir(series.slug_prefix), metadata
+        directory = ASSETS / custom_slug
+        if (directory / "script.md").is_file():
+            raise SlugConflict(custom_slug)
+        if directory.is_dir() and any(item.suffix.lower() in VIDEO_EXTENSIONS for item in directory.iterdir() if item.is_file()):
+            raise FootageAlreadyUploaded(custom_slug)
+        directory.mkdir(exist_ok=True)
+        return directory, metadata
 
     source = ASSETS / target
     if not (source / "script.md").is_file():
@@ -395,10 +429,12 @@ class Handler(BaseHTTPRequestHandler):
             self._reply(404, "no such upload target")
             return
         config = load_config(REPO / "config.yaml")
-        if target not in config.inbound.series and not (ASSETS / target / "script.md").is_file():
+        is_direct = target in config.inbound.series
+        if not is_direct and not (ASSETS / target / "script.md").is_file():
             self._reply(404, "no such upload target")
             return
-        self._reply(200, PAGE.format(slug=target), "text/html; charset=utf-8")
+        name_field = NAME_FIELD.format(slug=target) if is_direct else ""
+        self._reply(200, PAGE.format(slug=target, name_field=name_field), "text/html; charset=utf-8")
 
     def do_PUT(self) -> None:
         url = urlparse(self.path)
@@ -416,6 +452,11 @@ class Handler(BaseHTTPRequestHandler):
             self._reply(415, "supported video types: .mp4, .mov, .mkv")
             return
 
+        custom_slug = (parse_qs(url.query).get("slug") or [""])[0].strip()
+        if custom_slug and not SLUG_RE.fullmatch(custom_slug):
+            self._reply(400, "slug must be lowercase letters, digits and hyphens")
+            return
+
         length = self.headers.get("Content-Length")
         if length is None:
             self._reply(411, "Content-Length required")
@@ -430,9 +471,12 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         try:
-            allocated = allocate_upload(target)
-        except FootageAlreadyUploaded:
-            self._reply(409, f"footage already uploaded for {target} — delete the existing clip to retake")
+            allocated = allocate_upload(target, custom_slug)
+        except FootageAlreadyUploaded as exc:
+            self._reply(409, f"footage already uploaded for {exc} — delete the existing clip to retake")
+            return
+        except SlugConflict as exc:
+            self._reply(409, f"{exc} is a script slug, not a hot-take name — pick another")
             return
         except Exception as exc:
             self._reply(500, f"could not prepare upload: {exc}")
