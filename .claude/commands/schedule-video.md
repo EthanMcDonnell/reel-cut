@@ -1,14 +1,14 @@
 ---
 name: schedule-video
-description: Schedule a slug's rendered hook reels to Instagram via social-cockpit's scheduler — books each output/<slug>/*.mp4 into its own slot recommended by the MCP, never inside the next 15 minutes, as a trial reel captioned from videos.json.
-argument-hint: "<video-slug> [--start <when>] [--time <HH:MM>]"
+description: Schedule a slug's rendered hook reels to Instagram via social-cockpit's scheduler — books each output/<slug>/*.mp4 into its own slot recommended by the MCP, never inside the next 15 minutes, as a trial reel captioned from videos.json, then books a YouTube Short a day after the last hook that cross-posts whichever hook earned the most views.
+argument-hint: "<video-slug> [--start <when>] [--time <HH:MM>] [--no-youtube]"
 ---
 
 Books every unposted hook variant for a slug into social-cockpit's **scheduler**, rather than posting one now. The cockpit stores each job with the mp4's local path, leaves the file on disk, and its worker publishes at the appointed time — uploading to R2 only at that moment.
 
 This is the scheduled counterpart to `/post-video`. Use it to lay out a slug's whole run of hooks in one go; use `/post-video` when you want one hook to go out right now.
 
-Arguments: `$ARGUMENTS` — expected format: `<video-slug> [--start <when>] [--time <HH:MM>]`
+Arguments: `$ARGUMENTS` — expected format: `<video-slug> [--start <when>] [--time <HH:MM>] [--no-youtube]`
 
 Slugs with rendered output: !`ls -1 output/ 2>/dev/null | grep -vE '\.(mp4|md)$'`
 
@@ -23,6 +23,20 @@ Every hook of a slug is the same body and the same voiceover with a different op
 **Nothing in social-cockpit enforces that rule.** `suggest_slots` honours `max_posts_per_day` and offers `suggested_times` — that is all it does, and it never asks which video is calling, so with a 2-a-day policy it will return two same-day slots without hesitation. The same-video gap exists only in the callers: `scrape/post_video.py` checks the calendar before posting, and Step 3 here walks the slot requests forward one gap at a time. If you short-circuit that walk into a single `count: N` call, the spacing silently disappears and the later hooks get throttled — which is the whole failure this command was written to avoid.
 
 There is no `--gap` argument, on purpose. The number is meant to live in the cockpit's settings so this command and `/post-video` read the same one — but social-cockpit dropped `min_same_video_days` from `/api/schedule/settings` (its b96b23d), so today the real number is `FALLBACK_MIN_GAP_DAYS` in `scrape/post_video.py`. Change it there until the cockpit brings the setting back.
+
+## The YouTube cross-post
+
+Every hook is booked with the slug set, which does two things in social-cockpit: it groups the hooks in the calendar, and — the new part — **publishing a hook enrols its file in that slug's content pool** (see `docs/slug-scheduling.md` in social-cockpit). One extra job is then booked at the end: a **YouTube Short with no file of its own**, pointed at the pool. The cockpit picks the member with the most views when the slot arrives.
+
+Why it works out that way:
+
+- **A day after the last hook.** The pick ranks on real Instagram numbers, and a hook that hasn't published yet has none. Every hook has been live for at least a day by then, so "most successful" means something. `most_views` is the ranking, matching the cockpit's own `default_selection`.
+- **A candidate already posted to a platform is never picked for that platform again.** Pools drain per platform, so the Instagram run leaves the YouTube pool untouched — and a second YouTube slot on the same slug would draw the *next* best hook, never repeat the first.
+- **No automation.** The cockpit attaches comment automations to Instagram posts only, and drops one on a YouTube job.
+- **The title comes from `videos.json`**, not from the hook: the pick happens hours later, so there is no per-hook title to send. `schedule_video.py` flattens the primary entry's `title` (the burned-in card, minus its line breaks). Without an explicit title YouTube would get the mp4's filename.
+- **`--no-youtube` skips it.** The cross-post is on by default; leave it off only when the user asks.
+
+`/post-video` enrols too, so a hook posted immediately is still a candidate later.
 
 ## Prerequisites
 
@@ -43,6 +57,8 @@ Read the `schedule://settings` resource (or call `mcp__social-cockpit__list_sche
 Hooks are `output/<slug>/*.mp4`. Exclude any already listed in **`output/.published`**.
 
 That file answers exactly one question: **has this hook been used?** A `<slug>/<file>.mp4` key there means the hook is spoken for and must never go out again — whether `/post-video` posted it or this command booked it. Deleting its line is the only way to release it. Match on the key alone; the timestamp beside it is informational.
+
+A `<slug>/@youtube` key is not a hook — it claims the cross-post (Step 6). Ignore it here; the script checks it itself.
 
 ```bash
 ls -1 output/<slug>/*.mp4
@@ -113,6 +129,26 @@ A call that returns no slot means the calendar is full from that point on — st
 - Compute `earliest` as **now + 15 minutes** in the cockpit's timezone and pass it explicitly. Take the later of that and `--start` when the user gave one; a `--start` in the past or inside the floor loses to the floor.
 - When the suggestions come back, **check the first one is still more than 15 minutes out.** If it is not, drop it, ask for one more, and say what you dropped.
 
+### Then one more slot, for YouTube
+
+Unless `--no-youtube` was passed, ask for one final slot **a day after the last hook**:
+
+```
+suggest_slots  count: 1  earliest: <last hook's slot + 1 day>
+```
+
+Same rule as every other slot: the time comes back from the cockpit, you don't pick it. The one-day offset is only which window you ask about — it is what gives the last hook a day on Instagram before its numbers decide the pick.
+
+This slot has no same-video problem to avoid: it is a different platform, and it draws a hook that has already run its course on Instagram. If the call returns nothing, report that the cross-post could not be slotted and carry on with the Instagram hooks — it is not a reason to abandon the run.
+
+Before Step 4, confirm the pool will actually have something to give it:
+
+```
+mcp__social-cockpit__get_slug_pool   slug: <slug>   platform: "yt"
+```
+
+For a brand-new slug this reads `0 video(s)` and that is **correct** — the pool fills as each hook publishes, all of which is still in the future. What you are checking for is the opposite case: a slug whose hooks have already gone out, where `eligible` for `yt` being 0 means every one has been cross-posted already and this job would fail with `no_candidate`. Say which of the two you are looking at in Step 4.
+
 ### Before moving on
 
 Each hook is its own post at its own time. Pair hooks to slots in order, then check the collected slots as a set: no two on the same **day**, and every consecutive pair at least `min_same_video_days` apart. If that doesn't hold, the loop above was short-circuited — redo it rather than nudging a time by hand.
@@ -139,12 +175,15 @@ Two posts in one day is for **two different videos** — a second video takes th
 Scheduling publishes to a live account on a timer, so **always show the plan and get explicit confirmation before booking.** Present a table in the cockpit's timezone:
 
 ```
-Slot                        Hook file                          Caption
+Slot                            Hook file                          Caption
 Sat 16 Aug 2026, 09:30 GMT+10   waited-longest-dropped-first.mp4   "…"
 Mon 18 Aug 2026, 09:30 GMT+10   figma-fixed-outages.mp4            "…"
+Tue 19 Aug 2026, 09:30 GMT+10   YouTube — picked from the pool     "Figma's Fix For Outages"
 ```
 
-State alongside it: that every time came from `suggest_slots` and what it reported fitting the plan around, the `min_same_video_days` gap in force and whether it came from the cockpit or the fallback, the first `earliest` you passed and why (the 15-minute floor, or `--start`), whether an automation will attach — with its key and trigger keywords, or that there is no `automation.json` so these post without one — and that each posts as a **trial reel**.
+State alongside it: that every time came from `suggest_slots` and what it reported fitting the plan around, the `min_same_video_days` gap in force and whether it came from the cockpit or the fallback, the first `earliest` you passed and why (the 15-minute floor, or `--start`), whether an automation will attach — with its key and trigger keywords, or that there is no `automation.json` so these post without one — and that each Instagram post goes out as a **trial reel**.
+
+For the YouTube row, say plainly that **no file is being chosen now**: it books the slug's pool, and the cockpit picks whichever hook has the most views at that moment. Give the title it will carry (from `videos.json`) and what `get_slug_pool` reported — an empty pool that is about to fill, or an exhausted one that will fail.
 
 If any hook went unslotted because `suggest_slots` returned fewer slots than hooks, name it here. It stays unscheduled and unclaimed, and the next run picks it up.
 
@@ -155,17 +194,21 @@ On confirmation, book every hook in **one** run of `scrape/schedule_video.py` �
 ```bash
 .venv/bin/python scrape/schedule_video.py <slug> \
   "<hook1>.mp4=<scheduled-at-iso-1>" \
-  "<hook2>.mp4=<scheduled-at-iso-2>"
+  "<hook2>.mp4=<scheduled-at-iso-2>" \
+  --youtube "<youtube-scheduled-at-iso>"
 ```
 
 Notes:
 - One `<hook>.mp4=<scheduled-at-iso>` pair per hook, in the order agreed in Step 4. `<hook>.mp4` is the filename only (the script resolves it under `output/<slug>/`); `<scheduled-at-iso>` is the string `suggest_slots` returned, **verbatim** — without an offset it's read in the cockpit's timezone, the zone the suggestion was made in.
-- Entries are independent: one failing (e.g. a `day_full` conflict) doesn't roll back the others. The script prints `✓`/`✗` per hook and a `Booked N, failed N` summary — report both, and retry only the failures.
-- The `video` field marking these as one video's hooks, the `automation.key` shared across them, and the `output/.published` ledger line are all written by the script — nothing left for you to compose or append by hand.
+- `--youtube` takes the extra slot from Step 3, the same way and just as verbatim. Omit the flag entirely for `--no-youtube`, or when Step 3 could not slot it.
+- Entries are independent: one failing (e.g. a `day_full` conflict) doesn't roll back the others. The script prints `✓`/`✗` per hook and a `Booked N, failed N` summary — report both, and retry only the failures. The YouTube job is booked last and still goes ahead when some hooks failed: the pool only needs one candidate.
+- The `video` field marking these as one video's hooks, the `slug` that enrols each published hook in the pool, the `automation.key` shared across them, the YouTube title, `selection_method`, and every `output/.published` ledger line are all written by the script — nothing left for you to compose or append by hand.
 
 ## Step 6 — Report what was booked
 
 `output/.published` is already updated for every hook the script booked — that's what claims it; nothing more to write. Report the final schedule, with job ids, in the cockpit's timezone. For any hook the script reported `failed`, no ledger line was written, so it stays eligible for the next run once you've addressed why it failed.
+
+The cross-post gets a ledger line too, keyed **`<slug>/@youtube`** rather than an mp4 — a slug job claims the pool, not a file, but without a claim a second run of this command would book a second YouTube post for the same slug. Removing that line is what allows another one.
 
 ### What this means for `/post-video`
 
@@ -191,3 +234,12 @@ mcp__social-cockpit__list_scheduled_posts  →  status: ["failed", "missed"]
 ```
 
 For each one, either revive it (`update_scheduled_post` with a new `scheduled_at`, which resets its attempts), or cancel it and delete its line so the hook is rescheduled from scratch on the next run.
+
+### When the cross-post fails
+
+A YouTube slug job has one failure the hooks don't: **`error_kind: "no_candidate"`**, which is not retryable — moving it to a later slot changes nothing. `get_scheduled_post` names which of the four it hit, and `get_slug_pool  slug: <slug>  platform: "yt"` shows the same thing against the pool:
+
+- **Empty pool** — no hook ever published, so nothing enrolled. Find out why the Instagram jobs failed first.
+- **Exhausted** — every candidate has already been cross-posted to YouTube. Working as intended; delete the `@youtube` ledger line only if you have added new hooks.
+- **Missing from disk** — a rendered mp4 was moved or deleted after it published. The pool holds a reference, never a copy.
+- **All spoken for** — another slot on the same slug is publishing right now. Rare, and it clears itself.

@@ -204,10 +204,16 @@ def pending(slug, done):
     return hooks
 
 
-def publish(video_path, caption, automation=None):
+def publish(video_path, caption, slug, automation=None):
     payload = {
         "video_path": str(video_path.resolve()),
         "caption": caption,
+        # Enrols this file in the slug's content pool as it publishes, recording
+        # the media id it became. That ledger is what lets a later YouTube slot
+        # booked against the slug rank this hook on its real numbers -- see
+        # ``schedule_video.py --youtube``. A hook posted here and not enrolled
+        # would be invisible to that pick, however well it did.
+        "slug": slug,
         "trial_params": {"graduation_strategy": "MANUAL"},
     }
     if automation:
@@ -286,7 +292,7 @@ def main():
         print("\n(dry run — nothing posted)")
         return
 
-    resp = publish(mp4, caption, automation)
+    resp = publish(mp4, caption, slug, automation)
     print(f"\n  published: {caption!r}")
     if automation:
         act = (resp.json().get("automation") or {})
