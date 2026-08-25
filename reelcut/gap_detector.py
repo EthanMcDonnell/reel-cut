@@ -198,23 +198,26 @@ def _find_silence_onset(
     return before_t
 
 
-def _find_speech_end_forward(
+def _find_dominant_speech_span(
     audio: np.ndarray,
     sr: int,
     word_start: float,
     word_end: float,
     config: CutsConfig,
     min_silence_ms: float = 100.0,
-) -> float:
-    """Scan forward from word_start to find the first sustained silence within the word span.
+) -> tuple[float, float]:
+    """Find the speech run that actually carries an over-long word's audio.
 
-    WhisperX sometimes stretches a word's end timestamp to cover the entire following
-    silence (especially for short function words like "The", "But"). This makes the
-    inter-word gap trivially small and invisible to the gap detector. This function
-    finds the true end of speech so the word can be clamped before gap detection.
+    WhisperX stretches a word's timestamps across neighbouring silence, and it does so
+    in both directions: sometimes the speech sits at the head of the span (a short
+    function word followed by a long pause), sometimes at the tail (the word is pulled
+    back to butt against the previous word, with the pause left in between). Splitting
+    the span on sustained silence and taking the longest run finds the speech either
+    way — clamping only the end deletes a tail-anchored word, because the real audio
+    then falls inside the gap and gets cut.
 
-    Returns a time in [word_start, word_end]. Returns word_end unchanged if no
-    sustained silence is found (the word is genuinely long, e.g. a held vowel).
+    Returns (start, end) within [word_start, word_end], unchanged when no sustained
+    silence splits the span (the word is genuinely long, e.g. a held vowel).
     """
     frame_size = max(64, int(0.010 * sr))  # 10ms frames
     required_frames = max(1, int(min_silence_ms / 10))
@@ -223,8 +226,10 @@ def _find_speech_end_forward(
     start_sample = int(word_start * sr)
     end_sample = int(word_end * sr)
 
-    consecutive_silent = 0
+    runs: list[tuple[int, int]] = []  # [start, end) sample offsets of each speech run
+    run_start: int | None = None
     first_silent_pos: int | None = None
+    consecutive_silent = 0
 
     for pos in range(start_sample, end_sample, frame_size):
         frame = audio[pos : pos + frame_size]
@@ -235,13 +240,21 @@ def _find_speech_end_forward(
             if consecutive_silent == 0:
                 first_silent_pos = pos
             consecutive_silent += 1
-            if consecutive_silent >= required_frames:
-                return first_silent_pos / sr  # type: ignore[operator]
+            if consecutive_silent >= required_frames and run_start is not None:
+                runs.append((run_start, first_silent_pos))  # type: ignore[arg-type]
+                run_start = None
         else:
             consecutive_silent = 0
-            first_silent_pos = None
+            if run_start is None:
+                run_start = pos
+    if run_start is not None:
+        runs.append((run_start, end_sample))
 
-    return word_end
+    if not runs:
+        return word_start, word_end
+
+    best = max(runs, key=lambda r: r[1] - r[0])
+    return best[0] / sr, best[1] / sr
 
 
 def _find_trailing_speech_end(
@@ -386,14 +399,18 @@ def _build_gaps(
     gaps: list[Gap] = []
 
     # Pre-pass: clamp words whose WhisperX-assigned duration is suspiciously long.
-    # WhisperX sometimes stretches a short word's end timestamp across the entire
-    # silence that follows it. The inter-word gap is then only a few ms and is never
-    # cut. Scanning forward finds the true speech end and restores a real gap.
+    # WhisperX sometimes stretches a short word's timestamps across the silence beside
+    # it — forwards across a following pause, or backwards to butt against the previous
+    # word. The inter-word gap is then only a few ms and is never cut, and when the
+    # stretch runs backwards the word's real audio ends up inside the gap that does get
+    # cut. Clamping to the dominant speech run restores a real gap on the correct side.
     for word in words[:-1]:
         if word.end - word.start > _LONG_WORD_DUR_S:
-            true_end = _find_speech_end_forward(audio, sr, word.start, word.end, config)
+            true_start, true_end = _find_dominant_speech_span(audio, sr, word.start, word.end, config)
             if true_end < word.end - 0.050:  # at least 50ms of silence found
                 word.end = true_end
+            if true_start > word.start + 0.050:
+                word.start = true_start
 
     for i in range(len(words) - 1):
         raw_start = words[i].end

@@ -485,10 +485,9 @@ def write_debug_report(
 
     _t("--- TIMELINE: WORDS + GAPS (source clip time) ---")
 
-    edl_cut_boundaries: set[float] = set()
-    for entry in edl:
-        if not entry.keep:
-            edl_cut_boundaries.add(round(entry.start, 3))
+    edl_cut_spans: list[tuple[float, float]] = [
+        (entry.start, entry.end) for entry in edl if not entry.keep
+    ]
 
     for clip_path in clip_paths:
         clip_words = sorted(
@@ -525,12 +524,21 @@ def write_debug_report(
                     )
                     g_content = f"{gap.gap_type.upper()}: {gap.duration_ms:.0f}ms{eff_note}"
                     if gap.cut:
-                        # EDL uses gap.speech_end (true speech end, >= raw word end) as
-                        # the cut boundary — must compare the same value or a sub-ms
-                        # offset between the two silently hides real cuts.
-                        cut_key = round(gap.speech_end, 3)
-                        if cut_key not in edl_cut_boundaries:
+                        # Match the EDL cut by overlap, not by boundary equality: edl.py
+                        # normally cuts from gap.speech_end, but the min_keep_ms floor
+                        # pushes cut_start forward when the preceding word is very short,
+                        # and an exact-match lookup then reports a real deletion as KEEP.
+                        overlap = next(
+                            (
+                                (cs, ce) for cs, ce in edl_cut_spans
+                                if cs < gap.end and ce > gap.effective_start
+                            ),
+                            None,
+                        )
+                        if overlap is None:
                             decision = "KEEP [mid_sentence_floor]"
+                        elif abs(overlap[0] - gap.speech_end) > 0.005:
+                            decision = f"CUT  [{_ts(overlap[0])}→{_ts(overlap[1])} min_keep floor]"
                         else:
                             decision = "CUT "
                     else:
