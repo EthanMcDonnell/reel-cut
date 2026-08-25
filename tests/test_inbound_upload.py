@@ -3,6 +3,7 @@ import http.client
 import json
 import re
 import sys
+import time
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 from threading import Thread
@@ -90,26 +91,97 @@ def test_mission_control_provider_spawns_without_queueing(tmp_path, monkeypatch)
     assert kwargs["cwd"] == tmp_path
 
 
-def test_script_upload_copies_context_without_copying_old_footage(tmp_path, monkeypatch):
+def test_script_upload_lands_directly_in_the_slug_folder(tmp_path, monkeypatch):
     assets = tmp_path / "assets"
     source = assets / "edge-cache"
-    (source / "screenshots").mkdir(parents=True)
+    source.mkdir(parents=True)
     (source / "script.md").write_text("**HOOK**\nA hook")
-    (source / "manifest.json").write_text("[]")
-    (source / "screenshots" / "snippet.png").write_bytes(b"image")
-    (source / "old-take.mov").write_bytes(b"video")
-    (source / "videos.json").write_text("[]")
+    _config(tmp_path)
+    monkeypatch.setattr(upload_server, "REPO", tmp_path)
+    monkeypatch.setattr(upload_server, "ASSETS", assets)
+    monkeypatch.setattr(upload_server, "enqueue", lambda slug, receipt: {"id": "a" * 32})
+    server = ThreadingHTTPServer(("127.0.0.1", 0), upload_server.Handler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        connection = http.client.HTTPConnection(*server.server_address)
+        connection.request("PUT", "/upload/edge-cache?name=take.mov", body=b"video")
+        response = connection.getresponse()
+        body = json.loads(response.read())
+    finally:
+        server.shutdown()
+        thread.join()
+
+    assert response.status == 202
+    assert body["asset_slug"] == "edge-cache"
+    assert (source / "take.mov").read_bytes() == b"video"
+    assert not (source / ".reelcut-intake.json").exists()
+    assert [p.name for p in assets.iterdir()] == ["edge-cache"]
+
+
+def test_second_script_upload_is_refused(tmp_path, monkeypatch):
+    assets = tmp_path / "assets"
+    source = assets / "edge-cache"
+    source.mkdir(parents=True)
+    (source / "script.md").write_text("**HOOK**\nA hook")
+    (source / "existing.mov").write_bytes(b"first take")
     _config(tmp_path)
     monkeypatch.setattr(upload_server, "REPO", tmp_path)
     monkeypatch.setattr(upload_server, "ASSETS", assets)
 
-    directory, metadata = upload_server.allocate_upload("edge-cache")
+    def fail_enqueue(*args, **kwargs):
+        raise AssertionError("a refused upload must never reach the queue")
 
-    assert metadata == {"kind": "scripted", "source_slug": "edge-cache", "hook_policy": "script"}
-    assert (directory / "script.md").is_file()
-    assert (directory / "screenshots" / "snippet.png").is_file()
-    assert not (directory / "old-take.mov").exists()
-    assert not (directory / "videos.json").exists()
+    monkeypatch.setattr(upload_server, "enqueue", fail_enqueue)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), upload_server.Handler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        connection = http.client.HTTPConnection(*server.server_address)
+        connection.request("PUT", "/upload/edge-cache?name=retake.mov", body=b"second take")
+        response = connection.getresponse()
+        response.read()
+    finally:
+        server.shutdown()
+        thread.join()
+
+    assert response.status == 409
+    assert (source / "existing.mov").read_bytes() == b"first take"
+    assert not (source / "retake.mov").exists()
+    assert source.is_dir()
+
+
+def test_dropped_upload_never_deletes_the_script_folder(tmp_path, monkeypatch):
+    assets = tmp_path / "assets"
+    source = assets / "edge-cache"
+    source.mkdir(parents=True)
+    (source / "script.md").write_text("**HOOK**\nA hook")
+    _config(tmp_path)
+    monkeypatch.setattr(upload_server, "REPO", tmp_path)
+    monkeypatch.setattr(upload_server, "ASSETS", assets)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), upload_server.Handler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        connection = http.client.HTTPConnection(*server.server_address)
+        connection.putrequest("PUT", "/upload/edge-cache?name=take.mov")
+        connection.putheader("Content-Length", "1000")  # promise more than is ever sent
+        connection.endheaders()
+        connection.send(b"short")
+        connection.close()  # drop the connection mid-upload
+    finally:
+        server.shutdown()
+        thread.join()
+
+    for _ in range(20):
+        if not any(source.glob("*.part")):
+            break
+        time.sleep(0.1)
+    assert (source / "script.md").is_file()
+    assert not any(source.glob("*.part"))
 
 
 def test_worker_blocks_a_zero_exit_without_rendered_artifacts(tmp_path, monkeypatch):

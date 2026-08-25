@@ -131,22 +131,21 @@ from `assets/<slug>/script.md`; edits made after it is sent appear after a phone
 /produce-script ────links────▶ Telegram "file-exchange" ────▶ phone
                                                               │
                      http://100.x.y.z:8770/script/<slug> ────┤ read while filming
-                     http://100.x.y.z:8770/upload/<slug> ────┘ upload one take
+                     http://100.x.y.z:8770/upload/<slug> ────┘ upload the take
                                                               ▼
-                                              assets/<slug>-take-<timestamp>/
+                                                     assets/<slug>/
                                                               ▼
                                                 serial Claude production queue
 ```
 
-Every returned script take gets an isolated flat asset slug. Its script context and source
-screenshots are copied in, its footage is uploaded there, and the production worker runs:
+The take is uploaded straight into the script's own `assets/<slug>/`, and production runs:
 
 ```bash
-claude -p "/produce-reel <take-slug> --auto"
+claude -p "/produce-reel <slug> --auto"
 ```
 
-A later take sent through the same link waits in the FIFO queue; it never resets or mixes with a
-previous take.
+A second take through the same link is refused (`409`), not isolated into a new folder — delete
+the existing clip from `assets/<slug>/` first if you need to retake.
 
 ### Permanent direct-recording links
 

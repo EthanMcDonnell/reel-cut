@@ -32,7 +32,6 @@ binding it does NOT expose the server on local wi-fi.
 import json
 import os
 import re
-import shutil
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -269,22 +268,19 @@ def new_asset_dir(prefix: str) -> Path:
     return candidate
 
 
-def copy_script_context(source: Path, destination: Path) -> None:
-    """Copy the durable script inputs, but never an old take or derived run output."""
-    derived = {"images.json", "videos.json", "audio.json", "retranscribe-clips"}
-    for item in source.iterdir():
-        if item.name in derived or item.name.endswith(".captions.json") or ".debug." in item.name:
-            continue
-        if item.suffix.lower() in VIDEO_EXTENSIONS or item.name.startswith("."):
-            continue
-        if item.is_dir():
-            shutil.copytree(item, destination / item.name)
-        else:
-            shutil.copy2(item, destination / item.name)
+class FootageAlreadyUploaded(Exception):
+    """A script-linked slug already has a video file — refuse a second take, don't isolate it."""
 
 
 def allocate_upload(target: str) -> tuple[Path, dict[str, str]] | None:
-    """Create one isolated asset workspace for a direct series or script-linked take."""
+    """The workspace for a direct series or script-linked upload, or None if no such target.
+
+    A permanent series link (`hot-take`) always gets a fresh flat folder — it is meant to
+    take many recordings over time. A script-linked slug uploads straight into its own
+    assets/<target>/, once: a second video for the same slug is refused via
+    FootageAlreadyUploaded rather than silently isolated into a `-take-<timestamp>`
+    folder, so a slug's footage is never ambiguous. Delete the existing clip to retake.
+    """
     config = load_config(REPO / "config.yaml")
     if series := config.inbound.series.get(target):
         directory = new_asset_dir(series.slug_prefix)
@@ -293,9 +289,9 @@ def allocate_upload(target: str) -> tuple[Path, dict[str, str]] | None:
     source = ASSETS / target
     if not (source / "script.md").is_file():
         return None
-    directory = new_asset_dir(f"{target}-take")
-    copy_script_context(source, directory)
-    return directory, {"kind": "scripted", "source_slug": target, "hook_policy": "script"}
+    if any(item.suffix.lower() in VIDEO_EXTENSIONS for item in source.iterdir() if item.is_file()):
+        raise FootageAlreadyUploaded(target)
+    return source, {}
 
 
 def spawn_mission_control(slug: str) -> None:
@@ -435,6 +431,9 @@ class Handler(BaseHTTPRequestHandler):
 
         try:
             allocated = allocate_upload(target)
+        except FootageAlreadyUploaded:
+            self._reply(409, f"footage already uploaded for {target} — delete the existing clip to retake")
+            return
         except Exception as exc:
             self._reply(500, f"could not prepare upload: {exc}")
             return
@@ -457,16 +456,21 @@ class Handler(BaseHTTPRequestHandler):
                     remaining -= len(block)
         except Exception as exc:
             part.unlink(missing_ok=True)
-            shutil.rmtree(directory, ignore_errors=True)
+            try:
+                directory.rmdir()  # only succeeds if empty — never touches a script folder's real content
+            except OSError:
+                pass
             self._reply(500, f"upload failed: {exc}")
             return
 
         part.replace(dest)
-        try:
-            intake = write_intake(directory, metadata, dest.name)
-        except Exception as exc:
-            self._reply(500, f"upload saved but could not prepare it: {exc}")
-            return
+        intake = directory / ".reelcut-intake.json"
+        if metadata:
+            try:
+                write_intake(directory, metadata, dest.name)
+            except Exception as exc:
+                self._reply(500, f"upload saved but could not prepare it: {exc}")
+                return
 
         rel = dest.relative_to(ASSETS.parent)
         provider = load_config(REPO / "config.yaml").production.ai_provider
