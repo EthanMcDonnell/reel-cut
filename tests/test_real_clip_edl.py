@@ -108,3 +108,18 @@ def test_casual_talking_head_keeps_the_whole_word_api():
     _, _, edl = _build_edl("casual-talking-head")
     cut = next(e for e in edl if not e.keep and 16.0 < e.start < 18.5)
     assert cut.start == pytest.approx(17.147, abs=0.001)
+
+
+def test_hot_take_keeps_the_whole_word_github():
+    """Regression: "you can buy GitHub stars" rendered as "you can buy stars".
+
+    wav2vec2 stretched 'GitHub' backwards to 18.366-19.932 to butt against 'buy', and
+    the clamp then took the head of that span — 110 ms of 'buy' decay — leaving the
+    word's own 330 ms inside the gap. The cut must close before the word starts at
+    19.606s, not run through it to 'stars'.
+    """
+    words, _, edl = _build_edl("hot-take-20260825T010121Z")
+    github = next(w for w in words if w.word == "GitHub" and w.start > 19)
+    cut = next(e for e in edl if not e.keep and 18.0 < e.start < 20.0)
+
+    assert cut.end <= github.start, f"cut runs {(cut.end - github.start) * 1000:.0f}ms into 'GitHub'"
