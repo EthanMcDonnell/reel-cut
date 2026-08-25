@@ -213,7 +213,7 @@ Examples of the register: `the cloud? never heard of it` · `dropbox unsubscribe
 
 **Use AskUserQuestion** to present the full proposed set at once — one option to accept all, plus "Enter my own". Pair each proposed title/caption with the hook it was derived from so the mapping is clear, and mark which entries are mirrors.
 
-**Omitting a mirror entry is a valid choice.** The duplicate then reuses its hook's card and caption under a `<filename><flip-suffix>.mp4` filename, and it renders faster: without its own card it shares the hook's overlay frames and segment extraction (~80% of a render) and repeats only the encode. Its own card means its own full render pass.
+**A mirror entry is the default — omitting one is the user's call at the AskUserQuestion above, not yours to skip.** `videos.json` is one entry per output `.mp4` and a duplicated hook produces two, so neither a single-hook asset nor an instruction to keep the file short licenses dropping the mirror. An omitted mirror reuses its hook's card and caption under `<filename><flip-suffix>.mp4` and renders faster — it shares the hook's overlay frames and segment extraction (~80% of a render) and repeats only the encode — at the cost of the byte-identical overlay that *Every entry gets its OWN title and caption* exists to prevent.
 
 **Logo resets:** each base entry's start/end is a logo-reset boundary. A brand re-mentioned after any card edge re-fires its logo in that section — no extra configuration needed.
 
