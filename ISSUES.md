@@ -34,56 +34,29 @@ today, but an invisible side effect inside a `detect_*` function — a trap for
 anyone who reorders the pipeline. Now mutates both edges, so the blast radius
 is wider than when this was filed.
 
-### 4. Overlay reset is coarser than the drift it guards against (`cli.py:1056`)
-`_clean_transcription_artifacts` deletes `images.json` / `videos.json` /
-`audio.json` on every `transcribe` run. This is deliberate — `4d005bd`,
-"reset overlay files on every run for a clean re-run" — it is covered by
-`tests/test_clean_artifacts.py`, and `/prepare-video` warns about it in bold.
-The rationale is that the overlays are keyed to the old transcript and would
-drift. That is only half true:
-
-- `videos.json` `start`/`end` are the hook window on the **output timeline**
-  (`video_spec.py:8`), which does shift whenever the EDL changes. Resetting
-  these is correct.
-- `images.json` `start`/`end` are **source-clip** time, remapped through the new
-  EDL at render (`image_spec.py:4`). They cannot drift. Nor can the authoring
-  fields on `videos.json`: `title`, `subtitle`, `scrim`, `caption`, `filename`,
-  `of`.
-
-So a re-run to verify a one-word timing fix discards every image cue and title
-card in the slug to protect two floats that only `videos.json` carries.
-`assets/` is gitignored, so there is no undo — after re-transcribing
-`hot-take-20260825T010121Z` both files were only recoverable because their
-contents happened to be quoted in an earlier session transcript.
-
-Narrow the reset to the fields that actually drift: blank `start`/`end` on
-`videos.json` base entries and leave the rest, or rename the overlays to `.bak`
-instead of unlinking. Note this only bites when `reelcut transcribe` is invoked
-directly — going through `/prepare-video` surfaces the warning first.
-
 ## Performance
 
-### 5. `_remap_kept_words` is O(words × cuts) (`cli.py:744`)
+### 4. `_remap_kept_words` is O(words × cuts) (`cli.py:744`)
 `remap()` recomputes `sum(e - s for s, e in cuts if ...)` over all cuts on every
 word, in both phase 1 and phase 2. Quadratic on long, heavily-cut videos. Sort
 cuts once and use a prefix sum + `bisect` for O(log n) per word.
 
-### 6. WhisperX alignment model reloaded per clip (`transcriber.py:123`)
+### 5. WhisperX alignment model reloaded per clip (`transcriber.py:123`)
 `align()` calls `whisperx.load_align_model(...)` every invocation, and the
 pipeline calls `align` once per clip. Multi-clip jobs reload wav2vec2 each time.
 Load once and reuse.
 
-### 7. Caption frame cache builds redundant word maps (`caption.py:296`)
+### 6. Caption frame cache builds redundant word maps (`caption.py:296`)
 `_build_frame_cache` builds both `word_to_line` and `all_words_flat`, then
 iterates per frame. For long videos at 30fps the redundant allocation adds up.
 
-### 8. Progress bar updated on every segment (`renderer.py:182`)
+### 7. Progress bar updated on every segment (`renderer.py:182`)
 `progress.update()` fires once per completed segment in the `as_completed` loop.
 For large EDLs (1000+ segments) this is excessive terminal I/O.
 
 ## Testing
 
-### 9. Real-clip fixtures pin post-clamp word lists, so the clamp is untestable
+### 8. Real-clip fixtures pin post-clamp word lists, so the clamp is untestable
 `tests/fixtures/retake/<slug>.txt` is copied from `.debug.4.post-vad`, which is
 *after* `_build_gaps` has clamped over-long words, and `test_real_clip_edl.py`
 loads pinned gaps rather than calling `detect_gaps`. Both fixture boundaries sit
@@ -98,7 +71,7 @@ clamp but duplicates fixture data for the same clips. The cleaner fix is to make
 that needs the waveform, so it also needs the envelope trick, and it churns every
 existing gaps fixture. Not attempted.
 
-### 10. `tests/test_send_script.py` fails to import
+### 9. `tests/test_send_script.py` fails to import
 ```
 ImportError: cannot import name 'LIMIT' from 'send_script'
 ```
@@ -109,21 +82,21 @@ regression in it is invisible. Either fix the import or delete the test.
 
 ## Code Quality
 
-### 11. Hardcoded 0.3s caption grace period (`caption.py:22`, used at `:337`)
+### 10. Hardcoded 0.3s caption grace period (`caption.py:22`, used at `:337`)
 ```python
 _CAPTION_GRACE_S = 0.3
 ```
 Module constant, not configurable. Too short for slow speech, potentially too
 long for fast speech.
 
-### 12. Hardcoded 64-sample minimum chunk in gap detection (`gap_detector.py:116`)
+### 11. Hardcoded 64-sample minimum chunk in gap detection (`gap_detector.py:116`)
 ```python
 if len(chunk) < 64:
     return "silence"
 ```
 Magic number with no config or comment explaining the choice.
 
-### 13. Captions doc stem depends on whether `--slug` was passed (`cli.py:69`, `:106`)
+### 12. Captions doc stem depends on whether `--slug` was passed (`cli.py:69`, `:106`)
 ```python
 stem = slug or input_folder.stem
 ```
@@ -133,5 +106,5 @@ transcribed with and without `--slug` leaves the asset dir with
 the cleaner globs `*.captions.json`, so no stale doc survives — but the pairing
 is unobvious when reading an asset dir by hand.
 
-### 14. Unused `import os` in `caption.py` (`caption.py:4`)
+### 13. Unused `import os` in `caption.py` (`caption.py:4`)
 Orphaned after the symlink logic moved to `renderer.py`. Safe to drop.
