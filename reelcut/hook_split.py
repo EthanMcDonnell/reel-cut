@@ -64,9 +64,15 @@ def build_hook_edl(edl, hook_windows: list[tuple[float, float]], target_idx: int
         # Within a keep entry, output time advances linearly with source time
         # (no interior cuts), so a boundary at output `b` maps to source
         # `e.start + (b - o_start)`. Split at every boundary interior to the entry.
+        # The EPS margin keeps a boundary that lands *on* an entry edge from counting
+        # as interior: `o_end` is accumulated through the remap, so a boundary equal to
+        # it can compare a few float-ulps below (e.g. 22.115 < 22.115000000000006) and
+        # split off a zero-length piece, which extracts to a corrupt segment and
+        # silently truncates the concat. Real EDL cuts are never 1ms apart.
+        EPS = 1e-3
         o_start = remap(e.source_clip, e.start)
         o_end = o_start + (e.end - e.start)
-        edges = [o_start] + [b for b in boundaries if o_start < b < o_end] + [o_end]
+        edges = [o_start] + [b for b in boundaries if o_start + EPS < b < o_end - EPS] + [o_end]
         for lo, hi in zip(edges, edges[1:]):
             s_lo = e.start + (lo - o_start)
             s_hi = e.start + (hi - o_start)

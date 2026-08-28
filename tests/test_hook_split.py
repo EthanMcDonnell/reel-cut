@@ -1,4 +1,6 @@
 """Tests for the per-hook EDL splitter used by `reelcut render-hooks`."""
+import pytest
+
 from reelcut.captions_doc import CaptionWord, EdlEntry
 from reelcut.hook_split import _section_of, build_hook_edl, drop_covered
 from reelcut.image_spec import ImageSpec
@@ -6,6 +8,10 @@ from reelcut.image_spec import ImageSpec
 
 def _keep(start, end, clip="c.mp4"):
     return EdlEntry(source_clip=clip, start=start, end=end, keep=True, reason="speech")
+
+
+def _cut(start, end, clip="c.mp4"):
+    return EdlEntry(source_clip=clip, start=start, end=end, keep=False, reason="silence")
 
 
 # A full take with no internal cuts, so each keep entry's output start == its
@@ -110,3 +116,71 @@ class TestDropCovered:
             CaptionWord(word="So", start=10.71, end=10.85, source_clip="c.mp4"),
         ]
         assert drop_covered(words, drop) == []
+
+
+# Real numbers from the utf-8-character-encoding clip, whose last hook window ends
+# exactly on a keep entry's edge — the case that shipped ten truncated renders. The
+# cut entries matter: output time is derived from them, so the float accumulation that
+# triggers the bug only reproduces with the real EDL, gaps included.
+REAL_EDL = [
+    _keep(7.405, 9.279),
+    _cut(9.279, 9.657),
+    _keep(9.657, 10.559),
+    _cut(10.559, 12.251),
+    _keep(12.251, 16.53),
+    _cut(16.53, 18.09),
+    _keep(18.09, 22.97),
+    _cut(22.97, 24.77),
+    _keep(24.77, 28.72),
+    _cut(28.72, 28.81),
+    _keep(28.81, 29.74),
+    _cut(29.74, 36.01),
+    _keep(36.01, 41.31),   # output 16.815 -> 22.115, ending exactly on body_start
+    _cut(41.31, 50.42),
+    _keep(50.42, 53.35),   # first body entry
+]
+REAL_HOOK_WINDOWS = [
+    (0.0, 2.926), (2.926, 7.205), (7.205, 12.085), (12.085, 16.965), (16.965, 22.115),
+]
+REAL_BODY_S = 53.35 - 50.42
+
+
+class TestBoundaryOnKeepEntryEdge:
+    """A section boundary landing *on* a keep entry's end must not split it.
+
+    `o_end` is accumulated through the remap, so it can land a few float-ulps above a
+    boundary equal to it (here 22.115 < 22.115000000000006). Without an epsilon margin
+    that boundary counts as interior and splits off a ~7e-15s piece, which ffmpeg
+    extracts to a corrupt segment; the concat demuxer then stops there and silently
+    truncates the render to just the hook.
+    """
+
+    def test_float_error_really_puts_o_end_above_body_start(self):
+        # Pin the arithmetic the bug depends on, so the case can't silently stop
+        # reproducing if the numbers are ever edited.
+        o_start = 16.815
+        o_end = o_start + (41.31 - 36.01)
+        assert o_end > 22.115
+        assert o_end - 22.115 < 1e-9
+
+    def test_emits_no_subframe_keep_segments(self):
+        # The degenerate piece is ~7e-15s long — positive, so a `<= 0` check misses it.
+        # The invariant that matters is that every keep segment survives extraction:
+        # anything shorter than a frame writes a corrupt segment. Legitimate splits here
+        # are >=0.15s, so 1ms cleanly separates them (same margin as EPS above).
+        for target in range(len(REAL_HOOK_WINDOWS)):
+            new_edl, _, _ = build_hook_edl(REAL_EDL, REAL_HOOK_WINDOWS, target_idx=target)
+            degenerate = [
+                (e.start, e.end) for e in new_edl if e.keep and e.end - e.start < 1e-3
+            ]
+            assert not degenerate, f"hook {target}: sub-frame keep segment(s) {degenerate}"
+
+    def test_entry_ending_on_body_start_is_not_split_there(self):
+        # Signature of the bug: a keep sliver at the entry's own end (41.31), which is
+        # what truncated the concat. Hook 4's window legitimately splits this entry at
+        # 16.965, so assert on the trailing edge specifically, not on the split count.
+        for target in range(len(REAL_HOOK_WINDOWS)):
+            new_edl, _, _ = build_hook_edl(REAL_EDL, REAL_HOOK_WINDOWS, target_idx=target)
+            assert not [
+                e for e in new_edl if e.keep and e.start > 41.3 and e.end <= 41.31
+            ], f"hook {target}: entry split at its own end"
