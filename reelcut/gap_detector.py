@@ -257,14 +257,27 @@ def _find_dominant_speech_span(
     return best[0] / sr, best[1] / sr
 
 
+def _frame_levels_db(
+    audio: np.ndarray, sr: int, start: float, end: float, frame_size: int
+) -> list[tuple[float, float]]:
+    """Per-frame (time, RMS dBFS) over [start, end), one entry per frame_size samples."""
+    end_sample = min(int(end * sr), len(audio))
+    return [
+        (pos / sr, 20 * np.log10(float(np.sqrt(np.mean(audio[pos : pos + frame_size] ** 2))) + 1e-9))
+        for pos in range(int(start * sr), end_sample - frame_size + 1, frame_size)
+    ]
+
+
 def _find_trailing_speech_end(
     audio: np.ndarray,
     sr: int,
+    word_start: float,
     word_end: float,
     gap_end: float,
     config: CutsConfig,
     max_extend_ms: float = 800.0,
     max_closure_ms: float = 90.0,
+    tail_margin_db: float = 25.0,
 ) -> float:
     """Scan forward from word_end to find where the word's trailing speech ends.
 
@@ -287,10 +300,21 @@ def _find_trailing_speech_end(
     was cut. Returns a time in [word_end, min(gap_end, word_end + max_extend)], and
     word_end unchanged when the silence outlasts the budget (accurate alignment — the
     common case), so the scan stays inert for aligned words.
+
+    A frame counts as this word's speech only if it also stays within `tail_margin_db`
+    of the word's own loudest frame. The absolute floor alone walks straight through an
+    exhale — a breath clears `silence_threshold_db`, so the scan sailed to the far side
+    of it and handed edl.py a speech_end at the next word's start, leaving no room for a
+    cut: "...fixed half of that." kept its whole 600 ms exhale, and the gap was reported
+    as an EDL floor decline rather than as this. A trailing consonant belongs to the
+    word and stays near its level; a breath is tens of dB down.
     """
     frame_size = max(64, int(0.010 * sr))  # 10 ms frames
     silence_thresh = float(10 ** (config.silence_threshold_db / 20))
     closure_samples = max_closure_ms / 1000.0 * sr
+
+    word_levels = _frame_levels_db(audio, sr, word_start, word_end, frame_size)
+    tail_floor_db = (max(db for _, db in word_levels) - tail_margin_db) if word_levels else -np.inf
 
     start_sample = int(word_end * sr)
     limit = min(gap_end, word_end + max_extend_ms / 1000.0)
@@ -303,7 +327,11 @@ def _find_trailing_speech_end(
         frame = audio[pos : pos + frame_size]
         if len(frame) < 64:
             break
-        is_speech = float(np.mean(np.abs(frame) > silence_thresh)) >= config.failure_tolerance_ratio
+        frame_db = 20 * np.log10(float(np.sqrt(np.mean(frame ** 2))) + 1e-9)
+        is_speech = (
+            float(np.mean(np.abs(frame) > silence_thresh)) >= config.failure_tolerance_ratio
+            and frame_db > tail_floor_db
+        )
         if is_speech:
             silence_run = 0
             last_speech_end = (pos + frame_size) / sr
@@ -409,12 +437,7 @@ def _find_leading_speech_start(
     inert for well-aligned words.
     """
     frame_size = max(64, int(0.010 * sr))
-    end_sample = min(int(word_end * sr), len(audio))
-
-    levels: list[tuple[float, float]] = []
-    for pos in range(int(word_start * sr), end_sample - frame_size + 1, frame_size):
-        rms = float(np.sqrt(np.mean(audio[pos : pos + frame_size] ** 2)))
-        levels.append((pos / sr, 20 * np.log10(rms + 1e-9)))
+    levels = _frame_levels_db(audio, sr, word_start, word_end, frame_size)
     if len(levels) < _LEAD_SPEECH_FRAMES:
         return word_start
 
@@ -503,7 +526,7 @@ def _build_gaps(
         # Forward-only tail protection: if speech continues past the WhisperX word
         # end, move the cut boundary to the true speech end so the trailing consonant
         # isn't clipped. Never earlier than raw_start, so it can't land inside the word.
-        speech_end = _find_trailing_speech_end(audio, sr, raw_start, gap_end, config)
+        speech_end = _find_trailing_speech_end(audio, sr, words[i].start, raw_start, gap_end, config)
 
         duration_ms = (gap_end - effective_start) * 1000
 

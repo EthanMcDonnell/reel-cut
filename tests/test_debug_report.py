@@ -116,3 +116,27 @@ def test_clean_run_flags_nothing(tmp_path):
     base = _run(tmp_path, words=words, edl=edl)
     review = Path(f"{base}.debug.0.review.txt").read_text()
     assert "✓ nothing flagged" in review
+
+
+def test_timeline_distinguishes_the_two_edl_declines(tmp_path):
+    """A cut gap the EDL declines must name the real reason, not always the floor.
+
+    Reporting both as [mid_sentence_floor] hid a live defect: the trailing scan walked
+    through an exhale, speech_end landed on the next word's start, and the whole gap
+    survived while the report blamed the floor.
+    """
+    words = [_w("bits", 0.0, 0.4), _w("that.", 0.4, 0.8),   # sentence end → floor n/a
+             _w("one", 1.4, 1.8),
+             _w("giant", 1.8, 2.2), _w("list", 2.2, 2.6)]   # mid-sentence, short gap
+    gaps = {CLIP: [
+        # Cut gap the EDL declines for lack of room: speech_end sits at the next
+        # word's start, so cut_end (onset - pad) lands before cut_start.
+        Gap(start=0.8, end=1.4, effective_start=0.8, speech_end=1.4, duration_ms=600,
+            gap_type="breath", cut=True, speech_onset=1.4),
+    ]}
+    edl = [EDLEntry(0.0, 2.6, True, CLIP, "speech")]
+    base = _run(tmp_path, words=words, edl=edl, gaps=gaps)
+    timeline = Path(f"{base}.debug.5.timeline.txt").read_text()
+
+    assert "no room" in timeline
+    assert "mid_sentence_floor" not in timeline

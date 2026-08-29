@@ -536,7 +536,22 @@ def write_debug_report(
                             None,
                         )
                         if overlap is None:
-                            decision = "KEEP [mid_sentence_floor]"
+                            # Say which of edl.py's two declines this was. Reporting every
+                            # one as mid_sentence_floor hid a real defect: the trailing
+                            # scan walked through an exhale, speech_end landed on the next
+                            # word, and the gap survived whole while the report blamed the
+                            # floor. Mirrors the two tests in generate_scriptless_edl.
+                            allowed = is_sentence_boundary(
+                                w.word, nxt.word, nxt.start - w.end,
+                                pause_threshold_s=config.cuts.sentence_pause_s,
+                                include_clause=True,
+                            ) or gap.duration_ms >= config.cuts.mid_sentence_cut_floor_ms
+                            room = gap.speech_onset - config.cuts.speech_pad_ms / 1000.0 - gap.speech_end
+                            decision = (
+                                "KEEP [mid_sentence_floor]" if not allowed
+                                else f"KEEP [no room: speech_end={_ts(gap.speech_end)} "
+                                     f"onset={_ts(gap.speech_onset)} leaves {room * 1000:.0f}ms]"
+                            )
                         elif abs(overlap[0] - gap.speech_end) > 0.005:
                             decision = f"CUT  [{_ts(overlap[0])}→{_ts(overlap[1])} min_keep floor]"
                         else:

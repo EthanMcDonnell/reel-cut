@@ -26,7 +26,7 @@ def test_truncated_tail_extends_cut_to_true_speech_end():
     audio = np.concatenate([_tone(0.50), _tone(0.50, amp=0.0)])
     gap_end = 0.90  # next word starts well after the trailing silence
 
-    speech_end = _find_trailing_speech_end(audio, SR, word_end=0.40, gap_end=gap_end, config=CutsConfig())
+    speech_end = _find_trailing_speech_end(audio, SR, word_start=0.0, word_end=0.40, gap_end=gap_end, config=CutsConfig())
 
     # The cut must start at the real speech end (~0.50s), not the truncated 0.40s.
     assert 0.48 <= speech_end <= 0.53
@@ -40,7 +40,7 @@ def test_does_not_jump_across_silence_to_grab_later_breath():
         _tone(0.10),            # breath / mouth click
         _tone(0.30, amp=0.0),   # trailing silence
     ])
-    speech_end = _find_trailing_speech_end(audio, SR, word_end=0.40, gap_end=1.00, config=CutsConfig())
+    speech_end = _find_trailing_speech_end(audio, SR, word_start=0.0, word_end=0.40, gap_end=1.00, config=CutsConfig())
 
     # Must stop at the first silence (~0.40s) and leave the breath in the cut region.
     assert speech_end <= 0.42
@@ -57,7 +57,7 @@ def test_bridges_stop_closure_to_reach_final_syllable():
         _tone(0.20),            # final syllable 0.55–0.75
         _tone(0.30, amp=0.0),   # trailing silence
     ])
-    speech_end = _find_trailing_speech_end(audio, SR, word_end=0.40, gap_end=1.20, config=CutsConfig())
+    speech_end = _find_trailing_speech_end(audio, SR, word_start=0.0, word_end=0.40, gap_end=1.20, config=CutsConfig())
 
     assert 0.73 <= speech_end <= 0.77
 
@@ -72,7 +72,7 @@ def test_bridges_a_closure_that_starts_at_the_word_end():
         _tone(0.20),            # stranded syllable 0.47–0.67
         _tone(0.30, amp=0.0),   # trailing silence
     ])
-    speech_end = _find_trailing_speech_end(audio, SR, word_end=0.40, gap_end=1.20, config=CutsConfig())
+    speech_end = _find_trailing_speech_end(audio, SR, word_start=0.0, word_end=0.40, gap_end=1.20, config=CutsConfig())
 
     assert 0.65 <= speech_end <= 0.69
 
@@ -87,7 +87,35 @@ def test_does_not_bridge_a_long_pause_to_grab_next_word():
         _tone(0.20),            # later burst 0.65–0.85
         _tone(0.30, amp=0.0),
     ])
-    speech_end = _find_trailing_speech_end(audio, SR, word_end=0.40, gap_end=1.20, config=CutsConfig())
+    speech_end = _find_trailing_speech_end(audio, SR, word_start=0.0, word_end=0.40, gap_end=1.20, config=CutsConfig())
 
     # Stops at the end of the truncated tail (~0.50s); the 0.65–0.85 burst is left out.
     assert 0.48 <= speech_end <= 0.52
+
+
+def test_does_not_walk_through_a_quiet_exhale():
+    # An exhale is audible — it clears silence_threshold_db — so the absolute floor
+    # alone carried the scan to the far side of it and edl.py was handed a speech_end
+    # at the next word's start, leaving no room to cut ("...half of that." kept its
+    # whole 600 ms breath). The breath is tens of dB below the word it follows.
+    audio = np.concatenate([
+        _tone(0.40),                    # word body
+        _tone(0.60, amp=0.3 / 300),     # ~-50 dB exhale filling the whole gap
+        _tone(0.20),                    # next word
+    ])
+    speech_end = _find_trailing_speech_end(audio, SR, word_start=0.0, word_end=0.40, gap_end=1.00, config=CutsConfig())
+
+    assert speech_end <= 0.42
+
+
+def test_quiet_trailing_consonant_is_still_rescued():
+    # The guard is relative, so a genuinely quiet tail (a sibilant ~15 dB down) must
+    # still be recognised as the word's own speech.
+    audio = np.concatenate([
+        _tone(0.40),                   # word body
+        _tone(0.10, amp=0.3 / 5.6),    # ~-15 dB trailing sibilant 0.40–0.50
+        _tone(0.50, amp=0.0),
+    ])
+    speech_end = _find_trailing_speech_end(audio, SR, word_start=0.0, word_end=0.40, gap_end=1.00, config=CutsConfig())
+
+    assert 0.48 <= speech_end <= 0.53
