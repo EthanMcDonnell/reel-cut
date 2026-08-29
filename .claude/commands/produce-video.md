@@ -56,9 +56,9 @@ Image timings are stored in **source-clip time** (same as `words` and `edl`). Th
 
 Work through every screenshot in the manifest (skip `body.png`). **Skip any screenshot whose `script_context` or `article_snippet` cannot be matched to words in the `words` array — do not invent a placement.**
 
-**Check the snippet against the words it will play under.** The viewer reads the highlight while hearing `script_context`, so a figure that differs on screen reads as a contradiction even when the two are equivalent. Before placing a screenshot, compare every number, name and date in the spoken line against `article_snippet`:
+**Check the snippet against the words it will play under.** A figure that differs on screen reads as a contradiction even when the two are equivalent, so compare every number, name and date in `script_context` against `article_snippet` before placing:
 
-- **They disagree** (line says "the first 128", snippet says "between 32 and 127") — move `start` to the part of the line the snippet does prove, or drop the screenshot. Report it either way; the manifest is what needs fixing, and it is written by produce-script.
+- **They disagree** — move `start` to the part of the line the snippet does prove, or drop the screenshot. Report it either way; the fix belongs in the manifest, which produce-script writes.
 - **`highlight` is `"anchor_range"` or `"whole_block"`** — the capture highlighted a prefix of the proof, or the whole paragraph. Place it, but report it as weak evidence worth re-capturing.
 
 1. Use the `script_context` field to identify the moment the screenshot supports. If `script_context` is absent, match words from `article_snippet` against the `words` array
