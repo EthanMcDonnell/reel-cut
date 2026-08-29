@@ -1,9 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
-  <title id="title">ReelCut Frame Cut logo option</title>
-  <desc id="desc">A warm-gold vertical video frame divided by a precise diagonal cut.</desc>
-  <rect width="512" height="512" rx="112" fill="#10100F"/>
-  <path d="M164 132c0-23 19-42 42-42h100c23 0 42 19 42 42v120L164 345z" fill="none" stroke="#F3C84E" stroke-width="28" stroke-linejoin="round"/>
-  <path d="M164 345v35c0 23 19 42 42 42h100c23 0 42-19 42-42V252z" fill="none" stroke="#F3C84E" stroke-width="28" stroke-linejoin="round"/>
-  <path d="M153 359 359 242" stroke="#10100F" stroke-width="38" stroke-linecap="square"/>
-  <path d="M153 359 359 242" stroke="#F3C84E" stroke-width="14" stroke-linecap="square"/>
-</svg>

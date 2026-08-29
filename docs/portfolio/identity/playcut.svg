@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="playcut-title playcut-desc">
+  <title id="playcut-title">ReelCut "Playcut" logo option</title>
+  <desc id="playcut-desc">A charcoal play triangle knocked out of a solid warm-gold tile and severed by one diagonal cut.</desc>
+  <defs>
+    <linearGradient id="playcut-tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F7D264"/><stop offset="1" stop-color="#E5B534"/>
+    </linearGradient>
+    <!-- Stroked with its own fill colour so the corners round without hand-drawn arcs. -->
+    <path id="playcut-tri" d="M184 150 334 256 184 362z" stroke-width="34" stroke-linejoin="round"/>
+    <clipPath id="playcut-above"><polygon points="0,0 512,0 512,154 0,358"/></clipPath>
+    <clipPath id="playcut-below"><polygon points="0,358 512,154 512,512 0,512"/></clipPath>
+  </defs>
+  <rect width="512" height="512" rx="114" fill="url(#playcut-tile)"/>
+  <g fill="#131210" stroke="#131210">
+    <g transform="translate(-10 -6)" clip-path="url(#playcut-above)"><use href="#playcut-tri"/></g>
+    <g transform="translate(10 6)" clip-path="url(#playcut-below)"><use href="#playcut-tri"/></g>
+  </g>
+</svg>

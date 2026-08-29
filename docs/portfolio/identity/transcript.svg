@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="transcript-title transcript-desc">
+  <title id="transcript-title">ReelCut "Transcript" logo option</title>
+  <desc id="transcript-desc">Four warm-gold transcript lines, the spoken one at full strength, cut through by a vertical playhead.</desc>
+  <defs>
+    <linearGradient id="transcript-tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1B1A17"/><stop offset="1" stop-color="#0B0A09"/>
+    </linearGradient>
+    <!-- The kerf: the playhead cuts the transcript rather than sitting on top of it. -->
+    <mask id="transcript-kerf">
+      <rect width="512" height="512" fill="#fff"/>
+      <path d="M268 100v312" stroke="#000" stroke-width="46"/>
+    </mask>
+  </defs>
+  <rect width="512" height="512" rx="114" fill="url(#transcript-tile)"/>
+  <g mask="url(#transcript-kerf)">
+    <g fill="#7A6528">
+      <rect x="104" y="148" width="232" height="34" rx="17"/>
+      <rect x="104" y="206" width="300" height="34" rx="17"/>
+      <rect x="104" y="322" width="262" height="34" rx="17"/>
+    </g>
+    <rect x="104" y="264" width="226" height="34" rx="17" fill="#F3C84E"/>
+  </g>
+  <path d="M268 112v280" stroke="#F3C84E" stroke-width="18" stroke-linecap="round"/>
+</svg>

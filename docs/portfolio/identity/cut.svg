@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="cut-title cut-desc">
+  <title id="cut-title">ReelCut "Cut" logo option</title>
+  <desc id="cut-desc">A solid warm-gold vertical video frame severed by one diagonal cut, the two halves slid apart along the cut line.</desc>
+  <defs>
+    <linearGradient id="cut-tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1B1A17"/><stop offset="1" stop-color="#0B0A09"/>
+    </linearGradient>
+    <!-- The 9:16 frame, drawn once and reused for each half of the cut. -->
+    <path id="cut-frame" d="M200 96h112a34 34 0 0 1 34 34v252a34 34 0 0 1-34 34H200a34 34 0 0 1-34-34V130a34 34 0 0 1 34-34z"/>
+    <!-- The cut runs y = 358 - 0.4x, i.e. through the optical centre at -22 degrees. -->
+    <clipPath id="cut-above"><polygon points="0,0 512,0 512,154 0,358"/></clipPath>
+    <clipPath id="cut-below"><polygon points="0,358 512,154 512,512 0,512"/></clipPath>
+  </defs>
+  <rect width="512" height="512" rx="114" fill="url(#cut-tile)"/>
+  <g fill="#F3C84E">
+    <g transform="translate(-14 -8)" clip-path="url(#cut-above)"><use href="#cut-frame"/></g>
+    <g transform="translate(14 8)" clip-path="url(#cut-below)"><use href="#cut-frame"/></g>
+  </g>
+</svg>

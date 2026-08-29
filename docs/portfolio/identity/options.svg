@@ -1,9 +1,63 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1800 800" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 700" role="img" aria-labelledby="title desc">
   <title id="title">ReelCut icon review directions</title>
-  <desc id="desc">Three warm-gold app-icon concepts on charcoal: Frame Cut, Splice, and Caption Cursor.</desc>
-  <rect width="1800" height="800" fill="#10100F"/>
-  <g fill="#F3C84E" font-family="Arial, sans-serif" text-anchor="middle"><text x="300" y="700" font-size="34" letter-spacing="5">FRAME CUT</text><text x="900" y="700" font-size="34" letter-spacing="5">SPLICE</text><text x="1500" y="700" font-size="34" letter-spacing="5">CAPTION CURSOR</text></g>
-  <g transform="translate(100 110) scale(.78)"><rect width="512" height="512" rx="112" fill="#181715"/><path d="M164 132c0-23 19-42 42-42h100c23 0 42 19 42 42v120L164 345zM164 345v35c0 23 19 42 42 42h100c23 0 42-19 42-42V252z" fill="none" stroke="#F3C84E" stroke-width="28" stroke-linejoin="round"/><path d="M153 359 359 242" stroke="#181715" stroke-width="38"/><path d="M153 359 359 242" stroke="#F3C84E" stroke-width="14"/></g>
-  <g transform="translate(700 110) scale(.78)"><rect width="512" height="512" rx="112" fill="#181715"/><path d="M104 150c0-17 14-31 31-31h202c17 0 31 14 31 31v102l-62 31-38-31H135c-17 0-31-14-31-31zM144 260h124l38 31 62-31v102c0 17-14 31-31 31H175c-17 0-31-14-31-31z" fill="none" stroke="#F3C84E" stroke-width="24" stroke-linejoin="round"/><g fill="#F3C84E"><rect x="132" y="153" width="20" height="29" rx="3"/><rect x="132" y="204" width="20" height="29" rx="3"/><rect x="320" y="153" width="20" height="29" rx="3"/><rect x="320" y="204" width="20" height="29" rx="3"/><rect x="172" y="279" width="20" height="29" rx="3"/><rect x="172" y="330" width="20" height="29" rx="3"/><rect x="320" y="279" width="20" height="29" rx="3"/><rect x="320" y="330" width="20" height="29" rx="3"/></g></g>
-  <g transform="translate(1300 110) scale(.78)"><rect width="512" height="512" rx="112" fill="#181715"/><g fill="#F3C84E"><rect x="102" y="188" width="136" height="34" rx="4"/><rect x="102" y="244" width="186" height="34" rx="4"/><rect x="102" y="300" width="136" height="34" rx="4"/><rect x="102" y="356" width="84" height="34" rx="4"/><rect x="292" y="188" width="116" height="34" rx="4"/><rect x="292" y="244" width="154" height="34" rx="4"/><rect x="292" y="300" width="116" height="34" rx="4"/></g><path d="M270 122v285" stroke="#F3C84E" stroke-width="18" stroke-linecap="round"/><path d="m270 106 38 22-38 22z" fill="#F3C84E"/><circle cx="270" cy="407" r="16" fill="#181715" stroke="#F3C84E" stroke-width="14"/></g>
+  <desc id="desc">Three warm-gold app-icon concepts on charcoal: Cut, Playcut and Transcript.</desc>
+  <rect width="1600" height="700" fill="#0B0A09"/>
+  <g transform="translate(100 110) scale(0.78125)">
+    <defs>
+    <linearGradient id="cut-tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1B1A17"/><stop offset="1" stop-color="#0B0A09"/>
+    </linearGradient>
+    <!-- The 9:16 frame, drawn once and reused for each half of the cut. -->
+    <path id="cut-frame" d="M200 96h112a34 34 0 0 1 34 34v252a34 34 0 0 1-34 34H200a34 34 0 0 1-34-34V130a34 34 0 0 1 34-34z"/>
+    <!-- The cut runs y = 358 - 0.4x, i.e. through the optical centre at -22 degrees. -->
+    <clipPath id="cut-above"><polygon points="0,0 512,0 512,154 0,358"/></clipPath>
+    <clipPath id="cut-below"><polygon points="0,358 512,154 512,512 0,512"/></clipPath>
+  </defs>
+  <rect width="512" height="512" rx="114" fill="url(#cut-tile)"/>
+  <g fill="#F3C84E">
+    <g transform="translate(-14 -8)" clip-path="url(#cut-above)"><use href="#cut-frame"/></g>
+    <g transform="translate(14 8)" clip-path="url(#cut-below)"><use href="#cut-frame"/></g>
+  </g>
+  </g>
+  <text x="300" y="620" fill="#F3C84E" font-size="30" letter-spacing="6" text-anchor="middle" font-family="Inter, Helvetica, Arial, sans-serif">CUT</text>
+  <g transform="translate(600 110) scale(0.78125)">
+    <defs>
+    <linearGradient id="playcut-tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F7D264"/><stop offset="1" stop-color="#E5B534"/>
+    </linearGradient>
+    <!-- Stroked with its own fill colour so the corners round without hand-drawn arcs. -->
+    <path id="playcut-tri" d="M184 150 334 256 184 362z" stroke-width="34" stroke-linejoin="round"/>
+    <clipPath id="playcut-above"><polygon points="0,0 512,0 512,154 0,358"/></clipPath>
+    <clipPath id="playcut-below"><polygon points="0,358 512,154 512,512 0,512"/></clipPath>
+  </defs>
+  <rect width="512" height="512" rx="114" fill="url(#playcut-tile)"/>
+  <g fill="#131210" stroke="#131210">
+    <g transform="translate(-10 -6)" clip-path="url(#playcut-above)"><use href="#playcut-tri"/></g>
+    <g transform="translate(10 6)" clip-path="url(#playcut-below)"><use href="#playcut-tri"/></g>
+  </g>
+  </g>
+  <text x="800" y="620" fill="#F3C84E" font-size="30" letter-spacing="6" text-anchor="middle" font-family="Inter, Helvetica, Arial, sans-serif">PLAYCUT</text>
+  <g transform="translate(1100 110) scale(0.78125)">
+    <defs>
+    <linearGradient id="transcript-tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1B1A17"/><stop offset="1" stop-color="#0B0A09"/>
+    </linearGradient>
+    <!-- The kerf: the playhead cuts the transcript rather than sitting on top of it. -->
+    <mask id="transcript-kerf">
+      <rect width="512" height="512" fill="#fff"/>
+      <path d="M268 100v312" stroke="#000" stroke-width="46"/>
+    </mask>
+  </defs>
+  <rect width="512" height="512" rx="114" fill="url(#transcript-tile)"/>
+  <g mask="url(#transcript-kerf)">
+    <g fill="#7A6528">
+      <rect x="104" y="148" width="232" height="34" rx="17"/>
+      <rect x="104" y="206" width="300" height="34" rx="17"/>
+      <rect x="104" y="322" width="262" height="34" rx="17"/>
+    </g>
+    <rect x="104" y="264" width="226" height="34" rx="17" fill="#F3C84E"/>
+  </g>
+  <path d="M268 112v280" stroke="#F3C84E" stroke-width="18" stroke-linecap="round"/>
+  </g>
+  <text x="1300" y="620" fill="#F3C84E" font-size="30" letter-spacing="6" text-anchor="middle" font-family="Inter, Helvetica, Arial, sans-serif">TRANSCRIPT</text>
 </svg>
