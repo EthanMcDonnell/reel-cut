@@ -378,6 +378,11 @@ Screenshots exist to kill doubt: when the script makes a claim a viewer can't qu
 
 **3. For each kept claim, grab the tightest proof.** Find the phrase in the article that **contains the proof itself** — the number, the name, the figure — plus only enough surrounding words to read as a clause. Prefer the **smallest verbatim span that still proves the claim** over the surrounding topic sentence: a tight highlight on `reclaimed millions from 47% idle capacity` beats a wide highlight on a three-clause sentence that merely mentions it. Tighter spans read as stronger evidence and crop cleaner on screen.
 
+**4. Make the snippet say what the viewer is hearing.** The screenshot appears on `trigger_show_word` and the viewer reads it against that exact moment of narration, so the two have to agree on their face — being *equivalent* is not enough. Two checks before you keep a snippet:
+
+- **Every figure the spoken words assert must appear verbatim in the snippet.** If the line says "the first 128 of those numbers" and the article says "a number between 32 and 127", the viewer hears 128 and reads 127 — the maths reconciles, the screen does not. Same for a name, a date, a percentage, a company. When the article never states the figure in the form the script says it, the claim has no proof: drop it, or reword the script line to the article's figure.
+- **Point `trigger_show_word` at the part the snippet proves.** A snippet backing only the second half of a line must not appear on the first half. If the snippet proves "65 is a capital A" but not the "128" earlier in the same sentence, anchor on `65`, not on `128`, so the highlight lands under the words it supports.
+
 For each kept claim, write **four fields**:
 
 - **`article_snippet`** — the proof phrase, **verbatim** from `FULL_CONTENT` (copy it, don't paraphrase, or it won't be found). Roughly **40–200 characters**: long enough to read as a standalone clause, short enough to stay centred on the proof token. Maps to exactly one script sentence.
@@ -409,6 +414,7 @@ The JSON result includes a `snippets` array — one entry per requested snippet 
 - **Report every snippet with `found: false`** and its `reason`. That claim will have **no on-screen evidence** in the video — either revise the `article_snippet` to match the article's wording verbatim and re-run for that URL, or call the claim out as unsupported.
 - **Flag any `match_type: "fuzzy"` match with `confidence` below 0.8** — find located an approximate block rather than the exact phrase, so it's worth an eyeball before relying on it.
 - **Flag any `highlight: "whole_block"`** — the exact phrase couldn't be pinpointed so the whole paragraph was coloured; the screenshot shows a wall of highlight rather than the specific proof. Worth eyeballing, and often fixed by trimming the `article_snippet` to a span that matches the live page verbatim and re-running.
+- **Flag any `highlight: "anchor_range"`** — only the snippet's first 80 characters were highlighted, so the screenshot shows the run-up and stops before the proof. `match_type` still reads `exact` with confidence 1.0 (find matches on that same 80-char anchor), so this field is the only signal. Fix it by shortening `article_snippet` so the proof itself falls inside the first 80 characters, then re-run for that URL.
 - If `skipped` is non-null, the whole page failed to load — report that reason; no screenshots were captured for that URL.
 
 ## Stage 4b — Match Figures to Script Beats

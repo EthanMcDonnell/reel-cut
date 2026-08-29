@@ -90,3 +90,28 @@ class TestWriteManifest:
         data = json.loads((tmp_path / "manifest.json").read_text())
         assert isinstance(data, list)
         assert {d["url"] for d in data} == {"http://old", "http://new"}
+
+
+class TestSnippetAnchor:
+    """find() matches on this prefix, so it decides when a highlight can be partial."""
+
+    def test_short_snippet_is_its_own_anchor(self):
+        raw = "a number between 32 and 127. space was 32, the letter 'a' was 65"
+        assert screenshot._snippet_anchor(raw) == raw
+
+    def test_long_snippet_is_cut_to_a_word_boundary(self):
+        # The snippet-01 case: the proof ("There Ain't No Such Thing As Plain Text.")
+        # falls outside the anchor, so an anchor-only highlight covers the rhetorical
+        # run-up and stops. _ss_highlight.js reports that as `anchor_range`.
+        raw = ("you can no longer stick your head in the sand and pretend that "
+               "“plain” text is ascii. there ain’t no such thing as plain text.")
+        anchor = screenshot._snippet_anchor(raw)
+
+        assert raw.startswith(anchor)
+        assert len(anchor) <= 80
+        assert not anchor.endswith(" ")
+        assert "no such thing as plain text" not in anchor
+
+    def test_unbroken_run_longer_than_the_cap_is_truncated_hard(self):
+        raw = "x" * 100
+        assert screenshot._snippet_anchor(raw) == "x" * 80

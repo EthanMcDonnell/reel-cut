@@ -134,16 +134,37 @@
     el.style.setProperty('border-radius', '3px', 'important');
   }
 
-  const target = document.querySelector('[data-snippet-target]') ||
-                 document.querySelector('main, article, [role="main"]') ||
-                 document.body;
+  const root = document.querySelector('main, article, [role="main"]') || document.body;
+  const target = document.querySelector('[data-snippet-target]') || root;
 
-  // Prefer an exact range for the full snippet, then the anchor; then a fuzzy word-level range;
-  // and only as a last resort colour the entire block. `__ssHighlight` records which path won so
-  // the Python caller can flag blunt whole-block highlights for review.
+  // Same as rangeFor, but indexed over the whole article so a snippet that runs past the end
+  // of one block is still found. find() tags a single block, so a proof phrase that continues
+  // into the next element (a paragraph closing into its own heading) can never match inside
+  // the tag — the search fell through to the 80-char anchor, which does fit, and highlighted
+  // only the run-up to the claim. Requiring the match to *begin* inside the tagged block keeps
+  // find's script_context disambiguation: this can only extend that block's match, not move it.
+  function rangeSpanningBlocks(needle, mustStartIn) {
+    if (!needle) return null;
+    const { concat, map } = buildIndex(root);
+    const idx = concat.indexOf(needle);
+    if (idx === -1) return null;
+    const start = map[idx];
+    if (!start || !mustStartIn.contains(start.node)) return null;
+    return rangeFromOffsets(map, idx, idx + needle.length - 1);
+  }
+
+  // Prefer an exact range for the full snippet — inside the tagged block, then spanning out of
+  // it — before dropping to the anchor prefix; then a fuzzy word-level range; and only as a last
+  // resort colour the entire block. `__ssHighlight` records which path won, so the Python caller
+  // can flag blunt whole-block highlights *and* anchor-only ones, where the highlight covers the
+  // first 80 characters of the requested proof and stops.
   const cleanSnippet = cleanNeedle(snippet);
-  let range = rangeFor(target, cleanSnippet) || rangeFor(target, cleanNeedle(anchor));
+  let range = rangeFor(target, cleanSnippet) || rangeSpanningBlocks(cleanSnippet, target);
   let precision = range ? 'range' : 'none';
+  if (!range) {
+    range = rangeFor(target, cleanNeedle(anchor));
+    if (range) precision = 'anchor_range';
+  }
   if (!range) {
     range = fuzzyRange(target, cleanSnippet);
     if (range) precision = 'fuzzy_range';

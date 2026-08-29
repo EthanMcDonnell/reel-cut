@@ -56,6 +56,11 @@ Image timings are stored in **source-clip time** (same as `words` and `edl`). Th
 
 Work through every screenshot in the manifest (skip `body.png`). **Skip any screenshot whose `script_context` or `article_snippet` cannot be matched to words in the `words` array — do not invent a placement.**
 
+**Check the snippet against the words it will play under.** The viewer reads the highlight while hearing `script_context`, so a figure that differs on screen reads as a contradiction even when the two are equivalent. Before placing a screenshot, compare every number, name and date in the spoken line against `article_snippet`:
+
+- **They disagree** (line says "the first 128", snippet says "between 32 and 127") — move `start` to the part of the line the snippet does prove, or drop the screenshot. Report it either way; the manifest is what needs fixing, and it is written by produce-script.
+- **`highlight` is `"anchor_range"` or `"whole_block"`** — the capture highlighted a prefix of the proof, or the whole paragraph. Place it, but report it as weak evidence worth re-capturing.
+
 1. Use the `script_context` field to identify the moment the screenshot supports. If `script_context` is absent, match words from `article_snippet` against the `words` array
 2. Find the words covering that moment in the `words` array of captions.json — use their `start`, `end`, and `source_clip` values
 3. **Bound the on-screen window:**
@@ -195,7 +200,7 @@ A mirror entry is a *second angle on the same hook*, not a different video: it s
 
 **Title card style** — punchy, tailored to that hook's angle, in the series tone (a stylized 2–3-second card, not the hook's verbatim wording). Read the **Style** line under `series/<slug>.md`'s `## Title Card` section for this series' framing — do not invent one here.
 
-Use `\n` for line breaks (2 lines usually reads better on mobile). Keep each title short enough to read in 2–3 seconds.
+Use `\n` for line breaks (2 lines usually reads better on mobile). **Hard ceiling: 2 lines, 18 characters per line, 7 words total.** Past that the renderer shrinks the type to fit (`headings.margin_pct` in `config.yaml` keeps 8% of the width free each side), so an over-long card is not just slower to read, it is physically smaller. Count the characters before proposing.
 
 **A card may compress the claim but never contradict it.** The card is burned in, so an error here can only be fixed by re-rendering and re-uploading. Before proposing, check each card against the spoken body from the Step 1 timeline and against the source article: every number, count, and singular/plural in the card has to survive that check. If the body says "chunks", the card may not say "one file". The failure mode to watch for is a card that states the approach the source *rejected* — it will read as the most striking option precisely because it's wrong. See rule 10 in the `hooks` skill.
 

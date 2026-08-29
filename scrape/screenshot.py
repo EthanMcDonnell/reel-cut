@@ -103,9 +103,30 @@ _JS_REGION_RECT = (
 # Per-snippet match metadata set on window by _ss_find.js (found / confidence / matchType).
 _JS_LASTMATCH = "() => window.__ssLastMatch || {found: false, confidence: 0, matchType: 'none'}"
 
-# Which highlight path won, set on window by _ss_highlight.js: a tight 'range' / 'fuzzy_range', or
-# the blunt 'whole_block' fallback that colours the entire paragraph.
+# Which highlight path won, set on window by _ss_highlight.js: a tight 'range' / 'fuzzy_range',
+# the blunt 'whole_block' fallback that colours the entire paragraph, or 'anchor_range' — the
+# full snippet was not found and only its first 80 characters got highlighted, so the screenshot
+# shows the run-up to the claim and stops before the proof. `match_type`/`confidence` come from
+# find(), which matches on that same 80-char anchor, so they report a clean exact hit either way:
+# this field is the only signal that the highlight is a prefix.
 _JS_HIGHLIGHT = "() => window.__ssHighlight || 'none'"
+
+_ANCHOR_MAX_CHARS = 80
+
+
+def _snippet_anchor(raw: str) -> str:
+    """The short prefix find() locates the snippet's block by, cut at a word boundary.
+
+    A long snippet is more likely to hit typography drift between the scraped text and the
+    live DOM, so find matches on this prefix instead. That makes the anchor a *strict*
+    prefix of the proof whenever the snippet runs past `_ANCHOR_MAX_CHARS`, which is what
+    lets _ss_highlight.js end up highlighting only the run-up to a claim — it reports that
+    case as `anchor_range` rather than the plain `range` a full match earns.
+    """
+    if len(raw) <= _ANCHOR_MAX_CHARS:
+        return raw
+    anchor = raw[:_ANCHOR_MAX_CHARS]
+    return anchor[:anchor.rfind(" ")] if " " in anchor else anchor
 
 
 async def _dismiss_overlays(page) -> None:
@@ -269,9 +290,7 @@ async def _capture_snippet(
     snippet = spec["article_snippet"]
     context = spec["script_context"]
     raw = snippet.strip().lower()
-    anchor = raw[:80]
-    if len(raw) > 80 and ' ' in anchor:
-        anchor = anchor[:anchor.rfind(' ')]
+    anchor = _snippet_anchor(raw)
 
     # Renamed/added metadata carried verbatim onto every status dict (hit or miss).
     meta_fields = {
