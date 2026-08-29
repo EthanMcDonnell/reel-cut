@@ -30,6 +30,8 @@ def detect_retakes(
     max_retake_span_s: float = 60.0,
     min_reword_overlap: float = 0.6,
     min_reword_content_words: int = 3,
+    no_pause_gap_s: float = 0.45,
+    no_pause_min_ratio: float = 0.75,
     detect_aborted: bool = True,
 ) -> tuple[list[tuple[float, float]], list[RetakeCandidate]]:
     """Detect repeated phrases (retakes) in a word list.
@@ -67,6 +69,7 @@ def detect_retakes(
 
     normalized = [_normalize(w.word) for w in words]
     n = len(normalized)
+    boundary = _take_boundaries(words, take_boundary_s)
 
     # Build n-gram index: phrase tuple → list of word-start indices.
     # Each n-gram is indexed under its identity AND its single-adjacent-swap
@@ -173,13 +176,49 @@ def detect_retakes(
                 ratio = match_len / cut_len
 
                 kept = ratio > min_match_ratio
+                why = "" if kept else f"ratio {ratio:.2f} <= threshold {min_match_ratio:.2f}"
+
+                # Re-recording a line means stopping and starting again, so a genuine
+                # retake has a break between the two occurrences: a pause of at least
+                # no_pause_gap_s, or a sentence end. When there is neither — the speaker
+                # ran straight from one into the other inside a single sentence — the
+                # repeat is just as likely to be deliberate parallel phrasing ("one entity
+                # as 10 copies of lull, the next as 10 copies of that"), which
+                # min_match_ratio alone waves through at 0.57 and then cuts the first half
+                # of a real sentence.
+                #
+                # The break is deliberately measured against a small gap rather than
+                # take_boundary_s: retakes follow hard on the take they replace, so the
+                # pause between them is a beat, not a take-length silence. Across the clip
+                # corpus that beat is 0.66s at the tightest, while the widest gap inside a
+                # continuously-spoken parallel construction is 0.30s.
+                #
+                # Without that break, the only evidence for a retake is the delivery:
+                # either the speaker audibly cut themselves off (a trail-off ellipsis
+                # inside the discarded span), or what they said is so nearly all re-said
+                # that nothing is lost by dropping it. Measured across the clip corpus
+                # every genuine no-pause retake clears one of those two — ratios 0.83-1.00,
+                # or a trail-off at 0.60 — while parallel phrasing has neither.
+                stopped = any(
+                    words[k].start - words[k - 1].end >= no_pause_gap_s
+                    or _is_sentence_end(words[k - 1].word)
+                    for k in range(ci + 1, cj + 1)
+                )
+                if kept and not stopped:
+                    trail_off = any(_is_trail_off(w.word) for w in words[ci:cj])
+                    if not (trail_off or ratio >= no_pause_min_ratio):
+                        kept = False
+                        why = (f"no pause between the takes and ratio {ratio:.2f} "
+                               f"< {no_pause_min_ratio:.2f} with no trail-off — reads as "
+                               f"deliberate repetition, not a retake")
+
                 candidates.append(RetakeCandidate(
                     ngram=ngram,
                     cut_len=cut_len,
                     match_len=match_len,
                     ratio=ratio,
                     kept=kept,
-                    skip_reason="" if kept else f"ratio {ratio:.2f} <= threshold {min_match_ratio:.2f}",
+                    skip_reason=why,
                     cut_start_s=words[ci].start,
                     cut_end_s=words[cj].start,
                 ))
@@ -285,6 +324,25 @@ def detect_retakes(
     return snapped, candidates
 
 
+def _take_boundaries(words: list[WordTimestamp], take_boundary_s: float) -> list[bool]:
+    """boundary[k] is True when word k starts a new take.
+
+    A take starts either after a silence at least take_boundary_s long OR right after
+    a sentence-final word (".", "?", "!"). The punctuation case is essential: a speaker
+    often runs a KEPT sentence straight into the next failed take with only a breath
+    (< take_boundary_s) between them, so silence alone can't tell them apart. The clip
+    start (k == 0) is deliberately NOT a boundary: snapping must only ever land on a
+    real pause/sentence end, never run to the clip edge across intervening kept content.
+    """
+    return [
+        k > 0 and (
+            words[k].start - words[k - 1].end >= take_boundary_s
+            or _is_sentence_end(words[k - 1].word)
+        )
+        for k in range(len(words))
+    ]
+
+
 def _snap_to_take_boundaries(
     ranges: list[tuple[float, float]],
     words: list[WordTimestamp],
@@ -314,21 +372,7 @@ def _snap_to_take_boundaries(
     if not ranges:
         return ranges
     n = len(words)
-    # boundary[k] == True when word k starts a new take. A take starts either after a
-    # silence at least take_boundary_s long OR right after a sentence-final word
-    # (".", "?", "!"). The punctuation case is essential: a speaker often runs a KEPT
-    # sentence straight into the next failed take with only a breath (< take_boundary_s)
-    # between them, so silence alone can't tell them apart — without the sentence test
-    # the snap would walk across the kept sentence and swallow it. The clip start
-    # (k == 0) is deliberately NOT a boundary: snapping must only ever land on a real
-    # pause/sentence end, never run to the clip edge across intervening kept content.
-    boundary = [
-        k > 0 and (
-            words[k].start - words[k - 1].end >= take_boundary_s
-            or _is_sentence_end(words[k - 1].word)
-        )
-        for k in range(n)
-    ]
+    boundary = _take_boundaries(words, take_boundary_s)
 
     snapped: list[tuple[float, float]] = []
     for t_start, t_end in ranges:

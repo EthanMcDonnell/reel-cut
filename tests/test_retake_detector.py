@@ -743,3 +743,42 @@ def test_end_snap_does_not_swallow_the_keeper():
     assert len(ranges) == 1
     assert ranges[0][0] == pytest.approx(5.0)    # cut begins at take 1's first word
     assert ranges[0][1] == pytest.approx(17.0)   # cut ends at take 2 — the keeper
+
+
+def test_repeat_with_no_pause_between_takes_is_not_cut():
+    """A phrase repeated inside one continuous sentence is parallel phrasing, not a
+    retake — re-recording a line means stopping first.
+
+    Regression (billion-laughs-attack): "one entity as 10 copies of lull, the next as
+    10 copies of that" scored 0.57, cleared min_match_ratio, and lost its first half.
+    """
+    words = [
+        _w("You", 0.0, 0.2), _w("define", 0.3, 0.6), _w("one", 0.7, 0.8),
+        _w("entity", 0.9, 1.2), _w("as", 1.3, 1.4), _w("10", 1.5, 1.7),
+        _w("copies", 1.8, 2.1), _w("of", 2.2, 2.3), _w("lull,", 2.4, 2.7),
+        _w("the", 2.8, 2.9), _w("next", 3.0, 3.2), _w("as", 3.3, 3.4),
+        _w("10", 3.5, 3.7), _w("copies", 3.8, 4.1), _w("of", 4.2, 4.3),
+        _w("that", 4.4, 4.6), _w("and", 4.7, 4.8), _w("stack", 4.9, 5.2),
+        _w("9", 5.3, 5.4), _w("layers", 5.5, 5.8), _w("deep.", 5.9, 6.2),
+    ]
+    ranges, _ = detect_retakes(words, min_retake_words=3, min_match_ratio=0.5)
+    assert ranges == []
+
+
+def test_no_pause_retake_still_cut_when_the_take_trails_off():
+    """The no-pause gate must not spare a genuine trail-off restart.
+
+    "But this is where it gets… But this is where it gets wild." has no pause and no
+    sentence end between the takes (Whisper marks the abort with an ellipsis, which is
+    deliberately not a sentence end), but the speaker audibly cut themselves off.
+    """
+    words = [
+        _w("But", 0.0, 0.2), _w("this", 0.3, 0.4), _w("is", 0.5, 0.6),
+        _w("where", 0.7, 0.9), _w("it", 1.0, 1.1), _w("gets...", 1.2, 1.5),
+        _w("But", 1.6, 1.8), _w("this", 1.9, 2.0), _w("is", 2.1, 2.2),
+        _w("where", 2.3, 2.5), _w("it", 2.6, 2.7), _w("gets", 2.8, 3.0),
+        _w("wild.", 3.1, 3.5),
+    ]
+    ranges, _ = detect_retakes(words, min_retake_words=3, min_match_ratio=0.5)
+    assert len(ranges) == 1
+    assert ranges[0] == pytest.approx((0.0, 1.6))

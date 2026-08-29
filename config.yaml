@@ -69,6 +69,13 @@ cuts:
   min_match_ratio: 0.5             # default: 0.5 | greedy extended match length / cut length must meet this
                                    # threshold. Prevents short coincidental phrase overlaps from triggering
                                    # large cuts. Raise (e.g. 0.7) to be stricter; lower (e.g. 0.3) to cut more.
+  no_pause_gap_s: 0.45             # default: 0.45 | a repeat counts as a re-recording only if the speaker broke
+                                   # between the takes — this much pause, or a sentence end. Well under
+                                   # take_boundary_s: a retake follows hard on the take it replaces.
+  no_pause_min_ratio: 0.75         # default: 0.75 | stricter min_match_ratio for a repeat with NO such break. Re-recording means stopping first, so
+                                   # without a break the repeat needs near-total overlap (or an audible trail-off
+                                   # in the discarded span) to count as a retake rather than deliberate parallel
+                                   # phrasing ("one entity as 10 copies of lull, the next as 10 copies of that").
   min_word_confidence: 0.35        # gap cut hard floor: if either adjacent word's alignment confidence
                                    # is below this, the gap is never cut regardless of duration.
   min_retrans_word_confidence: 0.10 # retranscription acceptance floor: words returned by a retranscription

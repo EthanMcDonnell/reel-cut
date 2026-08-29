@@ -634,6 +634,8 @@ def _phase1(cfg, clips: list[str], output_dir: Path, verbose: bool):
                     max_retake_span_s=cfg.cuts.max_retake_span_s,
                     min_reword_overlap=cfg.cuts.min_reword_overlap,
                     min_reword_content_words=cfg.cuts.min_reword_content_words,
+                    no_pause_gap_s=cfg.cuts.no_pause_gap_s,
+                    no_pause_min_ratio=cfg.cuts.no_pause_min_ratio,
                     detect_aborted=cfg.cuts.detect_aborted_restarts,
                 )
                 if ranges:

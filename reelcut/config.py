@@ -38,6 +38,14 @@ class CutsConfig(BaseModel):
                                        # take if a later sentence repeats at least this fraction
                                        # of its (stopword-filtered) content words. Catches
                                        # REWORDED takes the literal n-gram matcher misses.
+    no_pause_gap_s: float = 0.45       # a repeat only counts as a re-recording if the speaker
+                                       # broke between the two takes: a pause of at least this,
+                                       # or a sentence end. Smaller than take_boundary_s — a
+                                       # retake follows hard on what it replaces.
+    no_pause_min_ratio: float = 0.75   # when there was NO such break (speaker ran straight from
+                                       # one occurrence into the other), the match ratio must
+                                       # reach this — or the discarded span must contain a
+                                       # trail-off — or the repeat is read as parallel phrasing
     min_reword_content_words: int = 3  # min stopword-filtered content words a sentence needs
                                        # before the overlap pass will consider it (guards short
                                        # sentences whose few common words overlap coincidentally)

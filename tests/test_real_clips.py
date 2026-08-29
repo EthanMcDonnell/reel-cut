@@ -75,6 +75,8 @@ def _retake_kwargs() -> dict:
         max_retake_span_s=cuts.max_retake_span_s,
         min_reword_overlap=cuts.min_reword_overlap,
         min_reword_content_words=cuts.min_reword_content_words,
+        no_pause_gap_s=cuts.no_pause_gap_s,
+        no_pause_min_ratio=cuts.no_pause_min_ratio,
     )
 
 
@@ -199,3 +201,26 @@ def test_utf8_final_take_of_the_utf8_line_survives():
     assert any(s <= 153.0 and 160.0 <= e for s, e in ranges), (
         f"the failed 2:32 take is no longer cut; ranges={ranges}"
     )
+
+
+def test_billion_laughs_parallel_phrasing_is_not_a_retake():
+    """Regression (billion-laughs-attack, ~2:09): deliberate parallel phrasing was cut.
+
+        "You define one entity as 10 copies of lull, the next as 10 copies of that
+         and stack 9 layers deep."
+
+    "as 10 copies of" repeats inside ONE sentence, on purpose — it is how the nesting
+    is described. The seed matched it, the ratio landed at 0.57 (over the 0.50 gate),
+    and the first half of the sentence was cut, stranding "as 10 copies of that and
+    stack 9 layers deep." as a subjectless fragment.
+
+    There is no pause or sentence end between the two occurrences: the speaker never
+    stopped, so this can't be a re-recording. The whole sentence must survive.
+    """
+    fixture = _FIXTURE_DIR / "billion-laughs-attack.txt"
+    words = load_clip_words(fixture)
+    ranges, _ = detect_retakes(words, **_retake_kwargs())
+    sentence = [w for w in words if 129.6 <= w.start <= 135.9]
+    assert len(sentence) > 15, "fixture no longer covers the nesting sentence"
+    cut = [w.word for w in sentence if any(s <= w.start < e for s, e in ranges)]
+    assert not cut, f"parallel phrasing cut as a retake: {cut}"
