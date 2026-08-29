@@ -375,6 +375,66 @@ def _find_speech_onset_backward(
     return min(earliest_speech / sr, word_start)
 
 
+_LEAD_SPEECH_FRAMES = 3  # consecutive 10 ms frames of speech that end a lead-in run
+
+
+def _find_leading_speech_start(
+    audio: np.ndarray,
+    sr: int,
+    word_start: float,
+    word_end: float,
+    min_lead_ms: float = 150.0,
+    max_lead_ms: float = 1000.0,
+    lead_margin_db: float = 25.0,
+) -> float:
+    """Scan forward from word_start for the first frame of the word's real speech.
+
+    The mirror of `_find_trailing_speech_end`. That one exists because WhisperX truncates
+    word *ends*; this one because it also back-dates word *starts*, pulling them across
+    the inhale in front of a sentence. The breath then sits inside the word's own span,
+    where nothing can reach it: `_build_gaps` only measures between words[i].end and
+    words[i+1].start, so the gap it sees stops short of the breath, and edl.py's cut ends
+    a fixed pad before a timestamp that is itself hundreds of ms early. The breath plays
+    ("...needs 21 bits." <breath> "The other half...", 600 ms of it).
+
+    An inhale is not silence — it sits well above `silence_threshold_db`, so the
+    speech/silence test the other scans use cannot see it. What separates it from speech
+    is level *relative to this word*: that breath ran about -44 dB against the word's own
+    -8 dB peak. So a lead-in qualifies only when it stays at least `lead_margin_db` below
+    the word's loudest frame for `min_lead_ms` or more. A fricative onset fails one test
+    or the other — /s/ is louder than that, and a soft one is far shorter.
+
+    Returns a time in [word_start, word_start + max_lead_ms], never past word_end, and
+    word_start unchanged when the word opens on speech (the common case), so the scan is
+    inert for well-aligned words.
+    """
+    frame_size = max(64, int(0.010 * sr))
+    end_sample = min(int(word_end * sr), len(audio))
+
+    levels: list[tuple[float, float]] = []
+    for pos in range(int(word_start * sr), end_sample - frame_size + 1, frame_size):
+        rms = float(np.sqrt(np.mean(audio[pos : pos + frame_size] ** 2)))
+        levels.append((pos / sr, 20 * np.log10(rms + 1e-9)))
+    if len(levels) < _LEAD_SPEECH_FRAMES:
+        return word_start
+
+    threshold_db = max(db for _, db in levels) - lead_margin_db
+    run = 0
+    for t, db in levels:
+        if t - word_start > max_lead_ms / 1000.0:
+            break
+        if db <= threshold_db:
+            run = 0
+            continue
+        run += 1
+        if run < _LEAD_SPEECH_FRAMES:
+            continue
+        # Back up to the first frame of this run — that is where speech actually starts.
+        onset = t - (_LEAD_SPEECH_FRAMES - 1) * frame_size / sr
+        return onset if onset - word_start >= min_lead_ms / 1000.0 else word_start
+
+    return word_start
+
 _LONG_WORD_DUR_S = 1.5  # words longer than this are suspect for alignment errors
 
 
@@ -411,6 +471,17 @@ def _build_gaps(
                 word.end = true_end
             if true_start > word.start + 0.050:
                 word.start = true_start
+
+    # Pre-pass: pull a word's start off the inhale in front of it. WhisperX back-dates
+    # word starts across the breath before a sentence, hiding the breath inside the
+    # word's own span — the gap loop below only measures *between* words, so it never
+    # sees it, and edl.py's fixed pad cannot reach it either. The cut then ends early
+    # and the breath is audible before the sentence starts. Moving the start to the
+    # real onset restores the gap, and the normal machinery removes it from there.
+    for word in words:
+        onset = _find_leading_speech_start(audio, sr, word.start, word.end)
+        if onset > word.start:
+            word.start = onset
 
     for i in range(len(words) - 1):
         raw_start = words[i].end
