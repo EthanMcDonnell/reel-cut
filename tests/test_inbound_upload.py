@@ -3,7 +3,6 @@ import http.client
 import json
 import re
 import sys
-import time
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 from threading import Thread
@@ -276,6 +275,11 @@ def test_dropped_upload_never_deletes_the_script_folder(tmp_path, monkeypatch):
     monkeypatch.setattr(upload_server, "REPO", tmp_path)
     monkeypatch.setattr(upload_server, "ASSETS", assets)
     server = ThreadingHTTPServer(("127.0.0.1", 0), upload_server.Handler)
+    # The cleanup this asserts on runs in the request thread, and shutdown() does not wait
+    # for one — ThreadingHTTPServer runs requests as daemons. Making them non-daemon lets
+    # server_close() join them (block_on_close), so the .part is gone before we look
+    # instead of us racing it on a fixed timeout.
+    server.daemon_threads = False
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
 
@@ -289,11 +293,8 @@ def test_dropped_upload_never_deletes_the_script_folder(tmp_path, monkeypatch):
     finally:
         server.shutdown()
         thread.join()
+        server.server_close()  # joins the in-flight request thread
 
-    for _ in range(20):
-        if not any(source.glob("*.part")):
-            break
-        time.sleep(0.1)
     assert (source / "script.md").is_file()
     assert not any(source.glob("*.part"))
 
