@@ -70,6 +70,24 @@ def _best_window(context: str, tokens: list[str]) -> tuple[float, int, int]:
     return best
 
 
+def _anchor_missing(trigger: str, context: str) -> bool:
+    """True if `trigger` can no longer be found inside `context`.
+
+    `/produce-video` bounds a screenshot's on-screen window by locating the trigger
+    words *within* the script_context span, and silently spans the whole line when it
+    cannot. Rewriting the context can trim a trigger off its edge, so the screenshot
+    widens with nothing said. Compared on normalized token sequences, because the
+    rewritten context comes from transcript tokens that carry punctuation the
+    hand-written trigger does not ("ASCII," vs "ASCII").
+    """
+    if not trigger.strip():
+        return False                      # empty is the documented "no anchor" value
+    needle, hay = _norm(trigger).split(), _norm(context).split()
+    if not needle:
+        return False
+    return not any(hay[i : i + len(needle)] == needle for i in range(len(hay) - len(needle) + 1))
+
+
 def _sentences(tokens: list[str]) -> list[tuple[int, int, str]]:
     """Split tokens into (start, end, text) sentences on terminal punctuation."""
     out, start = [], 0
@@ -96,7 +114,7 @@ def reconcile(slug: str, dry_run: bool) -> dict:
 
     manifest = json.loads(manifest_path.read_text())
 
-    fixed, orphaned, covered = [], [], set()
+    fixed, orphaned, lost_anchors, covered = [], [], [], set()
     for source in manifest:
         for shot in source.get("screenshots", []):
             old = shot.get("script_context", "")
@@ -108,6 +126,17 @@ def reconcile(slug: str, dry_run: bool) -> dict:
                     shot["script_context"] = new
                     fixed.append({"file": shot.get("file"), "ratio": round(ratio, 2),
                                   "old": old, "new": new})
+                # The window can land off one edge of the old line and strip a trigger
+                # with it. produce-video then spans the whole sentence instead of the
+                # claim, and nothing reports the difference — so name it here.
+                gone = [
+                    field for field in ("trigger_show_word", "trigger_go_away_word")
+                    if _anchor_missing(shot.get(field, ""), new)
+                ]
+                if gone:
+                    lost_anchors.append({"file": shot.get("file"), "anchors": gone,
+                                         "script_context": new,
+                                         **{f: shot.get(f, "") for f in gone}})
             else:
                 orphaned.append({"file": shot.get("file"), "ratio": round(ratio, 2),
                                  "script_context": old, "article_snippet": shot.get("article_snippet"),
@@ -126,6 +155,7 @@ def reconcile(slug: str, dry_run: bool) -> dict:
         "dry_run": dry_run,
         "context_fixed": fixed,
         "orphaned": orphaned,
+        "lost_anchors": lost_anchors,
         "unsupported_claims": unsupported,
     }
 
