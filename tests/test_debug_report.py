@@ -15,16 +15,20 @@ def _w(word, s, e, c=0.9, keep=True):
     return WordTimestamp(word=word, start=s, end=e, confidence=c, clip_path=CLIP, keep=keep)
 
 
-def _run(tmp_path, *, words, edl, gaps=None, retakes=None, retrans=None, dropped=0):
+def _run(tmp_path, *, words, edl, gaps=None, retakes=None, retrans=None, dropped=0,
+         retake_ranges=None, script=None):
     cfg = ReelCutConfig()
     cfg.cuts.repetition_detection = True
     base = tmp_path / "clip"
+    if script is not None:
+        (tmp_path / "script.md").write_text(script)
     write_debug_report(
         base, clip_paths=[CLIP], config=cfg, raw_words=words, aligned_words=words,
         gaps_by_clip=gaps or {CLIP: []}, edl=edl, caption_words=words,
         clip_info=[{"clip": CLIP, "align_method": "x", "vad_method": "y",
                     "hallucinations_dropped": dropped}],
-        retrans_log=retrans, retake_candidates=retakes, image_cues=[],
+        retrans_log=retrans, retake_candidates=retakes, retake_ranges=retake_ranges,
+        image_cues=[],
     )
     return base
 
@@ -140,3 +144,106 @@ def test_timeline_distinguishes_the_two_edl_declines(tmp_path):
 
     assert "no room" in timeline
     assert "mid_sentence_floor" not in timeline
+
+
+_SCRIPT = """**VIDEO TYPE**
+interesting-tech
+**HOOK**
+HOOK 1: There is no such thing as plain text.
+**SCRIPT**
+UTF-32 gives every character four bytes, which is enormous.
+UTF-8 skips that problem, because each byte marks its own place so minimum can be one byte and scales up to four bytes.
+Nothing in the file says which encoding it used.
+**CONCLUSION**
+Text is just numbers plus a promise about how to read them.
+**CTA**
+Comment "UNICODE" for it.
+**REFERENCES:**
+https://example.com/unicode
+"""
+
+
+def _script_words(text, t0, keep=True):
+    """Lay a sentence out as one word per 0.4s from t0."""
+    return [_w(tok, t0 + i * 0.4, t0 + i * 0.4 + 0.3, keep=keep)
+            for i, tok in enumerate(text.split())]
+
+
+def test_digest_flags_a_script_line_that_was_cut(tmp_path):
+    """Regression (utf-8-character-encoding): a whole script line was cut from the
+    video and nothing in the digest said so.
+
+    The line was spoken — it is right there in the aligned words — but every span
+    carrying it is keep=False, so it survives nowhere. The digest must name it, and
+    say it was spoken-then-cut rather than never delivered.
+    """
+    words = (
+        _script_words("UTF-32 gives every character four bytes, which is enormous.", 0.0)
+        + _script_words(
+            "UTF-8 skips that problem, because each byte marks its own place so "
+            "minimum can be one byte and scales up to four bytes.", 10.0, keep=False)
+        + _script_words("Nothing in the file says which encoding it used.", 30.0)
+        + _script_words("Text is just numbers plus a promise about how to read them.", 40.0)
+        + _script_words('Comment "UNICODE" for it.', 50.0)
+    )
+    edl = [EDLEntry(0.0, 9.9, True, CLIP, "speech"),
+           EDLEntry(9.9, 29.9, False, CLIP, "retake"),
+           EDLEntry(29.9, 60.0, True, CLIP, "speech")]
+    base = _run(tmp_path, words=words, edl=edl, script=_SCRIPT)
+    review = Path(f"{base}.debug.0.review.txt").read_text()
+
+    assert "SCRIPT LINE MISSING" in review
+    assert "UTF-8 skips that problem" in review.split("SCRIPT COVERAGE")[0]
+    assert "but cut" in review
+    # The lines that did survive must not be flagged, and hooks are never checked.
+    assert review.count("SCRIPT LINE MISSING") == 1
+    assert "(5 spoken lines, 1 missing)" in review
+    assert "no such thing as plain text" not in review.split("FINAL TRANSCRIPT")[0]
+
+
+def test_ad_libbed_delivery_is_not_flagged_as_missing(tmp_path):
+    """Reworded delivery is normal and must not trip the coverage check."""
+    words = (
+        _script_words("So UTF-32 gives you every character in four bytes, which is enormous.", 0.0)
+        + _script_words(
+            "See, UTF-8 skips that problem, because each byte marks its own place, so "
+            "the minimum can be one byte and it scales up to four bytes.", 10.0)
+        + _script_words("Nothing in the file actually says which encoding it used.", 30.0)
+        + _script_words("Text is just numbers, plus a promise about how to read them.", 40.0)
+        + _script_words('Comment "UNICODE" for it and I will send it through.', 50.0)
+    )
+    edl = [EDLEntry(0.0, 60.0, True, CLIP, "speech")]
+    base = _run(tmp_path, words=words, edl=edl, script=_SCRIPT)
+    review = Path(f"{base}.debug.0.review.txt").read_text()
+    assert "SCRIPT LINE MISSING" not in review
+    assert "(5 spoken lines, 0 missing)" in review
+
+
+def test_no_script_md_reports_nothing_to_check(tmp_path):
+    words = [_w("x", 0.0, 0.3)]
+    edl = [EDLEntry(0.0, 0.3, True, CLIP, "speech")]
+    base = _run(tmp_path, words=words, edl=edl)
+    review = Path(f"{base}.debug.0.review.txt").read_text()
+    assert "no script.md beside this clip" in review
+    assert "SCRIPT LINE MISSING" not in review
+
+
+def test_digest_flags_a_long_applied_retake_cut(tmp_path):
+    """Only SKIPPED retakes used to be reported, so an over-reaching cut was silent."""
+    words = (_script_words("one two three four five six seven eight nine ten", 0.0, keep=False)
+             + _script_words("the keeper survives here.", 20.0))
+    edl = [EDLEntry(0.0, 19.9, False, CLIP, "retake"),
+           EDLEntry(19.9, 25.0, True, CLIP, "speech")]
+    base = _run(tmp_path, words=words, edl=edl, retake_ranges={CLIP: [(0.0, 12.0)]})
+    review = Path(f"{base}.debug.0.review.txt").read_text()
+    assert "long retake cut 12.0s" in review
+    assert "one two three" in review.split("FINAL TRANSCRIPT")[0]
+
+
+def test_short_retake_cut_is_not_flagged(tmp_path):
+    words = _script_words("a b c d", 0.0, keep=False) + _script_words("a b c d.", 5.0)
+    edl = [EDLEntry(0.0, 4.9, False, CLIP, "retake"),
+           EDLEntry(4.9, 8.0, True, CLIP, "speech")]
+    base = _run(tmp_path, words=words, edl=edl, retake_ranges={CLIP: [(0.0, 5.0)]})
+    review = Path(f"{base}.debug.0.review.txt").read_text()
+    assert "long retake cut" not in review

@@ -265,7 +265,9 @@ def detect_retakes(
         else:
             rebridged.append((t_start, t_end))
 
-    snapped = _snap_to_take_boundaries(rebridged, words, take_boundary_s, max_retake_span_s)
+    snapped = _snap_to_take_boundaries(
+        rebridged, words, take_boundary_s, max_retake_span_s, min_reword_overlap
+    )
 
     # Aborted-restart cuts are already exactly bounded (failed head's take start →
     # keeper start), so they bypass snapping: the failed head trails off with only a
@@ -288,6 +290,7 @@ def _snap_to_take_boundaries(
     words: list[WordTimestamp],
     take_boundary_s: float,
     max_reach_s: float,
+    reword_overlap: float,
 ) -> list[tuple[float, float]]:
     """Snap each cut's endpoints to take boundaries (silence gaps >= take_boundary_s).
 
@@ -304,11 +307,9 @@ def _snap_to_take_boundaries(
 
     A genuine keeper always begins right after a real pause, so a cut endpoint that
     sits *inside* an utterance (no flanking silence) is never a keeper boundary —
-    snap it outward to the nearest take boundary so the whole failed take is cut.
-
-    Anchor-safety: this only fires across a silence gap. The min-end merge exists to
-    stop a cut bleeding into the *kept* take; that take is continuous speech with no
-    interior boundary to snap to, so over-deep anchor ends are left untouched.
+    snap it to the enclosing take's boundary so no half-take is left behind. Which
+    boundary depends on whether that take is another failed one or the keeper; see
+    the END branch below.
     """
     if not ranges:
         return ranges
@@ -374,17 +375,50 @@ def _snap_to_take_boundaries(
                     and preamble_words <= keeper_words and keeper_head > 0):
                 t_start = words[k].start
 
-        # END: cut closes mid-take → push forward to the next take's first word
-        # (the keeper), absorbing the rest of the failed take. The reach is measured
-        # over the absorbed *speech* (up to the last word before the boundary), not
-        # including the boundary silence — a long inter-take pause must not push the
-        # span over max_reach_s and abandon an otherwise-correct snap.
+        # END: cut closes mid-take. The take holding cj is one of two things, and the
+        # snap direction is opposite for each:
+        #
+        #   * ANOTHER FAILED TAKE — an early take's tail matched a later keeper's tail
+        #     while its own keeper is a different, later take, so the min-end merge
+        #     stopped the cut inside this intermediate take. Push FORWARD to the next
+        #     take, absorbing the rest of it.
+        #   * THE KEEPER ITSELF — the two takes diverge just before the anchor ("-8
+        #     skips that problem…" vs "UTF-8 skips this problem altogether…"), so the
+        #     backward extension stalls and cj lands mid-keeper. Pushing forward here
+        #     deletes the last occurrence outright: the whole point of the pass is that
+        #     every occurrence *except* the final one is cut. Pull BACK to the keeper's
+        #     own take start instead, so the cut ends exactly where the keeper begins.
+        #
+        # A failed take is by definition re-said by what comes after it; the keeper is
+        # not. So compare the material being absorbed against the take that follows it —
+        # high content overlap means it is a duplicate and safe to absorb, near-zero
+        # means it is content that survives in no other take.
+        #
+        # The forward reach is measured over the absorbed *speech* (up to the last word
+        # before the boundary), not including the boundary silence — a long inter-take
+        # pause must not push the span over max_reach_s and abandon a correct snap.
         if cj < n and not boundary[cj]:
             k = cj
             while k < n and not boundary[k]:
                 k += 1
-            if k < n and words[k - 1].end - t_end <= max_reach_s:
-                t_end = words[k].start
+            k2 = k + 1
+            while k2 < n and not boundary[k2]:
+                k2 += 1
+            absorbed = _content_words(words[cj:k])
+            n_absorbed = sum(absorbed.values())
+            re_said = bool(n_absorbed) and (
+                sum((absorbed & _content_words(words[k:k2])).values()) / n_absorbed
+                >= reword_overlap
+            )
+            if re_said:
+                if k < n and words[k - 1].end - t_end <= max_reach_s:
+                    t_end = words[k].start
+            else:
+                kb = cj
+                while kb > 0 and not boundary[kb]:
+                    kb -= 1
+                if boundary[kb] and words[kb].start > t_start:
+                    t_end = words[kb].start
 
         snapped.append((t_start, t_end))
 

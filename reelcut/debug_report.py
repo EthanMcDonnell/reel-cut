@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
+from difflib import SequenceMatcher
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -52,6 +53,7 @@ def write_debug_report(
     from .transcriber import is_sentence_boundary
 
     LOW_CONF = 0.55
+    LONG_RETAKE_S = 8.0
     rv: list[str] = [header]
     _rv = rv.append
 
@@ -65,6 +67,17 @@ def write_debug_report(
             flags.append((0, e["win_start"],
                           f"HARD CAP — sentence > 20s truncated (trigger={e['label']})"))
 
+    # A script line that never made the edit is the most expensive defect the
+    # pipeline can ship — the video is simply missing a beat, and unlike a bad
+    # word it leaves nothing behind in the transcript to catch the eye. Ranks
+    # above everything else in the digest.
+    coverage = _script_coverage(base_path, kept_words, aligned_words)
+    for line, ratio, at, note in (coverage or []):
+        if note:
+            flags.append((0, at,
+                          f'SCRIPT LINE MISSING — "{line}" ({ratio:.2f} match against '
+                          f'the surviving transcript; {note})'))
+
     if config.cuts.repetition_detection and retake_candidates:
         for cands in retake_candidates.values():
             for c in cands:
@@ -73,6 +86,22 @@ def write_debug_report(
                     why = f" ({c.skip_reason})" if c.skip_reason else ""
                     flags.append((1, c.cut_start_s,
                                   f'retake SKIPPED — "{phrase}" ratio={c.ratio:.2f}{why}'))
+
+    # Only SKIPPED retakes were reported above, so an over-reaching cut that
+    # deleted real content produced no flag at all — that is how a 22.8s cut
+    # swallowed a whole script line unnoticed. A genuine failed take is a
+    # re-read of one sentence; past LONG_RETAKE_S the cut is spanning more than
+    # that and is worth a listen.
+    for clip, ranges in (retake_ranges or {}).items():
+        for r_start, r_end in ranges:
+            if r_end - r_start >= LONG_RETAKE_S:
+                removed = " ".join(
+                    w.word for w in aligned_words
+                    if str(w.clip_path) == str(clip) and r_start <= w.start < r_end
+                )
+                flags.append((1, r_start,
+                              f"long retake cut {r_end - r_start:.1f}s — verify the kept "
+                              f'take is the complete one; removed: "{removed}"'))
 
     for clip_path in clip_paths:
         cw = sorted((w for w in kept_words if w.clip_path == str(clip_path)),
@@ -127,6 +156,23 @@ def write_debug_report(
     else:
         for _, ts, msg in flags:
             _rv(f"  {_ts(ts):>9}  {msg}")
+    _rv("")
+
+    # --- script coverage: every spoken line of script.md scored against what survived
+    if coverage is None:
+        _rv("--- SCRIPT COVERAGE ---")
+        _rv("  (no script.md beside this clip — nothing to check against)")
+    else:
+        missing = sum(1 for _, _, _, note in coverage if note)
+        _rv(f"--- SCRIPT COVERAGE ({len(coverage)} spoken lines, {missing} missing) ---")
+        _rv("  Best fuzzy match of each script.md line against the surviving transcript.")
+        _rv(f"  Ad-libbed delivery still scores high; < {SCRIPT_COVERAGE_MIN:.2f} means the "
+            f"line is gone. Hooks are excluded (alternates).")
+        for line, ratio, _, note in coverage:
+            mark = "✗" if note else "✓"
+            _rv(f"  {mark} {ratio:.2f}  {line}")
+            if note:
+                _rv(f"          → {note}")
     _rv("")
 
     # --- final transcript: kept EDL rendered as flowing prose with inline cuts
@@ -636,3 +682,97 @@ def _ts(t: float) -> str:
         s = t % 60
         return f"{m}:{s:06.3f}"
     return f"{t:.3f}s"
+
+
+# ---------------------------------------------------------------------------
+# script coverage — did every line the speaker was reading survive the edit?
+# ---------------------------------------------------------------------------
+
+# A delivered line is reworded freely ("Before" → "Previously", an added "See,"),
+# so an exact match is the wrong bar. Measured across every produced clip, an
+# ad-libbed line still scores >= 0.84 against its best transcript window while a
+# line that never made the edit scores ~0.4 — the gap is wide, and 0.65 sits in
+# it with headroom on both sides.
+SCRIPT_COVERAGE_MIN = 0.65
+
+# Sections of script.md that are spoken exactly once, so a missing one is an
+# unambiguous defect. HOOK is excluded on purpose: the speaker records several
+# alternate openers per clip and /produce-video picks between them, so a hook
+# with no transcript span is a normal outcome, not a dropped line.
+_SPOKEN_SECTIONS = ("SCRIPT", "CONCLUSION", "CTA")
+
+
+def _script_body_lines(base_path: Path) -> list[str] | None:
+    """The spoken lines of the slug's script.md, or None when there is no script.
+
+    script.md sits beside the debug reports in assets/<slug>/, so nothing needs
+    plumbing through the pipeline to reach it.
+    """
+    path = base_path.parent / "script.md"
+    if not path.exists():
+        return None
+    section, lines = None, []
+    for raw in path.read_text().splitlines():
+        header = re.match(r"^\*\*(.+?)\*\*\s*$", raw.strip())
+        if header:
+            section = header.group(1).rstrip(":")
+        elif section in _SPOKEN_SECTIONS and raw.strip():
+            lines.append(raw.strip())
+    return lines
+
+
+def _norm_text(s: str) -> str:
+    """Lowercase, strip punctuation, collapse whitespace — for fuzzy compare."""
+    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9 ]", "", s.lower())).strip()
+
+
+def _best_window(line: str, words: list["WordTimestamp"]) -> tuple[float, int, int]:
+    """Slide a window over `words`; return (ratio, start, end) of the span whose
+    normalized text best matches `line`. Window sizes flex around the line length
+    so a re-worded delivery still locks on."""
+    target = _norm_text(line)
+    size0 = len(target.split())
+    if not size0 or not words:
+        return 0.0, 0, 0
+    best = (0.0, 0, 0)
+    for size in {max(1, size0 - 2), size0, size0 + 2}:
+        for i in range(0, max(1, len(words) - size + 1)):
+            window = words[i : i + size]
+            ratio = SequenceMatcher(
+                None, target, _norm_text(" ".join(w.word for w in window))
+            ).ratio()
+            if ratio > best[0]:
+                best = (ratio, i, i + size)
+    return best
+
+
+def _script_coverage(
+    base_path: Path,
+    kept_words: list["WordTimestamp"],
+    all_words: list["WordTimestamp"],
+) -> list[tuple[str, float, float, str]] | None:
+    """Score every spoken script line against the surviving transcript.
+
+    Returns (line, kept_ratio, flag_time_s, note) per line, or None when the slug
+    has no script.md. For a line that did NOT survive, the same match is run again
+    over *every* aligned word — including the cut ones — so the report can say
+    whether the line was never spoken or was spoken and then cut, and where.
+    """
+    lines = _script_body_lines(base_path)
+    if lines is None:
+        return None
+    out = []
+    for line in lines:
+        ratio, _, _ = _best_window(line, kept_words)
+        note, at = "", 0.0
+        if ratio < SCRIPT_COVERAGE_MIN:
+            spoken, i, j = _best_window(line, all_words)
+            if spoken >= SCRIPT_COVERAGE_MIN and j > i:
+                span = all_words[i:j]
+                at = span[0].start
+                note = (f"spoken at {_ts(span[0].start)}–{_ts(span[-1].end)} "
+                        f"but cut ({spoken:.2f} match there)")
+            else:
+                note = "no matching span anywhere in the transcript — never delivered?"
+        out.append((line, ratio, at, note))
+    return out

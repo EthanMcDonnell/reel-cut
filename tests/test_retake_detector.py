@@ -689,3 +689,57 @@ def test_different_numbers_not_treated_as_same_word():
     ]
     ranges, _ = detect_retakes(words, min_retake_words=3, max_retake_gap_s=12.0, min_match_ratio=0.5)
     assert ranges == []
+
+
+def test_end_snap_does_not_swallow_the_keeper():
+    """Regression (utf-8-character-encoding, ~2:32-2:55): the END boundary snap deleted
+    the final take instead of stopping at it.
+
+        take 1: "-8 skips that problem because each byte marks its own place,
+                 so minimum can be 1 byte."                          (trailed off)
+        take 2: "UTF -8 skips this problem altogether because each byte marks its
+                 own place, so it can be minimum only 1 byte, but still scales up
+                 to 4 bytes if needed."                              (keeper)
+
+    The takes diverge right before the shared core ("that problem" vs "this problem
+    altogether"), so the backward extension stalls and the cut ends on "because" —
+    *inside* take 2. That word has no take boundary in front of it, so the END snap
+    walked forward to the next boundary and cut take 2 in full: the whole script line
+    vanished from the video, with no earlier take left to carry it.
+
+    The absorbed material is only ever safe to swallow when a later take re-says it.
+    Nothing after take 2 repeats it, so the cut must instead end back at take 2's
+    first word.
+    """
+    words = [
+        # a kept lead-in, so the cut has a take boundary to open against
+        _w("nothing", 0.0, 0.4), _w("here", 0.5, 0.9), _w("repeats.", 1.0, 1.5),
+        # take 1 — trails off (starts after a real silence)
+        _w("-8", 5.0, 5.4), _w("skips", 5.5, 5.9), _w("that", 6.0, 6.2),
+        _w("problem", 6.3, 6.7), _w("because", 6.8, 7.2), _w("each", 7.3, 7.6),
+        _w("byte", 7.7, 8.0), _w("marks", 8.1, 8.4), _w("its", 8.5, 8.7),
+        _w("own", 8.8, 9.0), _w("place,", 9.1, 9.5), _w("so", 9.6, 9.8),
+        _w("minimum", 9.9, 10.3), _w("can", 10.4, 10.6), _w("be", 10.7, 10.9),
+        _w("1", 11.0, 11.2), _w("byte.", 11.3, 11.7),
+        # take 2 — the keeper, after a real silence; head diverges from take 1's
+        _w("UTF", 17.0, 17.3), _w("-8", 17.4, 17.7), _w("skips", 17.8, 18.2),
+        _w("this", 18.3, 18.5), _w("problem", 18.6, 19.0),
+        _w("altogether", 19.1, 19.6), _w("because", 19.7, 20.1),
+        _w("each", 20.2, 20.5), _w("byte", 20.6, 20.9), _w("marks", 21.0, 21.3),
+        _w("its", 21.4, 21.6), _w("own", 21.7, 21.9), _w("place,", 22.0, 22.4),
+        _w("so", 22.5, 22.7), _w("it", 22.8, 22.9), _w("can", 23.0, 23.2),
+        _w("be", 23.3, 23.5), _w("minimum", 23.6, 24.0), _w("only", 24.1, 24.5),
+        _w("1", 24.6, 24.8), _w("byte,", 24.9, 25.3), _w("but", 25.4, 25.6),
+        _w("still", 25.7, 26.0), _w("scales", 26.1, 26.5), _w("up", 26.6, 26.8),
+        _w("to", 26.9, 27.0), _w("4", 27.1, 27.3), _w("bytes", 27.4, 27.7),
+        _w("if", 27.8, 27.9), _w("needed.", 28.0, 28.4),
+        # the next, unrelated sentence
+        _w("Nothing", 30.0, 30.4), _w("in", 30.5, 30.7), _w("the", 30.8, 30.9),
+        _w("file", 31.0, 31.4), _w("says", 31.5, 31.9), _w("which.", 32.0, 32.5),
+    ]
+    ranges, _ = detect_retakes(
+        words, min_retake_words=3, max_retake_gap_s=12.0, min_match_ratio=0.5,
+    )
+    assert len(ranges) == 1
+    assert ranges[0][0] == pytest.approx(5.0)    # cut begins at take 1's first word
+    assert ranges[0][1] == pytest.approx(17.0)   # cut ends at take 2 — the keeper

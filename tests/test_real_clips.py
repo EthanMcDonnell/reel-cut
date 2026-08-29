@@ -172,3 +172,30 @@ def test_split_brain_replica_lead_in_survives():
     assert not any(s <= replica.start < e for s, e in ranges), (
         f"'you add a replica' lead-in cut as a reworded retake; ranges={ranges}"
     )
+
+
+def test_utf8_final_take_of_the_utf8_line_survives():
+    """Regression (utf-8-character-encoding): the script's "UTF-8 skips that problem…"
+    line was spoken twice — a trailed-off take at ~2:32 and the complete keeper at
+    ~2:44 — and the END boundary snap cut BOTH, so the line never made the video.
+
+    The keeper's own words must survive; only the earlier take may be cut. "altogether",
+    "scales" and "needed" occur nowhere else in the clip, so any cut covering them is
+    deleting the last occurrence.
+    """
+    fixture = _FIXTURE_DIR / "utf-8-character-encoding.txt"
+    words = load_clip_words(fixture)
+    ranges, _ = detect_retakes(words, **_retake_kwargs())
+
+    keeper = [w for w in words if 164.7 <= w.start < 175.0]
+    assert keeper, "fixture no longer covers the 2:44 keeper take"
+    cut = [
+        w.word for w in keeper
+        if any(s <= w.start < e for s, e in ranges)
+    ]
+    assert not cut, f"the final take of the UTF-8 line was cut as a retake: {cut}"
+
+    # ...and the earlier, trailed-off take at ~2:32 is still removed.
+    assert any(s <= 153.0 and 160.0 <= e for s, e in ranges), (
+        f"the failed 2:32 take is no longer cut; ranges={ranges}"
+    )
