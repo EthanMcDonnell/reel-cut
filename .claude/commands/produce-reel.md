@@ -20,7 +20,7 @@ Subagents have **no `AskUserQuestion` tool** — a spawned orchestrator could no
 
 | Stage | Command | Model | Notes |
 |---|---|---|---|
-| `prepare` | `/prepare-video <slug>` | `sonnet` | full reset — wipes images.json/videos.json from any prior run |
+| `prepare` | `/prepare-video <slug>` | `sonnet` | re-transcribes; keeps videos.json card wording but clears its hook windows, and drops images.json |
 | `produce` | `/produce-video <slug>` | **`opus`** | asks about title cards + captions |
 | `schedule` | `/schedule-video <slug>` | `sonnet` | live calendar — confirms before booking |
 

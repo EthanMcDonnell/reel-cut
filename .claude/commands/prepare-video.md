@@ -27,7 +27,9 @@ The user drops their footage into `assets/<video-slug>/` before running this com
 
 Output goes to `assets/<slug>/`, named after the footage stem (e.g. `Teleprompter-2026-01-06_20-59-13.captions.json`). The transcription step prints the actual path.
 
-**This is a full reset.** Transcription first wipes everything derived from any prior run — the old `captions.json`, debug reports, and the overlay files `images.json` / `videos.json` / `audio.json` — then re-scaffolds them as fresh stubs. So re-running this command on a slug that already went through `/produce-video` discards those image timings, title cards, and captions (they'd otherwise drift against the new transcript). Source inputs are untouched: the footage, `script.md`, `manifest.json`, and the produce-script screenshots all carry over.
+**This resets the transcript.** `captions.json`, the debug reports, `retranscribe-clips/` and `images.json` are always regenerated. `videos.json` keeps its card wording (title, subtitle, caption, filename) but has its `start`/`end` hook windows cleared, because those are output-timeline values the new EDL moves — `/produce-video` Step 3c recomputes them. `audio.json` is kept whole. Add `--fresh` to wipe all three back to stubs. Source inputs are untouched either way: footage, `script.md`, `manifest.json` and the produce-script screenshots.
+
+**Any hand-edits to `captions.json` from a previous run are lost** — the `edl` keep-flips and word fixes from Step 4 live only in that file. If a take was rescued by flipping a cut, it will be re-cut and needs fixing again.
 
 ## Step 2.5 — Reconcile screenshot manifest (only if one exists)
 

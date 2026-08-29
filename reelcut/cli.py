@@ -44,6 +44,7 @@ def transcribe(
     slug: str | None = typer.Option(None, "--slug", help="Video slug (overrides script-derived slug)."),
     footage: str | None = typer.Option(None, "--footage", help="Path to footage file or folder."),
     clips_folder: str | None = typer.Option(None, "--clips-folder", help="Folder of ordered clips to stitch into one captions doc."),
+    fresh: bool = typer.Option(False, "--fresh", help="Also wipe videos.json and audio.json. Default keeps their content and only clears the hook windows."),
     verbose: bool = typer.Option(False, "--verbose", "-v"),
 ) -> None:
     """Phase 1: transcribe footage → .captions.json files ready for LLM editing."""
@@ -60,7 +61,7 @@ def transcribe(
 
     slug = _resolve_slug(cfg, slug)
     output_dir = _assets_or_ts_dir(cfg, slug)
-    _clean_transcription_artifacts(output_dir, console)
+    _clean_transcription_artifacts(output_dir, console, fresh=fresh)
 
     if clips_folder:
         # Multi-clip mode: all clips → one captions doc
@@ -159,6 +160,24 @@ def render(
             images_path=cap_path.parent / "images.json", audio_path=cap_path.parent / "audio.json")
 
 
+def _hook_windows(hooks: list) -> list[tuple[float, float]]:
+    """Output-timeline window per titled hook entry, refusing any that was never set.
+
+    `0`/`0` is what the transcribe reset leaves when it keeps an entry's wording: the card
+    text survives, the window does not, and /produce-video Step 3c refills it. Without this
+    the hook renders zero-length instead of failing — `load_videos` turns a missing
+    start/end into 0.0, so nothing else can tell "unset" from "starts at the top".
+    """
+    unset = [v.id for v in hooks if v.end <= v.start]
+    if unset:
+        err_console.print(
+            f"[red]Error:[/red] hook window not set for: {', '.join(unset)} — "
+            "recompute start/end from the timeline (/produce-video Step 3c)."
+        )
+        raise typer.Exit(1)
+    return [(v.start, v.end) for v in hooks]
+
+
 def _flip_plan(n: int, flip_cfg) -> list[list[tuple[str, bool]]]:
     """Per-hook output plan: `[(filename_suffix, flip), …]` for each of the `n` hooks.
 
@@ -249,7 +268,7 @@ def render_hooks(
             "(/produce-video Step 4b)."
         )
         raise typer.Exit(1)
-    hook_windows = [(v.start, v.end) for v in hooks]
+    hook_windows = _hook_windows(hooks)
 
     # Output videos are grouped in a per-slug folder and named by their entry's filename
     # (falling back to the caption, then the entry id).
@@ -822,6 +841,20 @@ def _phase2(cfg, doc, outputs: list[tuple[Path, bool]], verbose: bool,
                     path=spec.path,
                     kind=spec.kind,
                 )
+                # An overlay is anchored to source times, so a later EDL change can move a
+                # cut over it. Once remapped it just gets shorter (or vanishes at zero
+                # length) with nothing said, so report it — the anchor needs re-deriving
+                # against the current transcript, not silently accepting.
+                intended, actual = spec.end - spec.start, remapped_end - remapped_start
+                if intended > 0 and actual < intended * 0.9:
+                    label = spec.name or Path(spec.path).name if spec.path else spec.type
+                    console.print(
+                        f"  [yellow]Overlay {label!r} is cut: {intended:.2f}s anchored, "
+                        f"{actual:.2f}s on screen[/yellow]"
+                        + (" — dropped" if actual <= 0.01 else "")
+                    )
+                    if actual <= 0.01:
+                        continue
                 cue = _resolve_image_spec(remapped_spec, cfg.images.display_duration_s)
                 if cue:
                     all_image_cues.append(cue)
@@ -1053,34 +1086,67 @@ def _resolve_image_spec(spec, display_duration_s: float):
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _clean_transcription_artifacts(output_dir: Path, console: Console) -> None:
-    """Wipe everything derived from a prior transcribe so a re-run is a clean slate.
+def _clean_transcription_artifacts(output_dir: Path, console: Console, fresh: bool = False) -> None:
+    """Clear what a prior transcribe derived, so a re-run can't inherit stale timing.
 
-    This includes the overlay files (images.json / videos.json / audio.json):
-    they are keyed to the old transcript and would otherwise silently survive
-    (the scaffolders never clobber) and drift out of alignment. They are
-    re-scaffolded as fresh stubs immediately after transcription. Source inputs —
-    footage and the produce-script manifest.json + screenshots — are left alone.
+    `captions.json`, the debug reports and `retranscribe-clips/` are pure derivatives and
+    always go. The three overlay files are not: each mixes editorial content nobody
+    regenerates with timings the new transcript invalidates, and the scaffolders never
+    clobber, so anything left behind survives silently.
+
+    Default keeps the content and drops only the timing:
+      - `audio.json`  — kept whole; it is `{"track": …}` with no tie to the transcript.
+      - `videos.json` — entries kept (title, subtitle, caption, filename, scrim, of) with
+        `start`/`end` cleared on base entries. Those two are *output-timeline* values, so a
+        changed EDL moves them, but the card wording is hand-approved and produce-video
+        skips a videos.json that looks filled in — wiping it is the one real loss.
+      - `images.json` — removed. produce-video rewrites it whole each run, and its anchors
+        are source times that a changed EDL can drop inside a cut.
+
+    `fresh=True` removes all three instead, back to stubs. Source inputs — footage, and the
+    produce-script manifest.json + screenshots — are never touched either way.
     """
+    import json
     import shutil
-    cleaned = []
+    cleaned, kept = [], []
     for p in output_dir.glob("*.captions.json"):
         p.unlink()
         cleaned.append(p.name)
     for p in output_dir.glob("*.debug.*.txt"):
         p.unlink()
         cleaned.append(p.name)
-    for name in ("images.json", "videos.json", "audio.json"):
-        p = output_dir / name
-        if p.exists():
-            p.unlink()
-            cleaned.append(name)
     clips_dir = output_dir / "retranscribe-clips"
     if clips_dir.exists():
         shutil.rmtree(clips_dir)
         cleaned.append("retranscribe-clips/")
+
+    always_wiped = ("images.json", "videos.json", "audio.json") if fresh else ("images.json",)
+    for name in always_wiped:
+        p = output_dir / name
+        if p.exists():
+            p.unlink()
+            cleaned.append(name)
+
+    if not fresh:
+        vp = output_dir / "videos.json"
+        if vp.exists():
+            entries = json.loads(vp.read_text())
+            voided = 0
+            for entry in entries:
+                if entry.get("of"):
+                    continue          # mirrors inherit their base's window; they carry none
+                if entry.get("start") or entry.get("end"):
+                    voided += 1
+                entry["start"] = entry["end"] = 0.0
+            vp.write_text(json.dumps(entries, indent=2) + "\n")
+            kept.append(f"videos.json ({len(entries)} entries, {voided} hook window(s) cleared)")
+        if (output_dir / "audio.json").exists():
+            kept.append("audio.json")
+
     if cleaned:
         console.print(f"[dim]Cleaned {len(cleaned)} artifact(s): {', '.join(cleaned)}[/dim]")
+    if kept:
+        console.print(f"[dim]Kept: {', '.join(kept)} — pass --fresh to wipe these too[/dim]")
 
 
 def _resolve_slug(cfg, slug_arg: str | None) -> str | None:
@@ -1183,6 +1249,15 @@ def _build_edl_remap(edl: list):
 
     def remap(source_clip: str, t: float) -> float:
         cuts = cut_intervals.get(source_clip, [])
+        # A time *inside* a cut has no output frame of its own. Only cuts ending before `t`
+        # are subtracted below, so such a `t` used to keep the removed span's own duration
+        # and land at a position that corresponds to nothing — an image anchored there drew
+        # over whatever speech happened to follow. Snap it to the splice instead, which is
+        # where that moment now sits, and makes remap monotonic across a cut.
+        for s, e in cuts:
+            if s <= t < e:
+                t = s
+                break
         first_start = first_keep_start.get(source_clip, 0.0)
         cut_offset = sum(e - s for s, e in cuts if s >= first_start and e <= t)
         intra = t - first_start - cut_offset

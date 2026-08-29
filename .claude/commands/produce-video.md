@@ -151,6 +151,7 @@ All `start`/`end` values are **source-clip seconds** taken from the `words` arra
 
 Read it, then pick the case:
 - **Missing, or the first entry's `title` is empty** (the stub state from `prepare-video`, or a slug that predates this file) — write the whole thing as below.
+- **Titled, but a base entry has `end` of `0`** — `prepare-video` kept the wording from a prior run and cleared the windows. Fill `start`/`end` on every base entry from `hook_windows` (Step 3c) and change nothing else: the cards and captions are already approved. Then handle mirrors as below. Rendering with a `0`/`0` window is refused.
 - **Filled in, and mirror entries are already there or aren't wanted** — skip to Step 5. "Aren't wanted" means `output.flip` in `config.yaml` is `mode: "off"` or `apply: in_place`.
 - **Filled in, but `output.flip` is `apply: duplicate` with `mode` not `off` and a duplicated hook has no entry whose `of` names it** — the mirror would render as a text-identical clone. Author the missing mirror entries only (leave every existing entry alone) and confirm them with AskUserQuestion as below. Under `mode: alternate` only every second hook is duplicated, so only those need one.
 
