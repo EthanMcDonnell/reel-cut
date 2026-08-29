@@ -1301,20 +1301,43 @@ def _remap_kept_words(words: list, edl: list) -> list:
     than trusting `w.keep` matters in Phase 2: captions.json carries no per-word keep
     flag, so words reloaded from it all default to keep=True and a retake's words
     would otherwise be captioned over the top of the take that replaced them.
+
+    The 1ms EPS on a cut's upper edge is the same guard drop_covered carries, for the
+    same reason. render-hooks splits a keep entry at a hook/body boundary and flips the
+    piece outside the target hook to a cut; that piece's end is derived through the
+    output-time remap, so it lands a float-ulp *above* the boundary (50.900000000000006
+    vs 50.9) while the next section's first word starts exactly on it. Without the
+    tolerance that word tests as inside the cut and its caption vanishes from every
+    render whose hook precedes the boundary — silently, since the word is still in
+    captions.json and the audio still says it.
+
+    Cut spans that touch are coalesced first so the EPS only ever applies to a run's
+    true outer edge; otherwise a word sitting on an interior seam between two adjacent
+    cut entries (silence then breath) would leak through the 1ms hole and be captioned
+    over a cut.
     """
     from .transcriber import WordTimestamp
 
+    EPS = 1e-3
     remap, _ = _build_edl_remap(edl)
     cut_spans: dict[str, list[tuple[float, float]]] = {}
     for e in edl:
         if not e.keep:
             cut_spans.setdefault(e.source_clip, []).append((e.start, e.end))
+    for clip, spans in cut_spans.items():
+        run: list[tuple[float, float]] = []
+        for s, e in sorted(spans):
+            if run and s <= run[-1][1] + EPS:
+                run[-1] = (run[-1][0], max(run[-1][1], e))
+            else:
+                run.append((s, e))
+        cut_spans[clip] = run
 
     remapped = []
     for w in words:
         if not w.keep:
             continue
-        if any(s <= w.start < e for s, e in cut_spans.get(w.clip_path, [])):
+        if any(s <= w.start < e - EPS for s, e in cut_spans.get(w.clip_path, [])):
             continue
         new_start = remap(w.clip_path, w.start)
         new_end = new_start + (w.end - w.start)
