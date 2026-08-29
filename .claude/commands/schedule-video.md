@@ -50,7 +50,7 @@ Read the `schedule://settings` resource (or call `mcp__social-cockpit__list_sche
 - `scheduler_enabled: false` → **stop.** Jobs would be stored and never published. Tell the user.
 - `dry_run: true` → warn: jobs will run the pipeline but post nothing.
 - Note the **timezone**. Every time you state back to the user must be in that zone.
-- Note **`min_same_video_days`** — Step 3 needs it. Absent (the norm now — social-cockpit removed the setting) means `FALLBACK_MIN_GAP_DAYS` from `scrape/post_video.py` (currently 1.25 days / 30 hours).
+- Note **`min_same_video_days`** — Step 3 needs it. Absent (the norm now — social-cockpit removed the setting) means `FALLBACK_MIN_GAP_DAYS` from `scrape/post_video.py` (currently 1.5 days / 36 hours).
 
 ## Step 2 — Work out what still needs posting
 
@@ -114,7 +114,7 @@ Those two are the **entire** policy. There is no collision buffer and no cadence
 
 Instead, walk the hooks and make **one call per hook**, each starting after the last one landed:
 
-1. Read `min_same_video_days` from the settings banner in Step 1. The cockpit doesn't supply it today (removed there), so use **`FALLBACK_MIN_GAP_DAYS`** from `scrape/post_video.py` — currently 1.25 days (30 hours) — so the two commands can't drift on the one number that decides whether a hook gets throttled.
+1. Read `min_same_video_days` from the settings banner in Step 1. The cockpit doesn't supply it today (removed there), so use **`FALLBACK_MIN_GAP_DAYS`** from `scrape/post_video.py` — currently 1.5 days (36 hours) — so the two commands can't drift on the one number that decides whether a hook gets throttled.
 2. First hook: `suggest_slots  count: 1  earliest: <now + 15 minutes, or --start if later>`.
 3. Each hook after: `suggest_slots  count: 1  earliest: <previous slot + min_same_video_days>`.
 

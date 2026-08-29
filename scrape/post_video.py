@@ -57,7 +57,7 @@ COCKPIT = os.environ.get("COCKPIT_URL", "http://localhost:3000").rstrip("/")
 # (see b96b23d in that repo), so /api/schedule/settings never returns it and
 # this constant -- not the cockpit -- is now the actual source of truth. See
 # min_gap_days().
-FALLBACK_MIN_GAP_DAYS = 30 / 24  # 30 hours
+FALLBACK_MIN_GAP_DAYS = 36 / 24  # 36 hours
 # When automation is attached the cockpit waits up to 5 min for the reel to
 # finish processing (so it can return a media_id and attach), so allow headroom.
 REQUEST_TIMEOUT_S = 360
