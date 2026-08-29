@@ -1,16 +1,16 @@
 ---
 name: produce-reel
 description: Orchestrate the whole ReelCut pipeline for one slug — spawns a reel-step subagent per command (prepare → produce → publish), verifies each subagent's proposals against the script, transcript and source, and puts what's left to you via AskUserQuestion.
-argument-hint: "<video-slug> [--through prepare|produce|schedule] [--auto]"
+argument-hint: "<video-slug> [--through prepare|produce|schedule] [--auto] [--fresh]"
 ---
 
 Runs the pipeline end to end for one asset folder, one subagent per command. **You stay in the main conversation** and do not do the pipeline work yourself — you dispatch, check the workers' output, and put the decisions that need a person to the user.
 
-Arguments: `$ARGUMENTS` — `<video-slug> [--through <stage>] [--auto]`
+Arguments: `$ARGUMENTS` — `<video-slug> [--through <stage>] [--auto] [--fresh]`
 
 Available slugs in `assets/`: !`ls -1 assets/ | grep -vE '^audio$|\.json$'`
 
-If no slug is given, ask which of the above to use. `--through` sets where to stop; default is `produce` (render, don't publish). Publishing stages only run if asked for explicitly.
+If no slug is given, ask which of the above to use. `--through` sets where to stop; default is `produce` (render, don't publish). Publishing stages only run if asked for explicitly. `--fresh` is passed straight to `prepare` and to nothing else.
 
 ## Why this is a command and not an agent
 
@@ -39,7 +39,7 @@ An asset with neither `script.md` nor a receipt is the manual-folder case — th
 
 ## Per stage
 
-1. **Dispatch.** Spawn one `reel-step` subagent (`subagent_type: "reel-step"`), one per stage, never reusing a previous stage's agent. Prompt it with just the command and the slug, e.g. *"Run the `produce-video` command for slug `netflix-cdn-architecture`."* Plus any decisions the user already made in this session that the step would otherwise ask about. Keep its agent id.
+1. **Dispatch.** Spawn one `reel-step` subagent (`subagent_type: "reel-step"`), one per stage, never reusing a previous stage's agent. Prompt it with just the command and the slug, e.g. *"Run the `produce-video` command for slug `netflix-cdn-architecture`."* Append `--fresh` to the `prepare` prompt if the user passed it. Plus any decisions the user already made in this session that the step would otherwise ask about. Keep its agent id.
 
    **Pass `model` explicitly on every dispatch**, per the table above — the agent definition defaults to `sonnet` and the `model` parameter overrides it. `produce` gets `model: "opus"` because its output is generative rather than mechanical: the literal-noun gag pass (`produce-video:73`), hook detection done by intuition (`:123`), and the title cards and captions themselves (`:228`), whose register is the one a weaker model flattens into "how X did Y". Those are also the parts *no* later check catches — the verify step below is barred from touching wording, so under `--auto` whatever this worker writes is what gets burned into the video.
 

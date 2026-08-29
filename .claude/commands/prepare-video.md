@@ -1,12 +1,12 @@
 ---
 name: prepare-video
 description: Wire footage path into config, run reelcut transcription, then review captions.json for EDL anomalies (bad cuts, multiple takes, silence issues) and caption errors — auto-fixing the unambiguous ones and reporting the rest.
-argument-hint: "<video-slug>"
+argument-hint: "<video-slug> [--fresh]"
 ---
 
 Runs reelcut transcription for a video slug, then reviews the resulting captions.json for anomalies: the unambiguous ones you fix here (Step 4), everything else you report for the user to decide.
 
-Arguments: `$ARGUMENTS` — expected format: `<video-slug>`
+Arguments: `$ARGUMENTS` — expected format: `<video-slug> [--fresh]`. `--fresh` also wipes `videos.json` and `audio.json` (see Step 2).
 
 Available slugs in `assets/`:
 !`ls -1 assets/ | grep -vE '^audio$|\.json$'`
@@ -23,6 +23,7 @@ The user drops their footage into `assets/<video-slug>/` before running this com
 
 ```bash
 .venv/bin/reelcut transcribe config.yaml --slug <video-slug> --footage "assets/<video-slug>/"
+# add --fresh only if the user passed it
 ```
 
 Output goes to `assets/<slug>/`, named after the footage stem (e.g. `Teleprompter-2026-01-06_20-59-13.captions.json`). The transcription step prints the actual path.
@@ -68,7 +69,7 @@ Summarise (after Step 4 has run):
 - Keep / cut duration after fixes
 - Anomalies found, split into those auto-fixed in Step 4 and those left for the user to apply (with the recommended fix for each)
 - Any remaining issues that need a human listen (ambiguous takes, uncertain boundaries)
-- `videos.json` and `images.json` stubs were auto-created in the slug folder — the title card, caption and filename of each rendered video (and its image overlays) are filled in later by `/produce-video`
+- What Step 2 left in `videos.json`: a fresh stub, or a prior run's cards with their hook windows cleared. Either way `/produce-video` fills in the windows, and the image overlays in `images.json`.
 
 ## Step 4 — Apply the certain fixes, then log
 
