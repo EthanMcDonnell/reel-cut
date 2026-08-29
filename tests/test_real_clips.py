@@ -34,7 +34,13 @@ _REPO_ROOT = Path(__file__).parent.parent
 # (a trailing [OUTTAKE] tag, if present, is ignored). Sub-minute timestamps carry a
 # trailing 's' ("33.582s"); the optional s? captures them so _secs (which rstrips it)
 # sees them — without it every word before 1:00 was silently dropped from the fixture.
-_WORD_LINE = re.compile(r"([\d:.]+s?)\s*→\s*([\d:.]+s?)\s+'([^']*)'\s+conf=([\d.]+)")
+#
+# The report writes the word with repr(), which switches to double quotes for anything
+# holding an apostrophe. Requiring single quotes therefore dropped every contraction and
+# possessive — "that's", "it's", "character's" — from the parsed list, and a missing word
+# merges its two neighbouring gaps into one long one that the pipeline never saw. Accept
+# either quote; the lazy body still stops at the closing quote that precedes conf=.
+_WORD_LINE = re.compile(r"""([\d:.]+s?)\s*→\s*([\d:.]+s?)\s+['"](.*?)['"]\s+conf=([\d.]+)""")
 
 
 def _secs(t: str) -> float:
