@@ -1,35 +1,38 @@
 # ReelCut portfolio media — review pack
 
-This is the review gate for portfolio media. The identity mark below is
-**approved** and now in use (repo README header, personal-site row artwork); the
-poster stills are still on hold — see the note below.
+This is the review gate for portfolio media.
 
-The pack deliberately shows **the product's output, not its terminal**. ReelCut is
-driven from a CLI, but a recording of a prompt is a poor argument for a video
-editor and the interesting work happens in the model pass, which does not
-screenshot. What is left is the thing that can be judged on sight: a raw phone
-take and the Reel that came out the other end.
+**In use now:**
 
-Both stills are the **same instant of the same take**. Output 31.500s maps back to
-source 57.031s through the EDL in the package's `.captions.json`, so the pair
-shows one moment before and after the pipeline rather than two unrelated frames.
-The candidates use the existing, user-designated `ht-ghd-better-gitcli` package —
-a real render, not a fabricated timeline or a styled mockup.
+- **Identity mark** — `identity/playcut.svg`, the root README header and the
+  ReelCut row artwork on the personal site.
+- **"The cut" figure** — a to-scale picture of one real run (the
+  `ht-ghd-better-gitcli` EDL): the transcript with cut spans struck through, a
+  source-vs-output time ribbon, and the counts. It is *not a file in this pack* —
+  it lives as an ASCII block in the root [`README.md`](../../README.md) and as a
+  rendered component on the personal-site ReelCut page. No footage, audio, or
+  face, so it carries no clearance hold.
+
+The figure replaced the earlier before/after thesis. A single rendered frame
+reads as a caption tool; an 88-second first take becoming a 39-second cut, with
+the false start and the dead air found automatically, is the actual argument for
+an *editor*, and that only shows in the edit decision.
 
 > [!IMPORTANT]
-> The three **poster** stills show an identifiable person. Keep them at
+> The three **poster** stills show an identifiable person. They are superseded by
+> the figure and not planned for use; if they are ever wanted, they stay at
 > `candidate` until the owner confirms the footage, music, and spoken material
-> may appear on a public portfolio. The identity mark is original geometry and is
-> not subject to that hold.
+> may appear on a public portfolio.
 
 ## Candidates
 
 | Asset | Role | Source / provenance | Privacy / accuracy check | Status | Draft alt text |
 | --- | --- | --- | --- | --- | --- |
-| [`posters/01-source-take.jpg`](posters/01-source-take.jpg) | "Before" still | Frame at 57.031s of `assets/ht-ghd-better-gitcli/DF4506C5-2F13-40FB-AC7A-8EC4943DAB22.MOV` | Labelled "Source Take / Unedited"; raw source duration is 88.436667s | `candidate` | "An unedited vertical phone-video source take, labelled as an 88.4-second original." |
-| [`posters/02-final-render.jpg`](posters/02-final-render.jpg) | "After" still | Frame at 31.500s of `output/ht-ghd-better-gitcli/git-cli-isnt-a-personality.mp4` — the same spoken word as the frame above | Labelled "ReelCut Output"; final H.264 render duration is 39.603s | `candidate` | "A final ReelCut render with gold serif title card and burned-in captions." |
-| [`posters/03-before-after.jpg`](posters/03-before-after.jpg) | Proof comparison still | The two exact frames above, shown side by side | States both timestamps and that they are the same instant of the take | `candidate` | "Side-by-side comparison of one instant of an unedited source take and the finished ReelCut render of it." |
+| "The cut" figure | Primary portfolio media | The real `ht-ghd-better-gitcli` EDL (`.captions.json`) + `.debug.*.txt` counts | Time blocks and text only; no person, footage, or audio | `approved` — root README + personal site | "A to-scale ribbon: an 88.4s source take with its cut spans, above the 39.6s output; 46% kept." |
 | [`identity/playcut.svg`](identity/playcut.svg) | Icon logo | Original geometry on the shared 512 grid | Original geometry; no person, footage, or audio | `approved` — selected mark | "A charcoal play triangle knocked out of a gold tile and severed by one diagonal cut." |
+| [`posters/01-source-take.jpg`](posters/01-source-take.jpg) | "Before" still | Frame at 57.031s of `assets/ht-ghd-better-gitcli/DF4506C5-2F13-40FB-AC7A-8EC4943DAB22.MOV` | Shows an identifiable person | `superseded` — held | "An unedited vertical phone-video source take, labelled as an 88.4-second original." |
+| [`posters/02-final-render.jpg`](posters/02-final-render.jpg) | "After" still | Frame at 31.500s of `output/ht-ghd-better-gitcli/git-cli-isnt-a-personality.mp4` | Shows an identifiable person | `superseded` — held | "A final ReelCut render with gold serif title card and burned-in captions." |
+| [`posters/03-before-after.jpg`](posters/03-before-after.jpg) | Proof comparison still | The two frames above, side by side | Shows an identifiable person | `superseded` — held | "Side-by-side comparison of one instant of an unedited source take and the finished ReelCut render of it." |
 | [`identity/options.png`](identity/options.png) | Icon-direction sheet | Generated from the three SVGs by `make_identity_sheet.py` | Original geometry only | `reference` — the family Playcut was picked from | "Three ReelCut icon directions in gold on charcoal: Playcut, Cut and Transcript." |
 
 ## Identity review
@@ -66,7 +69,8 @@ directories; this pack contains only review derivatives.
 
 ## Approval gate
 
-The identity mark is cleared and in use. Before promoting any **poster** to the
-personal site, confirm public use of the visible person, the spoken material, and
-the music. Once approved, copy web-sized derivatives into the site; do not move or
-delete the original provenance files.
+The identity mark and "the cut" figure are cleared and in use — both are original
+geometry / data with no person, audio, or footage in them. The poster stills are
+superseded; if they are ever revisited, confirm public use of the visible person,
+the spoken material, and the music first, and do not move or delete the original
+provenance files.

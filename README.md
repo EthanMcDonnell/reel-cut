@@ -44,6 +44,37 @@ playwright install chromium    # required for JS-heavy article screenshots
 
 ---
 
+## What the cut looks like
+
+One real run — the `ht-ghd-better-gitcli` package, an 88-second unscripted take:
+
+> This might be a hot take, but GitHub Desktop is just significantly better than
+> using the git CLI. ~~Like, I understand everyone will…~~ **← false start, 13
+> seconds of dead air behind it, cut automatically.** Like I understand that
+> everyone loves to say you're not a proper software engineer unless you're using
+> the git CLI. But for day-to-day operations, GitHub Desktop is just so much nicer
+> — being able to see all those files sitting uncommitted, stage them, unstage
+> them, see the diff. It's just so easy. ~~You can manage all work trees through
+> there now as well. Now I understand Claude will manage most of this…~~ **←
+> redundant, trimmed in review.** I just — you can't beat it. ~~Let me know what
+> you think.~~
+
+```
+SOURCE  ████░░░░░░░░░░░░░████▓███████▓▓█▓███▓█▓████████░░███░░░░░░░░░░░░░▓░░  88.4s
+            └──────────── cut automatically ────────────┘   └─── review ───┘
+OUTPUT  ███████████████████████████████·····································  39.6s
+```
+
+**88.4s → 39.6s, 46% kept.** ReelCut cut one false start and 14 inter-word gaps
+(9 noise, 3 silence, 2 breath) on its own, evaluated 11 candidate retakes and
+kept every one — the script genuinely repeats *"GitHub Desktop is just…"* with
+different endings, not fluffed takes — and left 5 judgment calls for a human,
+including a deliberate 1.8-second beat before *"you can't beat it."* Review then
+trimmed three redundant lines. Figures are from that package's `.captions.json`
+(the EDL) and `.debug.*.txt`.
+
+---
+
 ## Transcribe Pipeline
 
 ```
