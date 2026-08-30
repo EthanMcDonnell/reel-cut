@@ -1,7 +1,8 @@
 # ReelCut portfolio media — review pack
 
-This is the review gate for potential portfolio media. Nothing in this folder has
-been copied to the personal site.
+This is the review gate for portfolio media. The identity mark below is
+**approved** and now in use (repo README header, personal-site row artwork); the
+poster stills are still on hold — see the note below.
 
 The pack deliberately shows **the product's output, not its terminal**. ReelCut is
 driven from a CLI, but a recording of a prompt is a poor argument for a video
@@ -16,9 +17,10 @@ The candidates use the existing, user-designated `ht-ghd-better-gitcli` package 
 a real render, not a fabricated timeline or a styled mockup.
 
 > [!IMPORTANT]
-> The source take shows an identifiable person. Keep every candidate below at
-> `candidate` until the owner confirms the footage, music, and spoken material may
-> appear on a public portfolio.
+> The three **poster** stills show an identifiable person. Keep them at
+> `candidate` until the owner confirms the footage, music, and spoken material
+> may appear on a public portfolio. The identity mark is original geometry and is
+> not subject to that hold.
 
 ## Candidates
 
@@ -27,19 +29,16 @@ a real render, not a fabricated timeline or a styled mockup.
 | [`posters/01-source-take.jpg`](posters/01-source-take.jpg) | "Before" still | Frame at 57.031s of `assets/ht-ghd-better-gitcli/DF4506C5-2F13-40FB-AC7A-8EC4943DAB22.MOV` | Labelled "Source Take / Unedited"; raw source duration is 88.436667s | `candidate` | "An unedited vertical phone-video source take, labelled as an 88.4-second original." |
 | [`posters/02-final-render.jpg`](posters/02-final-render.jpg) | "After" still | Frame at 31.500s of `output/ht-ghd-better-gitcli/git-cli-isnt-a-personality.mp4` — the same spoken word as the frame above | Labelled "ReelCut Output"; final H.264 render duration is 39.603s | `candidate` | "A final ReelCut render with gold serif title card and burned-in captions." |
 | [`posters/03-before-after.jpg`](posters/03-before-after.jpg) | Proof comparison still | The two exact frames above, shown side by side | States both timestamps and that they are the same instant of the take | `candidate` | "Side-by-side comparison of one instant of an unedited source take and the finished ReelCut render of it." |
-| [`identity/options.png`](identity/options.png) | Icon-direction sheet | Generated from the three option SVGs by `make_identity_sheet.py` | Original geometry only; no claim that any option is a final product logo | `candidate` | "Three ReelCut icon options in gold on charcoal: Cut, Playcut and Transcript." |
+| [`identity/playcut.svg`](identity/playcut.svg) | Icon logo | Original geometry on the shared 512 grid | Original geometry; no person, footage, or audio | `approved` — selected mark | "A charcoal play triangle knocked out of a gold tile and severed by one diagonal cut." |
+| [`identity/options.png`](identity/options.png) | Icon-direction sheet | Generated from the three SVGs by `make_identity_sheet.py` | Original geometry only | `reference` — the family Playcut was picked from | "Three ReelCut icon directions in gold on charcoal: Playcut, Cut and Transcript." |
 
 ## Identity review
 
-See [`identity/README.md`](identity/README.md) for the three standalone ReelCut
-icon directions and their trade-offs:
-
-1. **Cut** — recommended: a 9:16 frame severed by one diagonal cut.
-2. **Playcut** — the same cut through a play triangle, inverted for avatar use.
-3. **Transcript** — transcript lines cut through by the playhead.
-
-Each has a clean SVG, but none should be treated as an official logo until one is
-selected and exported at final sizes.
+**Playcut is the selected mark** — see [`identity/README.md`](identity/README.md).
+It is the header of the root [`README.md`](../../README.md) and the ReelCut row
+artwork on the personal site. `cut.svg` and `transcript.svg` are kept as a
+family, not discarded. A follow-up should redraw Playcut at final export sizes
+rather than reusing the review vector everywhere.
 
 ## Regenerating
 
@@ -67,7 +66,7 @@ directories; this pack contains only review derivatives.
 
 ## Approval gate
 
-Before promoting any asset to `approved for personal site`, confirm public use of
-the visible person, the spoken material, and the music. Once approved, copy
-selected web-sized derivatives into the personal site; do not move or delete the
-original provenance files.
+The identity mark is cleared and in use. Before promoting any **poster** to the
+personal site, confirm public use of the visible person, the spoken material, and
+the music. Once approved, copy web-sized derivatives into the site; do not move or
+delete the original provenance files.

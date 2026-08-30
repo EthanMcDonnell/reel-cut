@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="docs/portfolio/identity/playcut.svg" alt="ReelCut" width="112" />
+
 # ReelCut
 
 ### A CLI-based AI video editor for short-form content
