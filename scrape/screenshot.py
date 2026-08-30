@@ -213,6 +213,18 @@ async def _block_ancestor(page, el) -> object:
     return el
 
 
+def _unproven_figures(context: str, snippet: str) -> list[str]:
+    """Numbers the script says out loud that the highlighted snippet doesn't contain.
+
+    The highlight is drawn over `article_snippet` alone, so a figure outside it is
+    unproven even when it sits in the captured crop — the viewer's eye follows the
+    colour, not the paragraph. Digits only: a spelled-out number in the script has no
+    verbatim form to match against the article anyway.
+    """
+    want = set(re.findall(r"\d+(?:\.\d+)?", context))
+    return sorted(want - set(re.findall(r"\d+(?:\.\d+)?", snippet)), key=float)
+
+
 def _crop_window(el_top: float, el_height: float, vh: int) -> tuple[float, float]:
     """Return (y, height) for a snippet crop sized to the matched element.
 
@@ -298,6 +310,7 @@ async def _capture_snippet(
         "script_context": context,
         "trigger_show_word": spec.get("trigger_show_word", ""),
         "trigger_go_away_word": spec.get("trigger_go_away_word", ""),
+        "unproven_figures": _unproven_figures(context, snippet),
     }
 
     def _miss(reason: str, meta: dict | None = None) -> dict:
@@ -480,6 +493,7 @@ async def capture(url: str, output_dir: Path, snippets: list[str | dict] | None 
             "match_type": h["match_type"],
             "confidence": round(h["confidence"], 2),
             "highlight": h["highlight"],
+            **({"unproven_figures": h["unproven_figures"]} if h["unproven_figures"] else {}),
         }
         for h in hits
     ]

@@ -115,3 +115,31 @@ class TestSnippetAnchor:
     def test_unbroken_run_longer_than_the_cap_is_truncated_hard(self):
         raw = "x" * 100
         assert screenshot._snippet_anchor(raw) == "x" * 80
+
+
+class TestUnprovenFigures:
+    def test_figure_outside_the_highlight_is_reported(self):
+        # The snippet-05 case: the highlight stops at the colon, so "> 45 GiB/s" sits
+        # in the crop but outside the coloured range — visible, yet not the evidence.
+        context = "Nothing branches so it gets to vectorize fully and hits over 45 gigabytes a second."
+        snippet = "A loop with no data-dependent control flow is trivially vectorizable"
+        assert screenshot._unproven_figures(context, snippet) == ["45"]
+
+    def test_starting_the_snippet_later_proves_the_figure(self):
+        context = "Nothing branches so it gets to vectorize fully and hits over 45 gigabytes a second."
+        snippet = "LLVM emits 16-byte-at-a-time NEON and the whole thing runs at > 45 GiB/s"
+        assert screenshot._unproven_figures(context, snippet) == []
+
+    def test_a_rounded_article_figure_does_not_prove_the_spoken_one(self):
+        # snippet-02: the script says 3.1, the article prose rounds to "about 3 GiB/s".
+        context = "On an Apple M4, it runs at 3.1 gigabytes a second."
+        snippet = "On an Apple M4 this runs at about 3 GiB/s"
+        assert screenshot._unproven_figures(context, snippet) == ["3.1"]
+
+    def test_matching_figures_pass(self):
+        context = "Github's code search indexes 480 terabytes of source code."
+        snippet = "more than 480TB of source code. Every byte is case-folded"
+        assert screenshot._unproven_figures(context, snippet) == []
+
+    def test_a_line_with_no_figures_is_never_flagged(self):
+        assert screenshot._unproven_figures("the real problem was the break itself", "x") == []
