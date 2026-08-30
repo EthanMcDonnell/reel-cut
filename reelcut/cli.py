@@ -178,6 +178,57 @@ def _hook_windows(hooks: list) -> list[tuple[float, float]]:
     return [(v.start, v.end) for v in hooks]
 
 
+def _hook_caption_survival(doc, hook_windows: list[tuple[float, float]]) -> list[str]:
+    """Check each hook variant would caption exactly the words its footage says.
+
+    A per-hook render is the full take with the other hooks flipped to cuts, so its
+    captions must be the full take's words minus the dropped hooks' — no more, no less.
+    Two filters have to agree on that: `drop_covered` removes the dropped hooks' words by
+    source interval, and `_remap_kept_words` removes anything sitting in a cut span. Both
+    carry a 1ms tolerance at a section boundary, and a word can still fall through the
+    gap between them.
+
+    Nothing else can see it when one does. The word stays in captions.json and the audio
+    still says it, so the script-coverage report and every other check pass — the only
+    signal is watching the render and noticing a caption that never appeared. That is how
+    "See," went missing from 8 of 10 videos. This compares the two filters against the
+    section partition they are both meant to implement, which is the same comparison an
+    editor makes by eye.
+    """
+    from .hook_split import _section_of, build_hook_edl, drop_covered
+
+    remap, _ = _build_edl_remap(doc.edl)
+    body_start = hook_windows[-1][1]
+    base_runs = _cut_runs(doc.edl)
+
+    # The words the full take captions, and the section each one belongs to. Words the
+    # base EDL cuts (a dropped retake) are captioned by no variant and aren't owed one.
+    section = {
+        id(w): _section_of(remap(w.source_clip, w.start), hook_windows, body_start)
+        for w in doc.words
+        if not _in_cut_run(w.source_clip, w.start, base_runs)
+    }
+
+    warnings: list[str] = []
+    for i in range(len(hook_windows)):
+        new_edl, _, drop_intervals = build_hook_edl(doc.edl, hook_windows, i)
+        runs = _cut_runs(new_edl)
+        survived = {
+            id(w) for w in drop_covered(doc.words, drop_intervals)
+            if not _in_cut_run(w.source_clip, w.start, runs)
+        }
+        owed = {k for k, sec in section.items() if sec == "body" or sec == i}
+        lost = [w for w in doc.words if id(w) in owed - survived]
+        if lost:
+            shown = ", ".join(f"{w.word!r} @ {w.start:.2f}s" for w in lost[:6])
+            if len(lost) > 6:
+                shown += f" (+{len(lost) - 6} more)"
+            warnings.append(
+                f"Hook {i + 1}: {len(lost)} word(s) spoken in this cut but not captioned — {shown}"
+            )
+    return warnings
+
+
 def _flip_plan(n: int, flip_cfg) -> list[list[tuple[str, bool]]]:
     """Per-hook output plan: `[(filename_suffix, flip), …]` for each of the `n` hooks.
 
@@ -282,6 +333,13 @@ def render_hooks(
     n_videos = sum(len(p) for p in plan)
     console.print(f"[bold]{n_videos} video(s) to render from {n} hook(s)[/bold]\n")
     all_warnings: list[str] = []
+
+    # Cheap pure-python pre-pass, before any encode time is spent: a variant that captions
+    # the wrong set of words looks fine everywhere except on screen.
+    caption_warnings = _hook_caption_survival(doc, hook_windows)
+    for w in caption_warnings:
+        err_console.print(f"  [yellow]Warning:[/yellow] {w}")
+    all_warnings.extend(caption_warnings)
     for i in range(n):
         base = hooks[i]
 
@@ -1294,15 +1352,35 @@ def _mark_sentence_ends(words: list, pause_s: float) -> list:
     return out
 
 
-def _remap_kept_words(words: list, edl: list) -> list:
-    """Remap kept WordTimestamp objects from source clip time to output video time.
+_CUT_EPS = 1e-3
 
-    A word is kept only if the EDL keeps the span it sits in. Testing the EDL rather
-    than trusting `w.keep` matters in Phase 2: captions.json carries no per-word keep
-    flag, so words reloaded from it all default to keep=True and a retake's words
-    would otherwise be captioned over the top of the take that replaced them.
 
-    The 1ms EPS on a cut's upper edge is the same guard drop_covered carries, for the
+def _cut_runs(edl: list) -> dict[str, list[tuple[float, float]]]:
+    """Cut spans per source clip, with touching spans coalesced into one run.
+
+    Coalescing keeps _in_cut_run's tolerance on a run's true outer edge only; otherwise
+    a word sitting on an interior seam between two adjacent cut entries (silence then
+    breath) would leak through the 1ms hole and be captioned over a cut.
+    """
+    runs: dict[str, list[tuple[float, float]]] = {}
+    for e in edl:
+        if not e.keep:
+            runs.setdefault(e.source_clip, []).append((e.start, e.end))
+    for clip, spans in runs.items():
+        merged: list[tuple[float, float]] = []
+        for s, end in sorted(spans):
+            if merged and s <= merged[-1][1] + _CUT_EPS:
+                merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+            else:
+                merged.append((s, end))
+        runs[clip] = merged
+    return runs
+
+
+def _in_cut_run(clip: str, start: float, runs: dict[str, list[tuple[float, float]]]) -> bool:
+    """Does a word starting at `start` on `clip` sit inside a cut?
+
+    The 1ms EPS on a run's upper edge is the same guard drop_covered carries, for the
     same reason. render-hooks splits a keep entry at a hook/body boundary and flips the
     piece outside the target hook to a cut; that piece's end is derived through the
     output-time remap, so it lands a float-ulp *above* the boundary (50.900000000000006
@@ -1310,34 +1388,28 @@ def _remap_kept_words(words: list, edl: list) -> list:
     tolerance that word tests as inside the cut and its caption vanishes from every
     render whose hook precedes the boundary — silently, since the word is still in
     captions.json and the audio still says it.
+    """
+    return any(s <= start < e - _CUT_EPS for s, e in runs.get(clip, []))
 
-    Cut spans that touch are coalesced first so the EPS only ever applies to a run's
-    true outer edge; otherwise a word sitting on an interior seam between two adjacent
-    cut entries (silence then breath) would leak through the 1ms hole and be captioned
-    over a cut.
+
+def _remap_kept_words(words: list, edl: list) -> list:
+    """Remap kept WordTimestamp objects from source clip time to output video time.
+
+    A word is kept only if the EDL keeps the span it sits in. Testing the EDL rather
+    than trusting `w.keep` matters in Phase 2: captions.json carries no per-word keep
+    flag, so words reloaded from it all default to keep=True and a retake's words
+    would otherwise be captioned over the top of the take that replaced them.
     """
     from .transcriber import WordTimestamp
 
-    EPS = 1e-3
     remap, _ = _build_edl_remap(edl)
-    cut_spans: dict[str, list[tuple[float, float]]] = {}
-    for e in edl:
-        if not e.keep:
-            cut_spans.setdefault(e.source_clip, []).append((e.start, e.end))
-    for clip, spans in cut_spans.items():
-        run: list[tuple[float, float]] = []
-        for s, e in sorted(spans):
-            if run and s <= run[-1][1] + EPS:
-                run[-1] = (run[-1][0], max(run[-1][1], e))
-            else:
-                run.append((s, e))
-        cut_spans[clip] = run
+    runs = _cut_runs(edl)
 
     remapped = []
     for w in words:
         if not w.keep:
             continue
-        if any(s <= w.start < e - EPS for s, e in cut_spans.get(w.clip_path, [])):
+        if _in_cut_run(w.clip_path, w.start, runs):
             continue
         new_start = remap(w.clip_path, w.start)
         new_end = new_start + (w.end - w.start)
