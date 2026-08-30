@@ -44,49 +44,60 @@ playwright install chromium    # required for JS-heavy article screenshots
 
 ---
 
-## One run, end to end
+## One take, six Reels
 
-The `reddit-kafka-kubernetes-dns` package: a Reddit thread through
-`/produce-script` → `/prepare-video` → `/produce-video`, ending as an 87-second
-Reel. A 257-word script from the article, then:
+`/produce-script` writes **N hook variants** (default 3) into one script, ahead of
+a single shared body. You **record all of them back to back in one phone take**,
+then the body. `/prepare-video` and `/produce-video` cut that take once, then
+splice each hook onto the shared cut body — one Reel per hook, plus a re-titled
+sibling. The `claude-text-watermark` run: a 111-second take → **six shipped
+Reels**.
 
-> Reddit moved a petabyte of live Kafka with zero downtime. ~~Reddit moved 500
-> Kafka brokers to—~~ **← retake, cut automatically.** Reddit moved 500 Kafka
-> brokers to Kubernetes without a single user noticing. … They wanted to move all
-> 500-plus brokers **[⊞ article screenshot]** off Amazon and onto Kubernetes. …
-> Its metadata is **[◉ concept image: Welding]** welded to broker identity, so you
-> can't clone the cluster and repoint everyone.
+The three hooks, recorded one after another (shared opening greyed):
+
+> ~~Anthropic just explained~~ how Claude watermarks text without adding anything to it
+> ~~Anthropic just explained~~ exactly where Claude's watermark lives
+> ~~Anthropic just explained~~ how Claude's watermark survives you editing the text
+
+The retake detector *evaluated* those three openers and **kept** all of them
+(match 0.20 / 0.38 — recognised as intentional variants), while cutting 20 real
+retakes elsewhere (24.5s).
 
 ```
-SOURCE   ██░███░░░░░██▓▓████████████████████████████░████░██████████░█░░░░███  130s
-         auto-cut — retake ×5 · silence ×12 · breath ×10 · noise ×10 — 42.6s removed
+TAKE   ████░██░███░░░░░░░███░░░░░░███████░░░░█████░░░░░░█████████░███░██░  111.0s
+       └h1┘ └h2┘└h3┘        └──────────────── shared body ─────────────────┘
+       the gaps between the three hooks are dead air — cut
 
-RENDER   ████████████████████████████████████████████  87s
-  title  ███████                                          "Reddit Migrated a Petabyte…"
-  caps   ────────────────────────────────────────────     word-level, burned in
-  images           ▲         △    ▲   ▲   ▲   ▲            ▲ 5 screenshots  △ concept (Welding)
+CUT    ████████│▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓  61.7s     │ = splice: hook → shared body
+
+SHIP   1 ─▶ 6          (bodies aligned on the splice; hooks differ in length)
+       ███ │███████████████████████████████   A Watermark With Nothing Added
+       ▫▫▫ │▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫    ↳ Claude's Invisible Text Watermark
+        ██ │███████████████████████████████   Claude's Watermark Lives In Word Choice
+        ▫▫ │▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫    ↳ The Watermark Inside Randomness
+       ██▌ │███████████████████████████████   Why Light Edits Won't Erase It
+       ▫▫▌ │▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫▫    ↳ A Few Edits Won't Remove It
+           │  ▲   ▲ ▲    ▲    ▲   ▲            ▲ screenshot  ○ concept image
+           └── 7 overlays live in the body, so all six Reels share them
 ```
 
-**130s take → 87s Reel, 67% kept.** In one pass ReelCut:
+`█` recorded · `▫` derived (same cut, re-titled). **111s take → 61.7s cut →
+six Reels.**
 
-- **Auto-cut** — removed 42.6s: 5 retakes, 12 silences, 10 breaths, 10 noise
-  gaps. The retake detector *cut* the fumbled *"Reddit moved 500 Kafka
-  brokers…"* (0.86 match) and *kept* the one candidate that was really the
-  script repeating a phrase (0.19).
-- **Retranscribed ×2** against raw Whisper to fix low-confidence alignment; one
-  hit the 20s hard cap. Dropped one wordless fragment at a retake boundary.
-- **Captions** — word-level, burned in over the whole 87s.
-- **Title card** — *"Reddit Migrated a Petabyte of Data With Nobody Noticing"*,
-  templated subtitle, first 13s.
-- **Article images** — pulled 6 screenshots from the thread, each triggered by a
-  script word (`show@"500+" … hide@"Kubernetes"`, exact match); 5 placed.
-- **Concept image** — one, *Welding*, on *"metadata is welded to broker
-  identity."*
-- **Trail variants** — the same cut renders twice with a different title card and
-  caption for the Instagram trail.
+- **Auto-cut** removed 49.3s: retake ×9, silence ×9, noise ×7, breath ×3 (55%
+  kept). Retranscribed ×2 for alignment.
+- **Captions** — word-level, burned in over the whole body.
+- **Title card** per Reel — its own title and the caption that appears under the
+  post (e.g. *"nothing added. still watermarked."* / *"invisible ink, minus the
+  ink."*).
+- **Article images** — 5 screenshots, each shown/hidden on a script word
+  (`show@"…" … hide@"…"`, exact match).
+- **Concept images** — 2 (*Overcast*, *Dice*) for the abstract lines.
+- **The trail** — all six posted in sequence (`output/.published`): three hooks ×
+  a re-titled sibling.
 
-Every figure is from that package's `.captions.json`, `.debug.*.txt`,
-`images.json`, `manifest.json` and `headings.json`.
+Every span and count is from that package's `captions.json`, `debug.*.txt`,
+`images.json`, `videos.json`, and `output/.published`.
 
 ---
 
