@@ -44,34 +44,49 @@ playwright install chromium    # required for JS-heavy article screenshots
 
 ---
 
-## What the cut looks like
+## One run, end to end
 
-One real run — the `ht-ghd-better-gitcli` package, an 88-second unscripted take:
+The `reddit-kafka-kubernetes-dns` package: a Reddit thread through
+`/produce-script` → `/prepare-video` → `/produce-video`, ending as an 87-second
+Reel. A 257-word script from the article, then:
 
-> This might be a hot take, but GitHub Desktop is just significantly better than
-> using the git CLI. ~~Like, I understand everyone will…~~ **← false start, 13
-> seconds of dead air behind it, cut automatically.** Like I understand that
-> everyone loves to say you're not a proper software engineer unless you're using
-> the git CLI. But for day-to-day operations, GitHub Desktop is just so much nicer
-> — being able to see all those files sitting uncommitted, stage them, unstage
-> them, see the diff. It's just so easy. ~~You can manage all work trees through
-> there now as well. Now I understand Claude will manage most of this…~~ **←
-> redundant, trimmed in review.** I just — you can't beat it. ~~Let me know what
-> you think.~~
+> Reddit moved a petabyte of live Kafka with zero downtime. ~~Reddit moved 500
+> Kafka brokers to—~~ **← retake, cut automatically.** Reddit moved 500 Kafka
+> brokers to Kubernetes without a single user noticing. … They wanted to move all
+> 500-plus brokers **[⊞ article screenshot]** off Amazon and onto Kubernetes. …
+> Its metadata is **[◉ concept image: Welding]** welded to broker identity, so you
+> can't clone the cluster and repoint everyone.
 
 ```
-SOURCE  ████░░░░░░░░░░░░░████▓███████▓▓█▓███▓█▓████████░░███░░░░░░░░░░░░░▓░░  88.4s
-            └──────────── cut automatically ────────────┘   └─── review ───┘
-OUTPUT  ███████████████████████████████·····································  39.6s
+SOURCE   ██░███░░░░░██▓▓████████████████████████████░████░██████████░█░░░░███  130s
+         auto-cut — retake ×5 · silence ×12 · breath ×10 · noise ×10 — 42.6s removed
+
+RENDER   ████████████████████████████████████████████  87s
+  title  ███████                                          "Reddit Migrated a Petabyte…"
+  caps   ────────────────────────────────────────────     word-level, burned in
+  images           ▲         △    ▲   ▲   ▲   ▲            ▲ 5 screenshots  △ concept (Welding)
 ```
 
-**88.4s → 39.6s, 46% kept.** ReelCut cut one false start and 14 inter-word gaps
-(9 noise, 3 silence, 2 breath) on its own, evaluated 11 candidate retakes and
-kept every one — the script genuinely repeats *"GitHub Desktop is just…"* with
-different endings, not fluffed takes — and left 5 judgment calls for a human,
-including a deliberate 1.8-second beat before *"you can't beat it."* Review then
-trimmed three redundant lines. Figures are from that package's `.captions.json`
-(the EDL) and `.debug.*.txt`.
+**130s take → 87s Reel, 67% kept.** In one pass ReelCut:
+
+- **Auto-cut** — removed 42.6s: 5 retakes, 12 silences, 10 breaths, 10 noise
+  gaps. The retake detector *cut* the fumbled *"Reddit moved 500 Kafka
+  brokers…"* (0.86 match) and *kept* the one candidate that was really the
+  script repeating a phrase (0.19).
+- **Retranscribed ×2** against raw Whisper to fix low-confidence alignment; one
+  hit the 20s hard cap. Dropped one wordless fragment at a retake boundary.
+- **Captions** — word-level, burned in over the whole 87s.
+- **Title card** — *"Reddit Migrated a Petabyte of Data With Nobody Noticing"*,
+  templated subtitle, first 13s.
+- **Article images** — pulled 6 screenshots from the thread, each triggered by a
+  script word (`show@"500+" … hide@"Kubernetes"`, exact match); 5 placed.
+- **Concept image** — one, *Welding*, on *"metadata is welded to broker
+  identity."*
+- **Trail variants** — the same cut renders twice with a different title card and
+  caption for the Instagram trail.
+
+Every figure is from that package's `.captions.json`, `.debug.*.txt`,
+`images.json`, `manifest.json` and `headings.json`.
 
 ---
 
