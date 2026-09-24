@@ -22,16 +22,16 @@ Default with no arguments: **5 `updates` ideas and 3 ideas in every other series
 
 ## Stage 0 — Refresh the article candidates silently
 
-This command is the curated alternative to raw article notifications. Refresh the existing source lists before looking for `tbbt` and `updates` ideas, but **never send their individual article cards**:
+This command is the curated alternative to raw article notifications. Refresh the `tbbt` source list before looking for `tbbt` ideas, but **never send its individual article cards**:
 
 ```bash
 .venv/bin/python scrape/scraper.py --config scrape/sources-tbbt.yaml --no-telegram
 .venv/bin/python scrape/prune_db.py --series tbbt --config scrape/sources-tbbt.yaml
-.venv/bin/python scrape/scraper.py --config scrape/sources-updates.yaml --no-telegram
-.venv/bin/python scrape/prune_db.py --series updates --config scrape/sources-updates.yaml
 ```
 
-The configured sites remain the source of truth. `updates` has a five-day lookback to leave margin around this command's roughly three-day cadence. If either refresh fails, stop and report it rather than silently building a supposedly fresh batch from old candidates.
+The configured sites remain the source of truth. If the refresh fails, stop and report it rather than silently building a supposedly fresh batch from old candidates.
+
+`updates` has no scraped feed: it never produced a shipped video, so it is sourced by `WebSearch` in Stage 4 instead. `scrape/sources-updates.yaml` is kept only for reference — do not run it.
 
 ## Stage 1 — Pull the analytics
 
@@ -74,13 +74,12 @@ Record the exclusion set. Every idea in the final file must clear it.
 
 The six series have different sourcing rules — follow each series file, don't apply one standard to all.
 
-### tbbt and updates — the article DB
+### tbbt — the article DB
 
-These two have a real feed. Pull unread candidates:
+This series has a real feed. Pull unread candidates:
 
 ```bash
 .venv/bin/python scrape/query.py articles tbbt --status new --limit 200
-.venv/bin/python scrape/query.py articles updates --status new --limit 200
 ```
 
 Skim titles first (`jq -r '.[] | "\(.published_date[0:10]) | \(.company) | \(.title)"'` keeps it readable), shortlist the ones with a real story, then **scrape each shortlisted article in full**:
@@ -91,7 +90,9 @@ Skim titles first (`jq -r '.[] | "\(.published_date[0:10]) | \(.company) | \(.ti
 
 Prefer, in this order: a **surprising mechanism or reversal**, a **shocking concrete number**, a **visible breakage or incident report**, a **counter-intuitive engineering decision**. Skip product announcements, "we improved X by N%" with no mechanism, and marketing posts — a large share of the feed is these.
 
-`updates` also decays fast, so supplement the DB with `WebSearch` for anything breaking in the last 1–2 weeks that the feed missed.
+### updates — WebSearch, no feed
+
+No DB. Use `WebSearch` for anything breaking in the last 1–2 weeks, then **scrape each shortlisted article in full** with `single_scrape.py` as above — the same full-text verification applies. Apply the same preference order and skip the same shapes as `tbbt`.
 
 ### interesting-tech — verified incidents, and mind the rut
 
