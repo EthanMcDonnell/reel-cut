@@ -35,7 +35,11 @@ so the cross-post can only ever draw a clip YouTube has not seen.
 Env (read from the repo-root ``.env``):
   COCKPIT_URL   optional, default http://localhost:3000
 
+``--order`` prints the slug's unclaimed hooks in the order to book them, so the
+skill pairs them to slots without two flipped copies landing back to back.
+
 Usage:
+  .venv/bin/python scrape/schedule_video.py <slug> --order
   .venv/bin/python scrape/schedule_video.py <slug> <hook.mp4>=<scheduled-at-iso> [...]
       [--youtube <scheduled-at-iso>] [--dry-run]
 """
@@ -77,6 +81,70 @@ def parse_pair(raw):
     if not sep or not name or not when:
         sys.exit(f"Bad hook/time pair {raw!r} — expected <hook>.mp4=<scheduled-at-iso>")
     return name, when
+
+
+def mirrors_for(slug, stems):
+    """Map each flipped hook's stem -> the stem of the hook it mirrors.
+
+    A mirror is known by its videos.json entry's ``of``; one videos.json doesn't
+    describe falls back to the longest described stem it starts with, the same
+    rule ``caption_for`` uses to caption it.
+    """
+    from reelcut.video_spec import load_videos, stem_for
+
+    videos = load_videos(ROOT / "assets" / slug / "videos.json")
+    by_id = {v.id: v for v in videos}
+    by_stem = {stem_for(v): v for v in videos}
+    mirrors = {}
+    for stem in stems:
+        v = by_stem.get(stem)
+        if v:
+            if v.of:
+                mirrors[stem] = stem_for(by_id[v.of])
+            continue
+        bases = [k for k in by_stem if stem.startswith(k)]
+        if bases:
+            mirrors[stem] = max(bases, key=len)
+    return mirrors
+
+
+def booking_order(stems, mirrors):
+    """Order hooks so flipped copies are spread between the unflipped ones.
+
+    Every hook of a slug gets its own slot, one gap apart, in this order. Taken
+    alphabetically, the flipped copies (which carry their own filenames) could
+    land back to back. Here the shorter group is spread evenly through the
+    longer one, so two flipped hooks only sit side by side when there are more
+    of them than unflipped hooks to put between. Of the rotations of the
+    flipped list, the first that keeps each copy off its own original's
+    neighbouring slots wins (or the one with the fewest such neighbours).
+    """
+    originals = [s for s in stems if s not in mirrors]
+    flipped = [s for s in stems if s in mirrors]
+
+    def clashes(seq):
+        return sum(mirrors.get(a) == b or mirrors.get(b) == a for a, b in zip(seq, seq[1:]))
+
+    best = None
+    for k in range(max(len(flipped), 1)):
+        seq = _spread(originals, flipped[k:] + flipped[:k])
+        if best is None or clashes(seq) < clashes(best):
+            best = seq
+    return best
+
+
+def _spread(originals, flipped):
+    """Interleave the shorter list evenly into the longer, the longer leading."""
+    long, short = (originals, flipped) if len(originals) >= len(flipped) else (flipped, originals)
+    if not short:
+        return list(long)
+    after = {j * len(long) // len(short): item for j, item in enumerate(short)}
+    out = []
+    for i, item in enumerate(long):
+        out.append(item)
+        if i in after:
+            out.append(after[i])
+    return out
 
 
 def title_for(slug):
@@ -148,8 +216,11 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("slug", help="video slug (an output/<slug>/ folder of rendered hooks)")
-    ap.add_argument("pairs", nargs="+", metavar="hook.mp4=scheduled-at-iso",
+    ap.add_argument("pairs", nargs="*", metavar="hook.mp4=scheduled-at-iso",
                     help="one per hook, in the order agreed with the user")
+    ap.add_argument("--order", action="store_true",
+                    help="print the unclaimed hooks in booking order, one filename per line, "
+                         "and exit")
     ap.add_argument("--youtube", metavar="scheduled-at-iso",
                     help="also book a YouTube cross-post at this time, drawing from the slug's "
                          f"pool by {YT_SELECTION} (normally the last hook's slot + 1 day)")
@@ -163,6 +234,15 @@ def main():
 
     log = ROOT / "output" / ".published"
     done = read_published(log)
+
+    if args.order:
+        stems = [p.stem for p in sorted(out_dir.glob("*.mp4"))
+                 if f"{args.slug}/{p.name}" not in done]
+        for stem in booking_order(stems, mirrors_for(args.slug, stems)):
+            print(f"{stem}.mp4")
+        return
+    if not args.pairs:
+        ap.error("give <hook>.mp4=<scheduled-at-iso> pairs, or --order")
 
     automation = automation_for(args.slug)
     if automation:

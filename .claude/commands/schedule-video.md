@@ -67,6 +67,16 @@ cat output/.published 2>/dev/null
 
 If nothing is left, say so and stop.
 
+### The booking order
+
+Hooks are paired to slots in the order this prints — **not** `ls` order:
+
+```bash
+.venv/bin/python scrape/schedule_video.py <slug> --order
+```
+
+It lists the unclaimed hooks with the flipped copies (a videos.json entry with `of`, or an undescribed `<hook><suffix>` file) spread between the unflipped ones, so two flipped hooks never go out back to back while there is an unflipped one to put between them, and a copy doesn't sit next to the hook it mirrors where that can be avoided. Mirrors carry their own filenames, so alphabetical order used to bunch them — `github-stars-over-money` went out with both its flipped hooks consecutively. Use this order through Steps 3–5; don't re-sort it.
+
 Caption each remaining file from `assets/<slug>/videos.json`, using the same rule as `/post-video`: match the file's stem to its entry's stem; a mirrored duplicate that videos.json doesn't describe falls back to the **longest stem the filename starts with**, so it inherits the caption of the hook it mirrors.
 
 ### The automation
@@ -151,7 +161,7 @@ For a brand-new slug this reads `0 video(s)` and that is **correct** — the poo
 
 ### Before moving on
 
-Each hook is its own post at its own time. Pair hooks to slots in order, then check the collected slots as a set: no two on the same **day**, and every consecutive pair at least `min_same_video_days` apart. If that doesn't hold, the loop above was short-circuited — redo it rather than nudging a time by hand.
+Each hook is its own post at its own time. Pair hooks to slots in the `--order` order from Step 2, then check the collected slots as a set: no two on the same **day**, and every consecutive pair at least `min_same_video_days` apart. If that doesn't hold, the loop above was short-circuited — redo it rather than nudging a time by hand.
 
 Pass the returned `scheduled_at` strings through to Step 5 unchanged. If a call reports days skipped at the daily limit, that is worth repeating to the user, but it is not a problem — it is the policy working.
 
