@@ -444,3 +444,35 @@ def test_rendered_reel_is_served_with_byte_ranges(tmp_path, monkeypatch):
     assert part.getheader("Content-Range") == "bytes 2-5/10"
     assert (head.status, head_body, head.getheader("Content-Length")) == (200, b"", "10")
     assert escape.status == 404
+
+
+def test_reels_route_serves_a_timestamped_slug_and_rejects_traversal(tmp_path, monkeypatch):
+    output = tmp_path / "output"
+    slug = "ht-dotnet-development-env-20261004T083529Z"
+    (output / slug).mkdir(parents=True)
+    (output / slug / "default-is-the-default.mp4").write_bytes(b"reel")
+    (tmp_path / "secret.mp4").write_bytes(b"secret")
+    monkeypatch.setattr(upload_server, "OUTPUT", output)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), upload_server.Handler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    def status(method: str, path: str) -> int:
+        connection = http.client.HTTPConnection(*server.server_address)
+        connection.request(method, path)
+        response = connection.getresponse()
+        response.read()
+        return response.status
+
+    try:
+        ok_get = status("GET", f"/reels/{slug}/default-is-the-default.mp4")
+        ok_head = status("HEAD", f"/reels/{slug}/default-is-the-default.mp4")
+        dotdot = status("GET", "/reels/../secret.mp4")
+        encoded_dotdot = status("GET", "/reels/%2E%2E/secret.mp4")
+        encoded_slash = status("GET", f"/reels/{slug}%2F..%2F../secret.mp4")
+    finally:
+        server.shutdown()
+        thread.join()
+
+    assert (ok_get, ok_head) == (200, 200)
+    assert dotdot == encoded_dotdot == encoded_slash == 404

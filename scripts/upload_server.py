@@ -58,7 +58,9 @@ OUTPUT = REPO / "output"
 CHUNK = 1024 * 1024
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv"}
 
-SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+# Intake slugs end in an uppercase UTC stamp (…T083529Z), so existing folders may hold capitals.
+SLUG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]*$")
+CUSTOM_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 JOB_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 HEADING_RE = re.compile(r"^\*\*(.+?):?\*\*$")
 HOOK_PREFIX_RE = re.compile(r"^HOOK\s+\d+:\s*")
@@ -549,7 +551,7 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         custom_slug = (parse_qs(url.query).get("slug") or [""])[0].strip()
-        if custom_slug and not SLUG_RE.fullmatch(custom_slug):
+        if custom_slug and not CUSTOM_SLUG_RE.fullmatch(custom_slug):
             self._reply(400, "slug must be lowercase letters, digits and hyphens")
             return
 
