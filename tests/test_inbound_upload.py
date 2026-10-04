@@ -413,3 +413,34 @@ def test_series_without_individual_uploads_keeps_one_take_per_script(tmp_path, m
 
     assert directory == source
     assert metadata == {}
+
+
+def test_rendered_reel_is_served_with_byte_ranges(tmp_path, monkeypatch):
+    reels = tmp_path / "output" / "edge-cache"
+    reels.mkdir(parents=True)
+    (reels / "hook.mp4").write_bytes(b"0123456789")
+    monkeypatch.setattr(upload_server, "OUTPUT", tmp_path / "output")
+    server = ThreadingHTTPServer(("127.0.0.1", 0), upload_server.Handler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    def get(path, headers=None, method="GET"):
+        connection = http.client.HTTPConnection(*server.server_address)
+        connection.request(method, path, headers=headers or {})
+        response = connection.getresponse()
+        return response, response.read()
+
+    try:
+        full, full_body = get("/reels/edge-cache/hook.mp4")
+        part, part_body = get("/reels/edge-cache/hook.mp4", {"Range": "bytes=2-5"})
+        head, head_body = get("/reels/edge-cache/hook.mp4", method="HEAD")
+        escape, _ = get("/reels/edge-cache/..%2F..%2Fconfig.yaml")
+    finally:
+        server.shutdown()
+        thread.join()
+
+    assert (full.status, full_body) == (200, b"0123456789")
+    assert (part.status, part_body) == (206, b"2345")
+    assert part.getheader("Content-Range") == "bytes 2-5/10"
+    assert (head.status, head_body, head.getheader("Content-Length")) == (200, b"", "10")
+    assert escape.status == 404

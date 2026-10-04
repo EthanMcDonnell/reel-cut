@@ -252,35 +252,22 @@ The generic invariants in `tests/test_real_clips.py` (no runaway retake cut; san
 
 Commit the fixture alongside the video's other artifacts.
 
-## Step 7 — Publish to Tailscale & notify Telegram
+## Step 7 — Notify Telegram
 
-Make every rendered `output/<video-slug>/*.mp4` reachable over Tailscale, then post a link for each **not-yet-notified** hook video **of this slug** to the Telegram `file-exchange` topic. The loop is scoped to the current slug's folder so other videos' hooks are never touched; a `.notified` log additionally dedupes across renders, so re-running only posts newly rendered hooks. The Telegram caption is the entry's `caption` from `videos.json`, so a mirrored duplicate posts under its own.
+Every rendered `output/<video-slug>/*.mp4` is already reachable over the tailnet: `scripts/upload_server.py` (the same server behind the script and upload links) serves it at `http://<tailnet-ip>:8770/reels/<slug>/<name>.mp4`. Post a link for each **not-yet-notified** hook video **of this slug** to the Telegram `file-exchange` topic. The loop is scoped to the current slug's folder so other videos' hooks are never touched; a `.notified` log additionally dedupes across renders, so re-running only posts newly rendered hooks. The Telegram caption is the entry's `caption` from `videos.json`, so a mirrored duplicate posts under its own.
 
 **Prerequisites** (set up once, outside this workflow):
 - Tailscale installed and this machine joined to the tailnet (`tailscale up`).
-- **Operator rights granted**, so `tailscale serve` runs without root: `sudo tailscale set --operator=$USER`. Without this, step 1 below fails with `401 Unauthorized: must be root` on *every* render and the serve config silently goes stale.
+- The upload server running (launchd `com.reelcut.upload`, bound to the tailnet IP on :8770).
 - The local Telegram bot API server running on `{TELEGRAM_API}` (same server used by `scrape/telegram.py`).
 
 ```bash
-# 1. Serve the output directory over Tailscale (idempotent — safe to re-run every render).
-#    Abort on failure: a broken serve config must not be papered over by notifying anyway.
-tailscale serve --bg --set-path /reels "{PROJECT_ROOT}/output" \
-  || { echo "tailscale serve failed — see Prerequisites (operator rights)"; exit 1; }
-
-# 2. Base tailnet URL — read from the SERVE CONFIG, not just .Self.DNSName. Renaming this
-#    machine leaves the serve handler keyed to the OLD vhost while .Self.DNSName reports the
-#    new one, so links built from .Self.DNSName point at a host the serve config never answers.
-TS_HOST=$(tailscale serve status --json | jq -r '.Web | keys[0]' | sed 's/:443$//')
-DNS_NAME=$(tailscale status --json | jq -r '.Self.DNSName' | sed 's/\.$//')
-[ -n "$TS_HOST" ] && [ "$TS_HOST" = "$DNS_NAME" ] || {
-  echo "serve vhost '$TS_HOST' != device name '$DNS_NAME' — re-run step 1 with operator rights"
-  exit 1; }
-# This shell may not use the MagicDNS resolver even when the tailnet is healthy, so the
-# reachability check below pins the hostname to the tailnet IP. Without this it fails with
-# "Could not resolve host" and skips videos whose links are perfectly fine.
+# 1. Base URL — the tailnet IP the upload server binds. No `tailscale serve`, so no operator
+#    rights and no serve config to go stale when the Mac is renamed.
 TS_IP=$(tailscale ip -4)
+[ -n "$TS_IP" ] || { echo "tailnet IP unavailable — run 'tailscale up'"; exit 1; }
 
-# 3. Post one link per hook video to the local Telegram bot API — the file-exchange topic.
+# 2. Post one link per hook video to the local Telegram bot API — the file-exchange topic.
 #    Scoped to THIS video's slug folder only, never other slugs' videos.
 #    The .notified log additionally guards against re-sending on repeat renders (keyed on the
 #    slug-relative path so two videos sharing a title-slug can't collide).
@@ -304,10 +291,10 @@ for f in "{PROJECT_ROOT}"/output/"${SLUG}"/*.mp4; do
     // ([.[] | stem as $k | select($k != "" and ($s | startswith($k))) | {k: $k, c: .caption}]
         | sort_by(.k | length) | last | .c)
     // $s' "$VIDEOS" 2>/dev/null || echo "$name")
-  url="https://${TS_HOST}/reels/${SLUG}/${name}"
-  # Never post a link the serve config doesn't actually answer — an unreachable URL must not
-  # be logged as notified. --resolve pins DNS to the tailnet IP (see TS_IP note above).
-  curl -sfI --max-time 15 --resolve "${TS_HOST}:443:${TS_IP}" "$url" >/dev/null \
+  url="http://${TS_IP}:8770/reels/${SLUG}/${name}"
+  # Never post a link the upload server doesn't actually answer — an unreachable URL must not
+  # be logged as notified.
+  curl -sfI --max-time 15 "$url" >/dev/null \
     || { echo "UNREACHABLE, not notifying: $url"; continue; }
   PAYLOAD=$(jq -n --arg c "🎬 ${caption} is ready: ${url}" '{content: $c, topic: "file-exchange"}')
   curl -sf {TELEGRAM_API}/telegram/send -H 'Content-Type: application/json' -d "$PAYLOAD" \
@@ -316,7 +303,7 @@ done
 ```
 
 Notes:
-- `--set-path /reels` serves privately **within your tailnet** — the link resolves only on your own devices. Swap `tailscale serve` → `tailscale funnel` if the link must work off-tailnet (public internet).
+- The tailnet IP is in 100.64.0.0/10 and only routes between tailnet peers, so the link works on your own devices and not on local wi-fi or the public internet.
+- If every link is `UNREACHABLE`, the upload server is down or predates the `/reels` route — `launchctl kickstart -k gui/$(id -u)/com.reelcut.upload`, then re-run this step.
 - `topic` is a **name** the broker resolves to a Telegram thread id via its `config.yaml` `projects:` list — `file-exchange` is the configured video topic. A raw numeric id in this field fails with `unknown topic name`.
 - `output/.notified` records the basename of every hook video already posted. To re-send a link, delete its line (or the whole file). `curl -sf` only logs a video as notified when the POST returns 2xx, so a failed send is retried on the next run.
-- **Renaming this Mac breaks `/reels`.** The serve handler stays keyed to the old `<name>.<tailnet>.ts.net:443` vhost, which MagicDNS stops resolving (NXDOMAIN), so every link 404s while `tailscale status` still reports a healthy node. Step 2's vhost-vs-DNSName check catches this; the fix is re-running step 1 (needs operator rights). If the stale key lingers, `tailscale serve reset` then re-run step 1.

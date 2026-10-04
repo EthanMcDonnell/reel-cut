@@ -10,6 +10,8 @@ PUT  /upload/<slug>?name=<fn>&slug=<custom>
                                   `slug` only applies to a direct series link (ignored otherwise)
 GET  /job/<id>                 → a production job's status and Claude output link
 GET  /job/<id>/log             → the worker's captured Claude output, once it exists
+GET  /reels/<slug>/<name>.mp4  → a rendered hook video from output/<slug>/, with Range
+                                  support so it plays inline on iOS
 
 config.yaml's production.ai_provider picks what a finished upload triggers: the
 queued `claude-cli` worker (job tracking, Telegram status, the routes above) or a
@@ -52,6 +54,7 @@ from reelcut.config import load_config
 
 PORT = 8770
 ASSETS = REPO / "assets"
+OUTPUT = REPO / "output"
 CHUNK = 1024 * 1024
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv"}
 
@@ -61,6 +64,7 @@ HEADING_RE = re.compile(r"^\*\*(.+?):?\*\*$")
 HOOK_PREFIX_RE = re.compile(r"^HOOK\s+\d+:\s*")
 UPLOADS_RE = re.compile(r"^\*\*Uploads:\*\*\s*(\w+)", re.MULTILINE)
 UNSAFE_RE = re.compile(r"[^A-Za-z0-9._-]+")
+RANGE_RE = re.compile(r"^bytes=(\d*)-(\d*)$")
 
 NAME_FIELD = """<label class=namefield>Name (optional)
   <input type=text id=slugname placeholder="leave blank for {slug}-&lt;timestamp&gt;"
@@ -205,6 +209,29 @@ def script_file(parts: list[str]) -> Path | None:
         return None
     target = ASSETS / parts[0] / "script.md"
     return target if target.is_file() else None
+
+
+def reel_file(parts: list[str]) -> Path | None:
+    """output/<slug>/<name>.mp4 for the path parts after `/reels`, or None."""
+    if len(parts) != 2 or not SLUG_RE.fullmatch(parts[0]) or not parts[1].endswith(".mp4"):
+        return None
+    if safe_name(parts[1]) != parts[1]:
+        return None
+    target = OUTPUT / parts[0] / parts[1]
+    return target if target.is_file() else None
+
+
+def byte_range(header: str | None, size: int) -> tuple[int, int] | None:
+    """Inclusive (start, end) for a single `bytes=` Range header, or None to send it all."""
+    match = RANGE_RE.match(header or "")
+    if not match or match.groups() == ("", ""):
+        return None
+    first, last = match.groups()
+    if first:
+        start, end = int(first), min(int(last), size - 1) if last else size - 1
+    else:
+        start, end = max(size - int(last), 0), size - 1
+    return (start, end) if start <= end else None
 
 
 def sections(text: str) -> list[tuple[str, list[str]]]:
@@ -420,9 +447,47 @@ class Handler(BaseHTTPRequestHandler):
     def _reply_json(self, code: int, data: dict[str, object]) -> None:
         self._reply(code, json.dumps(data), "application/json; charset=utf-8")
 
+    def _send_reel(self, video: Path, head: bool) -> None:
+        # iOS Safari won't play a video unless the server honours Range requests.
+        size = video.stat().st_size
+        span = byte_range(self.headers.get("Range"), size)
+        start, end = span or (0, size - 1)
+        self.send_response(206 if span else 200)
+        self.send_header("Content-Type", "video/mp4")
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Length", str(end - start + 1))
+        if span:
+            self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+        self.end_headers()
+        if head:
+            return
+        with video.open("rb") as handle:
+            handle.seek(start)
+            remaining = end - start + 1
+            while remaining and (chunk := handle.read(min(CHUNK, remaining))):
+                self.wfile.write(chunk)
+                remaining -= len(chunk)
+
+    def do_HEAD(self) -> None:
+        parts = [p for p in unquote(urlparse(self.path).path).strip("/").split("/") if p]
+        video = reel_file(parts[1:]) if parts[:1] == ["reels"] else None
+        if video is None:
+            self.send_response(404)
+            self.end_headers()
+        else:
+            self._send_reel(video, head=True)
+
     def do_GET(self) -> None:
         url = urlparse(self.path)
         parts = [p for p in unquote(url.path).strip("/").split("/") if p]
+        if parts[:1] == ["reels"]:
+            video = reel_file(parts[1:])
+            if video is None:
+                self._reply(404, "no such reel")
+            else:
+                self._send_reel(video, head=False)
+            return
+
         if parts[:1] == ["script"]:
             script = script_file(parts[1:])
             if script is None:

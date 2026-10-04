@@ -142,7 +142,7 @@ URL is sent — so there's no file-size ceiling and the phone streams it (range 
 supported for seek/scrub).
 
 ```
-output/<slug>.mp4 ──(tailscale serve)──▶ https://<host>.ts.net/reels/<slug>.mp4
+output/<slug>/<hook>.mp4 ──(upload_server.py)──▶ http://100.x.y.z:8770/reels/<slug>/<hook>.mp4
                                                 │
                            POST /telegram/send  ▼  (broker resolves topic name → thread id)
                                          Telegram "file-exchange" topic
@@ -152,19 +152,15 @@ output/<slug>.mp4 ──(tailscale serve)──▶ https://<host>.ts.net/reels/<
 
 | Tool | Purpose |
 |:-----|:--------|
-| [Tailscale](https://tailscale.com) | Serves `output/` privately within your tailnet |
+| [Tailscale](https://tailscale.com) | Private tailnet; `scripts/upload_server.py` binds its IP and serves `output/` |
 | `jq`, `curl` | Build the JSON payload and POST it |
 | `ultimate-message-broker` | Local Telegram bot API on `http://localhost:8765`; resolves a **topic name** → Telegram thread id |
 
 **One-time setup**
 
-1. **Tailscale** — join the tailnet and serve the output dir (idempotent; re-run each render):
-   ```bash
-   tailscale up
-   tailscale set --operator=$USER    # lets `tailscale serve` run without sudo
-   tailscale serve --bg --set-path /reels "$PWD/output"
-   ```
-   > The folder must live **outside** `~/Documents` (macOS TCC blocks Tailscale from reading it there).
+1. **Tailscale** — join the tailnet (`tailscale up`). The upload server (launchd
+   `com.reelcut.upload`) binds the tailnet IP and serves `output/` at `/reels/`, so no
+   `tailscale serve` config or operator rights are needed.
 
 2. **Broker** — run `ultimate-message-broker` (`main.py --platform telegram`) and register a
    video topic in its `config.yaml` under `projects:`. Notification-only topics need just four
