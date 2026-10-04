@@ -163,11 +163,23 @@ def run_job(path: Path, repo: Path = REPO, queue_root: Path = QUEUE_ROOT) -> str
     # Production stages run as Claude background tasks and may transcribe for over 10 minutes.
     environment = os.environ | {"CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS": "3600000"}
 
+    argv = [claude_binary(), "-p", prompt, "--settings", str(WORKER_SETTINGS), "--permission-mode", "default"]
+    # A bad config.yaml must block this one job (below), not crash the worker loop
+    # that has no handler around run_job — so a model lookup failure degrades to
+    # the provider default rather than propagating.
+    try:
+        model = load_config(repo / "config.yaml").production.ai_model
+    except Exception as exc:
+        print(f"could not read production.ai_model, using default model: {exc}", file=sys.stderr, flush=True)
+        model = ""
+    if model:
+        argv += ["--model", model]
+
     notify(f"⏳ processing: {job['asset_slug']} ({job['id'][:8]})")
     try:
         with log_path.open("w") as log:
             result = subprocess.run(
-                [claude_binary(), "-p", prompt, "--settings", str(WORKER_SETTINGS), "--permission-mode", "default"],
+                argv,
                 cwd=repo,
                 env=environment,
                 stdout=log,

@@ -328,16 +328,23 @@ def allocate_upload(target: str, custom_slug: str = "") -> tuple[Path, dict[str,
     return source, {}
 
 
-def spawn_mission_control(slug: str) -> None:
+def spawn_mission_control(slug: str, model: str = "") -> None:
     """Fire-and-forget: open a Mission Control session that runs the pipeline.
 
     `--no-wait` returns as soon as the session exists, without waiting for the
     command to be typed in or for the pipeline to finish — there is no queue,
     no status tracking, and no log capture on this path; progress is watched
     in the Mission Control dashboard instead.
+
+    `model`, when set, is passed through as `mission-control --model`, which the
+    dashboard appends to the `claude` it launches in the session.
     """
+    cmd = ["mission-control", "--no-wait"]
+    if model:
+        cmd += ["--model", model]
+    cmd += ["--", "/produce-reel", slug, "--auto"]
     subprocess.Popen(
-        ["mission-control", "--no-wait", "--", "/produce-reel", slug, "--auto"],
+        cmd,
         cwd=REPO,
         stdout=subprocess.DEVNULL,
         # Inherited, so a spawn that dies after the 202 still lands in the agent's error log.
@@ -517,10 +524,10 @@ class Handler(BaseHTTPRequestHandler):
                 return
 
         rel = dest.relative_to(ASSETS.parent)
-        provider = load_config(REPO / "config.yaml").production.ai_provider
-        if provider == "mission-control":
+        production = load_config(REPO / "config.yaml").production
+        if production.ai_provider == "mission-control":
             try:
-                spawn_mission_control(directory.name)
+                spawn_mission_control(directory.name, production.ai_model)
             except Exception as exc:
                 self._reply(500, f"upload saved but could not start production: {exc}")
                 return

@@ -7,6 +7,10 @@ assets:
 # dashboard immediately per upload, no queue, no status notifications.
 production:
   ai_provider: mission-control
+  # ai_model: opus                  # model the job runs on, forwarded to the provider's
+                                    # CLI as --model (claude --model …, mission-control
+                                    # --model …). Omit for the provider's own default.
+                                    # A bare alias (opus, sonnet) or full model id.
 
 # Permanent direct-recording upload links. Each key is served at /upload/<key>
 # and creates a fresh flat assets/<slug_prefix>-<timestamp>/ job.

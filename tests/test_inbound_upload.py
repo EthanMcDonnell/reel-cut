@@ -14,7 +14,7 @@ import production_queue  # noqa: E402
 import upload_server  # noqa: E402
 
 
-def _config(repo: Path, series: str = "", ai_provider: str = ""):
+def _config(repo: Path, series: str = "", ai_provider: str = "", ai_model: str = ""):
     body = "inbound:\n  series:\n"
     if series:
         body += (
@@ -25,6 +25,8 @@ def _config(repo: Path, series: str = "", ai_provider: str = ""):
         )
     if ai_provider:
         body += f"production:\n  ai_provider: {ai_provider}\n"
+        if ai_model:
+            body += f"  ai_model: {ai_model}\n"
     (repo / "config.yaml").write_text(body)
 
 
@@ -202,6 +204,35 @@ def test_mission_control_provider_spawns_without_queueing(tmp_path, monkeypatch)
     [(args, kwargs)] = spawned
     assert args[0] == ["mission-control", "--no-wait", "--", "/produce-reel", body["asset_slug"], "--auto"]
     assert kwargs["cwd"] == tmp_path
+
+
+def test_mission_control_provider_forwards_configured_model(tmp_path, monkeypatch):
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    _config(tmp_path, "hot-takes", ai_provider="mission-control", ai_model="opus")
+    monkeypatch.setattr(upload_server, "REPO", tmp_path)
+    monkeypatch.setattr(upload_server, "ASSETS", assets)
+    spawned = []
+    monkeypatch.setattr(upload_server.subprocess, "Popen", lambda *a, **kw: spawned.append((a, kw)))
+    server = ThreadingHTTPServer(("127.0.0.1", 0), upload_server.Handler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        connection = http.client.HTTPConnection(*server.server_address)
+        connection.request("PUT", "/upload/hot-take?name=take.mov", body=b"video")
+        response = connection.getresponse()
+        body = json.loads(response.read())
+    finally:
+        server.shutdown()
+        thread.join()
+
+    assert response.status == 202
+    [(args, _kwargs)] = spawned
+    assert args[0] == [
+        "mission-control", "--no-wait", "--model", "opus",
+        "--", "/produce-reel", body["asset_slug"], "--auto",
+    ]
 
 
 def test_script_upload_lands_directly_in_the_slug_folder(tmp_path, monkeypatch):

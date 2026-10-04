@@ -261,6 +261,17 @@ class ProductionConfig(BaseModel):
     """Which agent CLI runs the unattended production job an upload triggers."""
 
     ai_provider: Literal["claude-cli", "mission-control"] = "claude-cli"
+    # Model the production job runs on, forwarded to whichever provider's CLI as
+    # its --model flag (claude --model …, mission-control --model …). Empty means
+    # the provider's own default. Provider-neutral: a bare alias or model id.
+    ai_model: str = ""
+
+    @field_validator("ai_model")
+    @classmethod
+    def bare_model_name(cls, value: str) -> str:
+        if value and not re.fullmatch(r"[A-Za-z0-9._-]+", value):
+            raise ValueError(f"ai_model must be a bare model name or alias: {value!r}")
+        return value
 
 
 class InboundSeriesConfig(BaseModel):
