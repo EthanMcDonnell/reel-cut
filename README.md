@@ -206,6 +206,29 @@ claude -p "/produce-reel <slug> --auto"
 A second take through the same link is refused (`409`), not isolated into a new folder — delete
 the existing clip from `assets/<slug>/` first if you need to retake.
 
+### Whole-video uploads per script
+
+A series whose takes are short enough to record whole can opt out of the one-take rule from its
+series file, under an optional `## Production` heading:
+
+```markdown
+## Production
+**Uploads:** individual
+```
+
+The upload server reads the series from the script's `**VIDEO TYPE**`. For an `individual`
+series, every upload through `/upload/<slug>` becomes its own full video (one hook plus body):
+
+- it lands in a fresh `assets/<slug>-<timestamp>/` and queues its own production job, with no
+  limit on how many uploads one script takes;
+- its intake receipt is `kind: "direct"`, `hook_policy: "single"`, so production treats it like a
+  direct recording — it never reads `script.md`, and the take's transcript is the authority for
+  title cards and captions;
+- the script stays in `assets/<slug>/` for filming only, and each of its hooks is just an option
+  to record a full take with.
+
+`hot-takes` opts in. Series without the line keep the one-take, split-per-hook behaviour above.
+
 ### Permanent direct-recording links
 
 The same `/upload/<target>` endpoint also serves configured direct-recording series. Each key in
