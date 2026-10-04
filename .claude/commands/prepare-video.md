@@ -43,7 +43,7 @@ If `assets/<video-slug>/manifest.json` is present (screenshots were produced by 
 This auto-rewrites each screenshot's `script_context` to the closest verbatim line in the new transcript and prints a JSON report with three buckets:
 
 - `context_fixed` — contexts that were re-aligned (applied automatically).
-- `orphaned` — screenshots whose supported line no longer exists in the script (left untouched). **Report each**: its claim has no on-screen evidence — either re-shoot against the new line or drop it from the manifest.
+- `orphaned` — screenshots whose supported line no longer exists in the transcript (no close match, or the match contains none of its trigger words). **Removed from the manifest automatically** (the image file stays on disk). **Report each**, and don't re-anchor one onto a neighbouring line — a cut line means its claim is gone.
 - `lost_anchors` — the re-aligned `script_context` no longer contains a `trigger_show_word` / `trigger_go_away_word`, so `/produce-video` will span the whole line instead of the claim. **Report each** with the trigger and the new context; the fix is a trigger inside the new wording, or clearing it to `""` to accept the wider window.
 - `unsupported_claims` — claim-bearing script sentences (numbers, %, $) that no screenshot covers. **Report each** as a candidate for a new screenshot.
 

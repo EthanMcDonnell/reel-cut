@@ -14,9 +14,10 @@ This re-aligns the manifest to the current transcript (captions.json):
 
   1. CONTEXT FIX (auto-applied)  — for each screenshot, find the closest run of
      words in the transcript and rewrite `script_context` to that verbatim span.
-  2. ORPHANED (flagged only)     — screenshots whose best match is too weak; the
-     line they supported was likely cut. Left untouched for a human to re-shoot
-     or drop.
+  2. ORPHANED (removed)         — screenshots whose line was cut: the best match is
+     too weak, or it lands on a neighbouring line that has none of the trigger
+     words. Dropped from the manifest (the image file stays on disk) so
+     produce-video can't pin evidence for a deleted claim onto another line.
   3. UNSUPPORTED (flagged only)  — claim-bearing script sentences (numbers, %,
      $, money words) that no screenshot covers; candidates for a new screenshot.
 
@@ -116,38 +117,43 @@ def reconcile(slug: str, dry_run: bool) -> dict:
 
     fixed, orphaned, lost_anchors, covered = [], [], [], set()
     for source in manifest:
+        kept = []
         for shot in source.get("screenshots", []):
             old = shot.get("script_context", "")
             ratio, lo, hi = _best_window(old, tokens)
-            if ratio >= MATCH_THRESHOLD:
-                new = " ".join(tokens[lo:hi])
-                covered.update(range(lo, hi))
-                if new != old:
-                    shot["script_context"] = new
-                    fixed.append({"file": shot.get("file"), "ratio": round(ratio, 2),
-                                  "old": old, "new": new})
-                # The window can land off one edge of the old line and strip a trigger
-                # with it. produce-video then spans the whole sentence instead of the
-                # claim, and nothing reports the difference — so name it here.
-                gone = [
-                    field for field in ("trigger_show_word", "trigger_go_away_word")
-                    if _anchor_missing(shot.get(field, ""), new)
-                ]
-                if gone:
-                    lost_anchors.append({"file": shot.get("file"), "anchors": gone,
-                                         "script_context": new,
-                                         **{f: shot.get(f, "") for f in gone}})
-            else:
+            new = " ".join(tokens[lo:hi])
+            triggers = [f for f in ("trigger_show_word", "trigger_go_away_word")
+                        if shot.get(f, "").strip()]
+            gone = [f for f in triggers if _anchor_missing(shot[f], new)]
+            # A line deleted from the script still has neighbours that share most of its
+            # characters, so the ratio alone can clear the threshold on the wrong line.
+            # The triggers are the claim itself: if none of them survive, the line is gone.
+            if ratio < MATCH_THRESHOLD or (triggers and gone == triggers):
                 orphaned.append({"file": shot.get("file"), "ratio": round(ratio, 2),
                                  "script_context": old, "article_snippet": shot.get("article_snippet"),
-                                 "closest": " ".join(tokens[lo:hi])})
+                                 "closest": new, "missing_triggers": gone})
+                continue
+            kept.append(shot)
+            covered.update(range(lo, hi))
+            if new != old:
+                shot["script_context"] = new
+                fixed.append({"file": shot.get("file"), "ratio": round(ratio, 2),
+                              "old": old, "new": new})
+            # The window can land off one edge of the old line and strip a trigger
+            # with it. produce-video then spans the whole sentence instead of the
+            # claim, and nothing reports the difference — so name it here.
+            if gone:
+                lost_anchors.append({"file": shot.get("file"), "anchors": gone,
+                                     "script_context": new,
+                                     **{f: shot.get(f, "") for f in gone}})
+        source["screenshots"] = kept
 
     unsupported = [
         text for (s, e, text) in _sentences(tokens)
         if _CLAIM.search(text) and not (covered & set(range(s, e)))
     ]
 
-    if not dry_run and fixed:
+    if not dry_run and (fixed or orphaned):
         manifest_path.write_text(json.dumps(manifest, indent=2))
 
     return {

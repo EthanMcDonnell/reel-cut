@@ -96,3 +96,31 @@ def test_screenshots_without_triggers_are_not_flagged(tmp_path, monkeypatch):
     report = reconcile_manifest.reconcile(slug, dry_run=True)
 
     assert report["lost_anchors"] == []
+
+
+def test_a_deleted_line_is_orphaned_and_removed_not_reanchored(tmp_path, monkeypatch):
+    # The line the screenshot supported was cut from the script. Its neighbours still
+    # clear the ratio threshold, but none of its trigger words survive in that window.
+    slug = _slug(tmp_path, monkeypatch, TRANSCRIPT, [
+        {
+            "file": "snippet-04.png",
+            "script_context": "because a model that is right 95% of the time can't be automated",
+            "trigger_show_word": "because",
+            "trigger_go_away_word": "automated",
+        },
+        {
+            "file": "snippet-02.png",
+            "script_context": "everyone agreed on the first 128 of those numbers, that's ASCII,",
+            "trigger_show_word": "128",
+            "trigger_go_away_word": "ASCII",
+        },
+    ])
+    monkeypatch.setattr(reconcile_manifest, "_best_window",
+                        lambda ctx, toks: (0.7, 8, 14) if "95%" in ctx else (1.0, 0, 11))
+
+    report = reconcile_manifest.reconcile(slug, dry_run=False)
+
+    assert [e["file"] for e in report["orphaned"]] == ["snippet-04.png"]
+    assert report["lost_anchors"] == []
+    manifest = json.loads((tmp_path / "assets" / "demo" / "manifest.json").read_text())
+    assert [s["file"] for s in manifest[0]["screenshots"]] == ["snippet-02.png"]
