@@ -1,9 +1,11 @@
 () => {
-  if (window.CSS && CSS.highlights) CSS.highlights.delete('ssSnippet');
-  const st = document.getElementById('ss-hl-style');
-  if (st) st.remove();
   window.__ssRegion = null;
   window.__ssHighlight = null;
+  document.querySelectorAll('span[data-snippet-band]').forEach(s => {
+    const parent = s.parentNode;
+    s.replaceWith(...s.childNodes);
+    parent.normalize();
+  });
   document.querySelectorAll('mark[data-snippet-highlight]').forEach(m => m.replaceWith(...m.childNodes));
   document.querySelectorAll('[data-snippet-highlight]').forEach(el => {
     el.removeAttribute('data-snippet-highlight');

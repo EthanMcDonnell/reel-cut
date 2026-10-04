@@ -18,7 +18,6 @@
     .toLowerCase()
     .trim();
   const skipTags = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'NAV', 'ASIDE', 'FOOTER']);
-  const HL_NAME = 'ssSnippet';
 
   function inSkipped(el, root) {
     let p = el;
@@ -107,23 +106,51 @@
     return rangeFromOffsets(map, words[lo].start, words[hi].end);
   }
 
-  function ensureStyle() {
-    if (document.getElementById('ss-hl-style')) return;
-    const st = document.createElement('style');
-    st.id = 'ss-hl-style';
-    st.textContent = '::highlight(' + HL_NAME + '){ background-color:#FFE066; color:#000; }';
-    document.head.appendChild(st);
-  }
-
-  // Highlight a Range with the CSS Custom Highlight API — no DOM mutation, so adjacent
-  // inline nodes can't be corrupted. Returns false if the browser lacks the API.
+  // Highlight a Range by wrapping each text node's slice of it in its own <span>. Spans never
+  // cross a tag boundary — each sits inside a single text node's parent — so the surrounding
+  // markup is untouched, and _ss_unhighlight.js unwraps them and re-merges the text.
+  //
+  // The yellow is a background band one line-height tall (less a hairline), not a plain
+  // background-color. An inline box's background covers the font's full ascent+descent, which on
+  // tightly-set text is taller than the line pitch, so each line's box painted over the descenders
+  // of the line above ("say" read "sav"). The CSS Custom Highlight API used before has no way to
+  // size its box. Text keeps the page's own colour: forcing #000 made highlighted words look like
+  // a heavier font than the rest. Returns the Range re-anchored on the spans, or null if nothing
+  // visible was wrapped.
   function highlightRange(range) {
-    if (!(window.CSS && CSS.highlights && window.Highlight)) return false;
-    ensureStyle();
-    let hl = CSS.highlights.get(HL_NAME);
-    if (!hl) { hl = new Highlight(); CSS.highlights.set(HL_NAME, hl); }
-    hl.add(range);
-    return true;
+    const common = range.commonAncestorContainer;
+    const w = document.createTreeWalker(common.nodeType === 1 ? common : common.parentNode, NodeFilter.SHOW_TEXT);
+    const nodes = [];
+    let n;
+    while ((n = w.nextNode())) {
+      if (!range.intersectsNode(n) || inSkipped(n.parentElement, root)) continue;
+      // Collapsed whitespace between blocks (e.g. inside a <tr>) renders nothing; a span there
+      // would be invalid structure. A space between two inline tags does render, so keep it.
+      const probe = document.createRange();
+      probe.selectNodeContents(n);
+      if (!probe.getClientRects().length) continue;
+      nodes.push(n);
+    }
+    const spans = [];
+    for (const node of nodes) {
+      const start = node === range.startContainer ? range.startOffset : 0;
+      const end = node === range.endContainer ? range.endOffset : node.length;
+      if (end <= start) continue;
+      const mid = start > 0 ? node.splitText(start) : node;
+      if (end - start < mid.length) mid.splitText(end - start);
+      const span = document.createElement('span');
+      span.dataset.snippetBand = 'true';
+      span.style.setProperty('background',
+        'linear-gradient(#FFE066, #FFE066) center / 100% calc(1lh - 2px) no-repeat', 'important');
+      mid.parentNode.insertBefore(span, mid);
+      span.appendChild(mid);
+      spans.push(span);
+    }
+    if (!spans.length) return null;
+    const r = document.createRange();
+    r.setStartBefore(spans[0]);
+    r.setEndAfter(spans[spans.length - 1]);
+    return r;
   }
 
   // Fuzzy fallback: colour the whole block so the screenshot still shows a highlight when
@@ -169,10 +196,8 @@
     range = fuzzyRange(target, cleanSnippet);
     if (range) precision = 'fuzzy_range';
   }
-  let region;
-  if (range && highlightRange(range)) {
-    region = range;
-  } else {
+  let region = range && highlightRange(range);
+  if (!region) {
     highlightWhole(target);
     region = target;
     precision = 'whole_block';
