@@ -196,6 +196,11 @@ Each hook must independently lead into the **same** body, so any split (hook N +
 
 This runs *with* the series voice, not against it. Punchy one-line delivery is still correct everywhere else in the body — spend the length in one place, on the mechanism the diagram illustrates, and keep the rest tight. If the spine's crux genuinely doesn't warrant a sustained passage, don't manufacture one to justify a figure: drop the figure instead. The script serves the video, not the assets.
 
+**The length comes from steps, not wordier sentences.** Reach 25+ words by walking through more of the system (where data lands, where it goes next, who reads it from where), with every sentence as tight as the rest of the body. Don't lift the article's own labels ("Tier 1", "fast tier", "configured for") into the line; say what happens in spoken words. The passage is not exempt from the trim pass either: tighten each of its sentences like any other, and only stop cutting once the span would drop under 25 words.
+
+- Bad: "Every event lands on a broker's local disk first, and that fast tier holds only the last five minutes." (restates the article's table)
+- Good: "Every event lands on a broker's local disk first, and stays there for five minutes."
+
 For every claim, stat, or quote that will appear in the script:
 
 1. **Locate it verbatim** in `FULL_CONTENT`. Drop any quote that doesn't appear there.
