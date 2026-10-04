@@ -319,7 +319,8 @@ def render_hooks(
             "(/produce-video Step 4b)."
         )
         raise typer.Exit(1)
-    hook_windows = _hook_windows(hooks)
+    from .hook_split import snap_windows
+    hook_windows = snap_windows(doc.edl, doc.words, _hook_windows(hooks))
 
     # Output videos are grouped in a per-slug folder and named by their entry's filename
     # (falling back to the caption, then the entry id).

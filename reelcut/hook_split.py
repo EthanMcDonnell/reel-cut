@@ -29,6 +29,38 @@ def _section_of(o: float, hook_windows: list[tuple[float, float]], body_start: f
     return len(hook_windows) - 1  # o < body_start guarantees a hit above; safety net
 
 
+def snap_windows(edl, words, hook_windows: list[tuple[float, float]], max_lead: float = 1.0):
+    """Move each hook-window edge back to the EDL seam just before it.
+
+    /produce-video sets a window edge at the next section's first *word*, but its keep
+    entry starts earlier — the transcriber pads every keep with pre-roll before the first
+    word. Partitioning at the word puts that pre-roll in the previous section: each hook
+    video ends with a flash of the next hook's take, and the body loses its lead-in in
+    every video but the last hook's. Snapping to the seam (an output time where a keep
+    entry starts) gives the pre-roll to the section it belongs to.
+
+    An edge only moves if a seam lies within `max_lead` before it with no word starting
+    in between, so hooks spoken back to back with no cut keep their word-level split.
+    """
+    from .cli import _build_edl_remap
+
+    remap, _ = _build_edl_remap(edl)
+    seams = sorted(remap(e.source_clip, e.start) for e in edl if e.keep)
+    word_starts = sorted(remap(w.source_clip, w.start) for w in words)
+    EPS = 1e-3
+
+    def snap(t: float) -> float:
+        candidates = [s for s in seams if t - max_lead <= s <= t + EPS]
+        if not candidates:
+            return t
+        s = candidates[-1]
+        if any(s + EPS < w < t - EPS for w in word_starts):
+            return t
+        return min(s, t)
+
+    return [(snap(s), snap(e)) for s, e in hook_windows]
+
+
 def build_hook_edl(edl, hook_windows: list[tuple[float, float]], target_idx: int):
     """Build the EDL for the video that keeps only hook `target_idx` + body.
 

@@ -2,7 +2,7 @@
 import pytest
 
 from reelcut.captions_doc import CaptionWord, EdlEntry
-from reelcut.hook_split import _section_of, build_hook_edl, drop_covered
+from reelcut.hook_split import _section_of, build_hook_edl, drop_covered, snap_windows
 from reelcut.image_spec import ImageSpec
 
 
@@ -184,3 +184,29 @@ class TestBoundaryOnKeepEntryEdge:
             assert not [
                 e for e in new_edl if e.keep and e.start > 41.3 and e.end <= 41.31
             ], f"hook {target}: entry split at its own end"
+
+
+class TestSnapWindows:
+    def _word(self, start):
+        return CaptionWord(word="w", start=start, end=start + 0.2, source_clip="c.mp4")
+
+    def test_edges_move_back_to_the_preroll_seam(self):
+        # Each keep pads 0.15s of pre-roll before its first word; cuts sit between
+        # sections. Output: hook0 [0,2), hook1 [2,4), body [4,10).
+        edl = [_keep(0, 2), _cut(2, 5), _keep(5, 7), _cut(7, 9), _keep(9, 15)]
+        words = [self._word(0.15), self._word(5.15), self._word(9.15)]
+        windows = [(0.15, 2.15), (2.15, 4.15)]  # set at each first word
+
+        snapped = snap_windows(edl, words, windows)
+        assert snapped == [(0.0, 2.0), (2.0, 4.0)]
+
+        new_edl, hook_dur, _ = build_hook_edl(edl, snapped, target_idx=0)
+        assert [(e.start, e.end) for e in new_edl if e.keep] == [(0, 2), (9, 15)]
+        assert hook_dur == 2.0
+
+    def test_back_to_back_hooks_without_a_cut_keep_their_word_split(self):
+        # One keep spans both hooks, so the only seam before hook1 is hook0's start —
+        # with hook0's words in between, the edge must not move.
+        edl = [_keep(0, 6), _keep(6, 20)]
+        words = [self._word(0.1), self._word(1.0), self._word(3.0)]
+        assert snap_windows(edl, words, [(0.1, 3.0), (3.0, 6.0)]) == [(0.0, 3.0), (3.0, 6.0)]
