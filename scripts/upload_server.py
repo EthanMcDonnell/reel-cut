@@ -59,6 +59,7 @@ SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 JOB_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 HEADING_RE = re.compile(r"^\*\*(.+?):?\*\*$")
 HOOK_PREFIX_RE = re.compile(r"^HOOK\s+\d+:\s*")
+UPLOADS_RE = re.compile(r"^\*\*Uploads:\*\*\s*(\w+)", re.MULTILINE)
 UNSAFE_RE = re.compile(r"[^A-Za-z0-9._-]+")
 
 NAME_FIELD = """<label class=namefield>Name (optional)
@@ -262,6 +263,21 @@ def script_page(script: Path) -> str:
         mtime=script.stat().st_mtime,
     )
 
+def script_series(script: Path) -> str:
+    """The series slug under the script's **VIDEO TYPE** heading, or "" if it has none."""
+    found = dict(sections(script.read_text())).get("VIDEO TYPE")
+    return found[0] if found else ""
+
+
+def individual_uploads(series: str) -> bool:
+    """Whether series/<series>.md declares `**Uploads:** individual`."""
+    path = REPO / "series" / f"{series}.md"
+    if not SLUG_RE.fullmatch(series) or not path.is_file():
+        return False
+    found = UPLOADS_RE.search(path.read_text())
+    return bool(found) and found.group(1) == "individual"
+
+
 def upload_target(path: str) -> str | None:
     """The one safe target segment from an upload URL, if present."""
     parts = [p for p in unquote(path).strip("/").split("/") if p]
@@ -306,6 +322,11 @@ def allocate_upload(target: str, custom_slug: str = "") -> tuple[Path, dict[str,
     for the same slug is refused via FootageAlreadyUploaded rather than silently isolated into
     a `-take-<timestamp>` folder, so a slug's footage is never ambiguous. Delete the existing
     clip to retake.
+
+    Unless the script's series declares `**Uploads:** individual`: then each upload is a whole
+    video (one hook plus body), so it gets its own fresh assets/<target>-<timestamp>/ with a
+    direct single-hook receipt, as many times as you like. The script stays behind in
+    assets/<target>/ and production never reads it — the take's own transcript is the authority.
     """
     config = load_config(REPO / "config.yaml")
     if series := config.inbound.series.get(target):
@@ -323,6 +344,9 @@ def allocate_upload(target: str, custom_slug: str = "") -> tuple[Path, dict[str,
     source = ASSETS / target
     if not (source / "script.md").is_file():
         return None
+    series = script_series(source / "script.md")
+    if individual_uploads(series):
+        return new_asset_dir(target), {"kind": "direct", "series": series, "hook_policy": "single"}
     if any(item.suffix.lower() in VIDEO_EXTENSIONS for item in source.iterdir() if item.is_file()):
         raise FootageAlreadyUploaded(target)
     return source, {}

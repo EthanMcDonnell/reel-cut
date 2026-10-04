@@ -355,3 +355,61 @@ def test_worker_blocks_a_zero_exit_without_rendered_artifacts(tmp_path, monkeypa
     assert command[3:] == ["--settings", str(production_queue.WORKER_SETTINGS), "--permission-mode", "default"]
     assert found is not None
     assert found[1]["status"] == "blocked"
+
+
+def test_individual_upload_series_files_every_take_as_its_own_direct_video(tmp_path, monkeypatch):
+    assets = tmp_path / "assets"
+    source = assets / "git-desktop-take"
+    source.mkdir(parents=True)
+    (source / "script.md").write_text("**VIDEO TYPE**\nhot-takes\n**HOOK**\nHOOK 1: A hook\nHOOK 2: Another")
+    (tmp_path / "series").mkdir()
+    (tmp_path / "series" / "hot-takes.md").write_text("## Production\n**Uploads:** individual — whole takes.\n")
+    _config(tmp_path)
+    monkeypatch.setattr(upload_server, "REPO", tmp_path)
+    monkeypatch.setattr(upload_server, "ASSETS", assets)
+    queued = []
+    monkeypatch.setattr(upload_server, "enqueue", lambda slug, receipt: queued.append(slug) or {"id": "a" * 32})
+    server = ThreadingHTTPServer(("127.0.0.1", 0), upload_server.Handler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        statuses = []
+        for name in ("one.mov", "two.mov"):
+            connection = http.client.HTTPConnection(*server.server_address)
+            connection.request("PUT", f"/upload/git-desktop-take?name={name}", body=name.encode())
+            response = connection.getresponse()
+            response.read()
+            statuses.append(response.status)
+    finally:
+        server.shutdown()
+        thread.join()
+
+    assert statuses == [202, 202]
+    assert len(set(queued)) == 2
+    for slug, name in zip(queued, ("one.mov", "two.mov")):
+        assert re.fullmatch(r"git-desktop-take-\d{8}T\d{6}Z(?:-\d+)?", slug)
+        receipt = json.loads((assets / slug / ".reelcut-intake.json").read_text())
+        assert receipt["kind"] == "direct"
+        assert receipt["series"] == "hot-takes"
+        assert receipt["hook_policy"] == "single"
+        assert (assets / slug / name).read_bytes() == name.encode()
+        assert not (assets / slug / "script.md").exists()
+    assert sorted(p.name for p in source.iterdir()) == ["script.md"]
+
+
+def test_series_without_individual_uploads_keeps_one_take_per_script(tmp_path, monkeypatch):
+    assets = tmp_path / "assets"
+    source = assets / "edge-cache"
+    source.mkdir(parents=True)
+    (source / "script.md").write_text("**VIDEO TYPE**\ntbbt\n**HOOK**\nHOOK 1: A hook")
+    (tmp_path / "series").mkdir()
+    (tmp_path / "series" / "tbbt.md").write_text("## Identity\nNo production section.\n")
+    _config(tmp_path)
+    monkeypatch.setattr(upload_server, "REPO", tmp_path)
+    monkeypatch.setattr(upload_server, "ASSETS", assets)
+
+    directory, metadata = upload_server.allocate_upload("edge-cache")
+
+    assert directory == source
+    assert metadata == {}
