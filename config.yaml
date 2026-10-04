@@ -122,10 +122,10 @@ output:
                                     # composited AFTER the flip, so on-screen text is never mirrored
                                     # — but anything physically in shot is (background text, logos
                                     # on clothing, which hand you gesture with).
-    mode: "all"                     # off | alternate | all — which hooks get a flipped render.
+    mode: "alternate"               # off | alternate | all — which hooks get a flipped render.
                                     #   alternate = every second hook (3 hooks -> the middle one)
                                     # QUOTE "off" — bare off is a YAML boolean.
-    apply: duplicate                # in_place | duplicate — a flipped render either REPLACES that
+    apply: in_place                 # in_place | duplicate — a flipped render either REPLACES that
                                     #   hook's video (3 hooks -> 3 files) or is written ALONGSIDE it
                                     #   (3 hooks + mode:all -> 6 files).
     suffix: "-flipped"              # filename suffix for duplicate flipped outputs that videos.json
@@ -144,7 +144,7 @@ audio:
                                     # Tracks are auto-discovered from assets/audio/ (untracked by
                                     # git) — the name is the file's stem, e.g. "upbeat" for
                                     # assets/audio/upbeat.mp3. Just drop files in; nothing to list.
-  ducking_lufs: 13                  # music is auto-leveled to sit this many LUFS below the measured
+  ducking_lufs: 14                  # music is auto-leveled to sit this many LUFS below the measured
                                     # voice loudness (so the source file's level doesn't matter).
                                     # Higher = quieter music. Per-track gain_db trims on top.
   tracks:                           # optional per-track tuning, keyed by track name. Add an entry
