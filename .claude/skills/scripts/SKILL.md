@@ -48,6 +48,9 @@ Take the viewer on a journey of discovery, not a lecture — they should feel li
   - Good: "Encryption needs truly random numbers. Computers are only pseudo-random, following an algorithm from an initial seed. If the seed isn't random, nothing built from it is either."
   - Bad: "Computers are deterministic by nature." (too abstract, skips the journey)
 - **Narrative causality:** read the finished script as a causal chain. Does A actually cause B? Can B happen before A? Every step must follow from the previous — critical in incident post-mortems where sequence is the whole point.
+  - **Say the cause out loud.** Every problem beat names *why* it happened, with an explicit "because" or "so", not just that it happened. A verb that implies a cause without stating it ("the deletes fought the uploads", "X got too expensive") leaves the viewer to guess the link, and they usually can't.
+    - Bad: "That wave of deletes fought normal uploads for S3. Uploads slowed." (fought over what?)
+    - Good: "S3 has plenty of space, but it limits how fast you can send it requests. The deletes ate up that limit, so the normal uploads slowed down."
 - **Connect components explicitly:** when two concepts combine to create an effect, show the connection at the moment it matters — don't introduce them separately and leave the viewer to bridge the gap.
 - **Rejected alternatives earn the solution:** when the source rejects an approach before landing on the real one, give the rejection its own beat with the consequence spelled out. Compressed into a subordinate clause it makes the solution look arbitrary — the viewer never feels why the obvious fix failed, so "here's the clever part" is unearned.
   - Bad: "Redis was the obvious fix, but it isn't durable and you're still babysitting a cluster." (two undefined objections in one clause)
