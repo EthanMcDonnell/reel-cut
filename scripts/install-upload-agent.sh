@@ -16,6 +16,10 @@ SERVER="$REPO/scripts/upload_server.py"
 WORKER="$REPO/scripts/production_queue.py"
 WORKER_SETTINGS="$REPO/scripts/worker-settings.json"
 CLAUDE_BIN="$(command -v claude || true)"
+# mission-control is a `#!/usr/bin/env node` script, so the receiver's PATH needs node's
+# directory — it isn't always in a standard prefix (e.g. /Users/Shared/node/bin).
+NODE_BIN="$(command -v node || true)"
+AGENT_PATH="${NODE_BIN:+$(dirname "$NODE_BIN"):}/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 PORT=8770
 UPLOAD_LABEL="com.reelcut.upload"
 PRODUCE_LABEL="com.reelcut.produce"
@@ -53,7 +57,7 @@ cat > "$UPLOAD_PLIST" <<PLIST_EOF
   <key>WorkingDirectory</key><string>$REPO</string>
   <key>EnvironmentVariables</key>
   <dict>
-    <key>PATH</key><string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>PATH</key><string>$AGENT_PATH</string>
     <key>HOME</key><string>$HOME</string>
   </dict>
   <key>RunAtLoad</key><true/>
