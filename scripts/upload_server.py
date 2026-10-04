@@ -340,7 +340,7 @@ def spawn_mission_control(slug: str) -> None:
         ["mission-control", "--no-wait", "--", "/produce-reel", slug, "--auto"],
         cwd=REPO,
         stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        # Inherited, so a spawn that dies after the 202 still lands in the agent's error log.
     )
 
 
