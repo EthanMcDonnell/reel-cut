@@ -279,6 +279,10 @@ def render_hooks(
     config_path: str = typer.Argument("config.yaml", help="Path to config.yaml"),
     captions_path: str = typer.Argument(..., help="Path to .captions.json from transcribe step"),
     slug: str | None = typer.Option(None, "--slug", help="Video slug (overrides script-derived slug)."),
+    check_overlays: bool = typer.Option(
+        False, "--check-overlays",
+        help="Report each hook video's overlay coverage and gaps, then stop without rendering.",
+    ),
     verbose: bool = typer.Option(False, "--verbose", "-v"),
 ) -> None:
     """Phase 2 (per-hook): render one video per hook — each is hook_i + the shared body.
@@ -380,7 +384,10 @@ def render_hooks(
                     headings=[card], assets_dir=assets_dir,
                     images_path=tmp_images, audio_path=audio_path,
                     reset_logos_per_section=False,
+                    hook_end_s=hook_dur, check_only=check_overlays,
                 ))
+                if check_overlays:
+                    break  # variants of one hook share their overlays
         finally:
             tmp_images.unlink(missing_ok=True)
 
@@ -807,7 +814,8 @@ def _phase1(cfg, clips: list[str], output_dir: Path, verbose: bool):
 def _phase2(cfg, doc, outputs: list[tuple[Path, bool]], verbose: bool,
             headings: list | None = None, assets_dir: Path | None = None,
             images_path: Path | None = None, audio_path: Path | None = None,
-            reset_logos_per_section: bool = True) -> list[str]:
+            reset_logos_per_section: bool = True, hook_end_s: float | None = None,
+            check_only: bool = False) -> list[str]:
     """Render one or more videos from a CaptionsDoc. Returns warnings.
 
     `outputs` is one `(path, flip)` pair per file — a hook and its flipped duplicate are one
@@ -823,6 +831,11 @@ def _phase2(cfg, doc, outputs: list[tuple[Path, bool]], verbose: bool,
     re-mentioned in a later section re-fires its logo. render-hooks passes False: a
     per-hook video is one hook + the shared body, and a company named in both should
     pop its logo only once, on first mention.
+
+    `hook_end_s` (render-hooks) is where the hook ends on the output timeline: overlays
+    that start in the hook are cut off there so they never reach the shared body, and a
+    hook with no overlay at all is a warning. `check_only` stops after the overlay
+    coverage report, before any frame is rendered.
     """
     from .caption import render_caption_frames
     from .image_spec import load_images
@@ -852,6 +865,69 @@ def _phase2(cfg, doc, outputs: list[tuple[Path, bool]], verbose: bool,
     ]
     caption_words = _remap_kept_words(_mark_sentence_ends(source_words, cfg.cuts.sentence_pause_s), edl)
 
+    # Heading specs (output-timeline) — their card edges double as the logo-reset
+    # boundaries so a brand re-mentioned in a later section re-fires its logo.
+    total_output_s = sum(e.end - e.start for e in edl if e.keep)
+    heading_specs = (headings or []) if cfg.headings.enabled else []
+    logo_reset_boundaries = (
+        _heading_reset_boundaries(heading_specs, total_output_s)
+        if reset_logos_per_section else []
+    )
+
+    # Image cues: logos (auto-detected from words) + people/screenshots (from images.json)
+    all_image_cues: list[ImageCue] = []
+    if cfg.images.enabled:
+        logo_cues = detect_image_cues(caption_words, cfg.images, logo_reset_boundaries)
+        all_image_cues.extend(logo_cues)
+        if logo_cues:
+            console.print(f"  Logos detected: {[c.keyword for c in logo_cues]}")
+
+        images = load_images(images_path) if images_path else []
+        remap, clip_order = _build_edl_remap(edl)
+        fallback_clip = clip_order[0] if clip_order else ""
+        for spec in images:
+            clip = spec.source_clip or fallback_clip
+            remapped_start = remap(clip, spec.start)
+            remapped_end = remap(clip, spec.end)
+            remapped_spec = type(spec)(
+                type=spec.type,
+                start=remapped_start,
+                end=remapped_end,
+                source_clip=clip,
+                name=spec.name,
+                path=spec.path,
+                kind=spec.kind,
+            )
+            # An overlay is anchored to source times, so a later EDL change can move a
+            # cut over it. Once remapped it just gets shorter (or vanishes at zero
+            # length) with nothing said, so report it — the anchor needs re-deriving
+            # against the current transcript, not silently accepting.
+            intended, actual = spec.end - spec.start, remapped_end - remapped_start
+            if intended > 0 and actual < intended * 0.9:
+                label = spec.name or Path(spec.path).name if spec.path else spec.type
+                console.print(
+                    f"  [yellow]Overlay {label!r} is cut: {intended:.2f}s anchored, "
+                    f"{actual:.2f}s on screen[/yellow]"
+                    + (" — dropped" if actual <= 0.01 else "")
+                )
+                if actual <= 0.01:
+                    continue
+            cue = _resolve_image_spec(remapped_spec, cfg.images.display_duration_s)
+            if cue:
+                all_image_cues.append(cue)
+
+        from .image_overlay import clamp_to_hook
+        if hook_end_s is not None:
+            all_image_cues = clamp_to_hook(all_image_cues, hook_end_s)
+            if not any(c.start < hook_end_s for c in all_image_cues):
+                warnings.append(
+                    f"{outputs[0][0].name}: nothing on screen during the hook "
+                    f"(0–{hook_end_s:.1f}s) — give it a hook-only overlay"
+                )
+        _print_coverage(all_image_cues, total_output_s, caption_words)
+    if check_only:
+        return warnings
+
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
 
@@ -868,57 +944,6 @@ def _phase2(cfg, doc, outputs: list[tuple[Path, bool]], verbose: bool,
                 sentence_pause_s=cfg.cuts.sentence_pause_s,
             )
             _tlog(time.perf_counter() - t, f"{len(caption_frames)} frames")
-
-        # Heading specs (output-timeline) — their card edges double as the logo-reset
-        # boundaries so a brand re-mentioned in a later section re-fires its logo.
-        total_output_s = sum(e.end - e.start for e in edl if e.keep)
-        heading_specs = (headings or []) if cfg.headings.enabled else []
-        logo_reset_boundaries = (
-            _heading_reset_boundaries(heading_specs, total_output_s)
-            if reset_logos_per_section else []
-        )
-
-        # Image cues: logos (auto-detected from words) + people/screenshots (from images.json)
-        all_image_cues: list[ImageCue] = []
-        if cfg.images.enabled:
-            logo_cues = detect_image_cues(caption_words, cfg.images, logo_reset_boundaries)
-            all_image_cues.extend(logo_cues)
-            if logo_cues:
-                console.print(f"  Logos detected: {[c.keyword for c in logo_cues]}")
-
-            images = load_images(images_path) if images_path else []
-            remap, clip_order = _build_edl_remap(edl)
-            fallback_clip = clip_order[0] if clip_order else ""
-            for spec in images:
-                clip = spec.source_clip or fallback_clip
-                remapped_start = remap(clip, spec.start)
-                remapped_end = remap(clip, spec.end)
-                remapped_spec = type(spec)(
-                    type=spec.type,
-                    start=remapped_start,
-                    end=remapped_end,
-                    source_clip=clip,
-                    name=spec.name,
-                    path=spec.path,
-                    kind=spec.kind,
-                )
-                # An overlay is anchored to source times, so a later EDL change can move a
-                # cut over it. Once remapped it just gets shorter (or vanishes at zero
-                # length) with nothing said, so report it — the anchor needs re-deriving
-                # against the current transcript, not silently accepting.
-                intended, actual = spec.end - spec.start, remapped_end - remapped_start
-                if intended > 0 and actual < intended * 0.9:
-                    label = spec.name or Path(spec.path).name if spec.path else spec.type
-                    console.print(
-                        f"  [yellow]Overlay {label!r} is cut: {intended:.2f}s anchored, "
-                        f"{actual:.2f}s on screen[/yellow]"
-                        + (" — dropped" if actual <= 0.01 else "")
-                    )
-                    if actual <= 0.01:
-                        continue
-                cue = _resolve_image_spec(remapped_spec, cfg.images.display_duration_s)
-                if cue:
-                    all_image_cues.append(cue)
 
         if cfg.images.enabled and all_image_cues:
             console.print(f"[bold]Step 6b/6[/bold] Rendering image overlays ({len(all_image_cues)} total)…")
@@ -969,6 +994,22 @@ def _phase2(cfg, doc, outputs: list[tuple[Path, bool]], verbose: bool,
             console.print(f"  → {p}")
 
     return warnings
+
+
+def _print_coverage(cues: list, total_s: float, words: list) -> None:
+    """Print how much of the video has an overlay on screen, and every gap with the
+    words spoken in it — the list /produce-video works through to fill the centre."""
+    from .image_overlay import COVERAGE_GAP_S, coverage_gaps
+
+    gaps = coverage_gaps(cues, total_s)
+    bare = sum(e - s for s, e in coverage_gaps(cues, total_s, min_gap_s=0.0))
+    pct = 100 * (1 - bare / total_s) if total_s else 0.0
+    console.print(
+        f"  Overlay coverage: {pct:.0f}% · {len(gaps)} gap(s) ≥ {COVERAGE_GAP_S:.0f}s"
+    )
+    for s, e in gaps:
+        said = " ".join(w.word for w in words if s <= w.start < e)
+        console.print(f"    gap {s:5.1f}–{e:5.1f}s ({e - s:.1f}s): {said[:90]}")
 
 
 def _heading_reset_boundaries(heading_specs: list, total_output_s: float) -> list[float]:

@@ -78,6 +78,41 @@ def _resolve_logo_swaps(
     return ends, suppress_in, suppress_out
 
 
+# A stretch with no overlay at least this long is reported as a coverage gap.
+COVERAGE_GAP_S = 1.0
+
+
+def clamp_to_hook(cues: list[ImageCue], hook_end: float) -> list[ImageCue]:
+    """End every cue that starts inside the hook by `hook_end`.
+
+    In a per-hook video an overlay that starts in the hook belongs to that hook
+    alone; left running it would spill into the shared body in this variant only.
+    A cue left shorter than a frame or two is dropped.
+    """
+    out = []
+    for c in cues:
+        if c.start < hook_end and c.end > hook_end:
+            c = replace(c, end=hook_end)
+        if c.end - c.start >= 0.05:
+            out.append(c)
+    return out
+
+
+def coverage_gaps(
+    cues: list[ImageCue], total_s: float, min_gap_s: float = COVERAGE_GAP_S,
+) -> list[tuple[float, float]]:
+    """Output-timeline stretches of at least `min_gap_s` with no overlay on screen."""
+    gaps = []
+    t = 0.0
+    for c in sorted(cues, key=lambda c: c.start):
+        if c.start > t and c.start - t >= min_gap_s:
+            gaps.append((t, c.start))
+        t = max(t, c.end)
+    if total_s > t and total_s - t >= min_gap_s:
+        gaps.append((t, total_s))
+    return gaps
+
+
 def render_image_frames(
     cues: list[ImageCue],
     config: ImagesConfig,

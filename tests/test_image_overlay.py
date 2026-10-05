@@ -147,3 +147,35 @@ class TestRenderConcurrent:
         xs = [x for x in range(img.width) for y in range(img.height)
               if img.getpixel((x, y))[3] > 0]
         assert abs((min(xs) + max(xs)) / 2 - img.width / 2) < 5
+
+
+class TestClampToHook:
+    def test_hook_overlay_ends_with_hook(self):
+        from reelcut.image_overlay import clamp_to_hook
+        out = clamp_to_hook([_cue("a", 1.0, 5.0, "screenshot")], hook_end=3.0)
+        assert [(c.start, c.end) for c in out] == [(1.0, 3.0)]
+
+    def test_body_overlay_untouched(self):
+        from reelcut.image_overlay import clamp_to_hook
+        out = clamp_to_hook([_cue("a", 3.0, 6.0, "screenshot")], hook_end=3.0)
+        assert [(c.start, c.end) for c in out] == [(3.0, 6.0)]
+
+    def test_sliver_left_by_clamp_is_dropped(self):
+        from reelcut.image_overlay import clamp_to_hook
+        assert clamp_to_hook([_cue("a", 2.98, 4.0, "logo")], hook_end=3.0) == []
+
+
+class TestCoverageGaps:
+    def test_reports_gaps_at_or_over_threshold(self):
+        from reelcut.image_overlay import coverage_gaps
+        cues = [_cue("a", 0.5, 2.0, "logo"), _cue("b", 2.5, 4.0, "screenshot")]
+        assert coverage_gaps(cues, total_s=6.0, min_gap_s=1.0) == [(4.0, 6.0)]
+
+    def test_overlapping_cues_merge(self):
+        from reelcut.image_overlay import coverage_gaps
+        cues = [_cue("a", 0.0, 5.0, "figure"), _cue("b", 1.0, 2.0, "logo")]
+        assert coverage_gaps(cues, total_s=5.0, min_gap_s=0.0) == []
+
+    def test_no_cues_is_one_gap(self):
+        from reelcut.image_overlay import coverage_gaps
+        assert coverage_gaps([], total_s=3.0) == [(0.0, 3.0)]

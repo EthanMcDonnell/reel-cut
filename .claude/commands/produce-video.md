@@ -30,7 +30,7 @@ Use this to understand what is spoken when in the final video. **Do not use thes
 
 Check whether `assets/<video-slug>/manifest.json` exists (it is only present when screenshots were produced by `/produce-script`). Also check whether `assets/<video-slug>/figures.json` exists (present when charts/diagrams were selected by `/produce-script` Stage 4b) — if so, handle it in **Step 3d**.
 
-**If neither `manifest.json` nor `figures.json` exists → skip Steps 3 and 4. Go straight to Step 5 (render).**
+**If neither `manifest.json` nor `figures.json` exists** there are no screenshots or figures to place, so skip the screenshot pass in Step 3 and all of Step 3d. Every video still needs its overlays, though, so still do the hook overlays and coverage pass (Step 3), Step 3b and Step 4.
 
 If `manifest.json` exists, read both:
 
@@ -52,7 +52,19 @@ If `assets/<video-slug>/.reelcut-intake.json` exists with `kind: "direct"` and `
 
 Image timings are stored in **source-clip time** (same as `words` and `edl`). The renderer remaps them to output-timeline at render time.
 
-**Hook vs body coverage (matters because of `render-hooks`).** Step 5 renders one video per hook — each is *that hook + the shared body*, with the other hooks cut out. So an overlay whose source-clip time falls inside a **hook** appears **only in that hook's video**; an overlay in the **body** appears in **all** of them. Before placing images, identify where the hooks end and the body begins (the shift from punchy hook statements into explaining/narrating — the same boundary as Step 3c, but note its source-clip time here). Screenshots and figures usually land on body lines already. For **concept** and **person** overlays you're free to position, prefer anchoring them to **body** words so every rendered video gets them — only pin one to a specific hook when the gag depends on that hook's exact wording.
+**Hook vs body coverage (matters because of `render-hooks`).** Step 5 renders one video per hook — each is *that hook + the shared body*, with the other hooks cut out. So an overlay whose source-clip time falls inside a **hook** appears **only in that hook's video**; an overlay in the **body** appears in **all** of them. Before placing images, identify where the hooks end and the body begins (the shift from punchy hook statements into explaining/narrating — the same boundary as Step 3c, but note its source-clip time here). Screenshots and figures usually land on body lines already.
+
+**Every hook gets its own overlay.** The hook is where the viewer decides to skip, and a bare talking head there is the weakest opening the video can have. It also matters for the variants: since they share a body, their hooks are the only place they can look different. For each hook:
+
+- **An auto-detected logo counts.** If the hook names a brand that's in the logo set, the renderer already pops its logo there. Check whether it does with `--check-overlays` (Step 5).
+- **Otherwise, place a hook-only overlay that shows what the hook leads with.** For a name, show the face (`person`) or the product. For a number, show the screenshot or figure that proves it. For an odd object or a mystery, show a `concept` photo of it. Example: "Who is Jev?" gets a `person` portrait of William Stanley Jevons, the economist Jev is named after.
+- **It must appear early and be gone by the body.** Anchor `start` to the hook's first words, and end it no later than the end of the hook's last word. The renderer cuts any hook overlay off at the hook boundary anyway, so it never reaches the shared body. Overlays for different hooks are distinct by construction.
+
+**Keep the centre filled for the whole video.** The aim is something on screen at every moment of the body, not a beat every so often: any stretch of a second or more with no overlay counts as a gap. Fill the body from start to finish:
+
+- **Hold screenshots and figures until the next overlay starts.** Push a screenshot's `end` forward to the next overlay's `start` while the speaker is still on the same point, rather than ending it at `trigger_go_away_word`.
+- **Fill what's left with `person` and `concept` overlays** (Step 3b).
+- **Never place an image that has nothing to do with what's being said** just to fill a gap. Leave the gap and report it instead. Unfilled gaps show which kinds of image the pipeline can't produce yet.
 
 Work through every screenshot in the manifest (skip `body.png`). **Skip any screenshot whose `script_context` or `article_snippet` cannot be matched to words in the `words` array — do not invent a placement.**
 
@@ -72,20 +84,20 @@ Then scan the `words` array for person names (consecutive capitalised words that
 - Use the source-clip timestamps from those words
 - Add a `type: "person"` entry with `name: "<Full Name>"`, `source_clip` from the anchor word, and `path: ""` — the renderer resolves Wikipedia headshots automatically
 
-Build the complete images list — one entry per screenshot, plus any person entries, plus an optional concept image (Step 3b).
+Build the complete images list: one entry per screenshot, any person entries, the hook overlays, and the concept images that fill the remaining gaps (Step 3b).
 
-## Step 3b — Concept image (optional, at most three per video)
+## Step 3b — Concept images (fill the gaps)
 
 A few quirky Wikipedia image can add a fun extra dimension — drop a literal photo of an unexpected *thing* onto a punchline. The gag lands when an abstract phrase is rendered as the real object behind it: "spaghetti code" → a bowl of spaghetti, "rubber-duck debugging" → a rubber duck, "the cops showed up" → a police car. Resolved exactly like a `person`, but the **name** is any Wikipedia subject, not a person.
 
-- **Do a deliberate pass for these — don't wait for one to jump out.** A 60–90s reel that runs 15+ seconds with no visual overlay at all feels flat, so scan the **body** transcript for literal-noun gags: a concrete, photographable thing hiding inside an abstract phrase or a brand name (the kind of pun in the examples above). Aim for a visual beat of *some* kind (screenshot, figure, person, or concept) roughly every 10–15s of body — where the screenshots already cover that stretch you need no concept; where there's a gap, reach for one.
-- Cap concepts at **at most three** per video. If a beat has no concrete noun that genuinely fits, skip it — restraint beats clutter. But don't let the cap or the restraint rule talk you out of the *first* good gag: a long overlay-free stretch is its own failure.
+- **Do a deliberate pass for these, gap by gap.** After screenshots, figures and people are placed, work through every stretch that is still empty (Step 3). Look in its words for a concrete, photographable thing hiding inside an abstract phrase or a brand name, like the puns in the examples above.
+- **There is no cap on how many.** The limit is relevance. If a gap has no concrete noun that genuinely fits, leave it empty and report it. An unrelated image is worse than a gap.
 - The **name** must be the Wikipedia title of a **concrete, photographable object** whose page shows a **real photo** of that thing. This is the whole trick — and it's also where it breaks:
   - ✅ `Spaghetti code` (its page literally shows a bowl of spaghetti), `Rubber duck debugging`, `Police car`, `Trojan Horse` — concrete nouns with a real photo.
   - ❌ Abstract terms with **no photo**: `Technical debt`, `Scalability`, `Latency` — these resolve to nothing and silently vanish.
   - ❌ Terms whose page art is a **diagram/schematic, not a photo**: e.g. `Race condition` (an SVG diagram). A chart is not a gag.
   - When in doubt, picture the literal noun and use *that* title (e.g. `Rubber duck`, not "debugging"). If you can't name an object you're confident has a real photo on Wikipedia, omit it.
-- **Keep it a flash, not a hold.** These are meant to appear and vanish in under a second — a quick visual joke, not a prolonged overlay. Aim for 0.5–1.0s of screen time. A ladybug flickering on "a new bug crept into the codebase" lands; the same image lingering for 3 seconds kills the pace.
+- **A gag is a flash; an illustration can hold.** A visual joke on a punchline should appear and vanish in 0.5–1.0s. A ladybug flickering on "a new bug crept into the codebase" lands; the same image lingering for 3 seconds kills the pace. A concept that shows *the thing being discussed*, such as a steam engine while the speaker explains Jevons, can hold until the next overlay starts.
 - Place it on the *meaning*, even when the exact word isn't spoken. Anchor to the words in captions.json: `start` = the anchor word's `start`, `end` = the `end` of the line it punctuates, `source_clip` from the anchor word.
 - Add `{ "type": "concept", "name": "<Wikipedia subject>", "start": ..., "end": ..., "source_clip": "...", "path": "" }`.
 
@@ -224,6 +236,14 @@ Examples of the register: `the cloud? never heard of it` · `dropbox unsubscribe
 **Logo resets:** each base entry's start/end is a logo-reset boundary. A brand re-mentioned after any card edge re-fires its logo in that section — no extra configuration needed.
 
 ## Step 5 — Render (one video per hook)
+
+**Check the overlays first.** This takes a few seconds and renders nothing:
+
+```bash
+.venv/bin/reelcut render-hooks config.yaml "assets/<video-slug>/<actual-captions-filename>.captions.json" --check-overlays
+```
+
+For each hook video it prints the overlay coverage, then every gap of 1s or more with the words spoken during it. It warns about any hook with nothing on screen. Fix those warnings first (Step 3), then fill the gaps you can (Steps 3 and 3b), and run the check again. Once no more gaps can be filled with something relevant, render. List the gaps that are left in the final report, with their words; they show which images the pipeline can't produce yet.
 
 ```bash
 .venv/bin/reelcut render-hooks config.yaml "assets/<video-slug>/<actual-captions-filename>.captions.json"

@@ -92,6 +92,14 @@ Write each idea in the series' own winning hook pattern, taken from `series/<slu
 
 A shocking outcome is what earns the click; the mechanism is what the viewer stays for. An idea needs both, and this test is the one that catches ideas carrying only the first.
 
+**The stakes test.** Next, name who loses money, time or safety, and how much. On this channel every reel over 50k views had stakes. In order of strength:
+
+1. **The viewer, personally:** it costs them money, breaks their setup, or changes a tool they use (Claude limits, Copilot +900%, a Windows update bricking PCs).
+2. **A big company, absurdly:** a specific, outsized amount spent, wasted or saved (Dropbox saving $75M, Salesforce wasting 47% of its Kubernetes budget).
+3. **Danger:** an exploit, a dangerous artifact or an outage (42.zip).
+
+An idea with none of these, only "interesting how this works" (UTF-8 encoding, case-folding), is not dropped. It ranks below every idea that does have stakes, and its **Notes** say `no stakes`. Its hook can often borrow some: the same mechanism framed around who it costs.
+
 Drop an idea if any of these fail:
 
 - It collides with the Stage 3 exclusion set.
@@ -121,7 +129,7 @@ Structure:
 1. **Header** — how it was generated (metrics and limits used, DB tables queried, date), and the explicit dedup list from Stage 3.
 2. **"What the analytics actually say"** — the top-performer table (views / engagement / saved / comments / shares) and the three Stage 2 findings. This is why the batch looks the way it does; a reader must be able to check the reasoning.
 3. **One section per series** — heading `## <series-slug> — <Series Name> (<count>)`, its pattern restated in one italic line, then the numbered ideas. Each idea is a bolded hook, a paragraph of angle and detail, and a `- **Source:** [title](url)` line where the series requires one. `/produce-script` resolves against exactly this shape — it reads the series off the heading and the source off that line — so keep the slug in the heading and the format steady.
-4. **Recommended production order** — the top ~5 across all series, ranked, each with a one-line reason. Freshness-sensitive ideas rank higher; the best idea in the weakest series does not.
+4. **Recommended production order** — the top ~5 across all series, ranked, each with a one-line reason. Ideas with stakes rank above ideas without them (the stakes test, Stage 5), and personal stakes rank above the rest. Freshness-sensitive ideas rank higher; the best idea in the weakest series does not.
 5. **Footer** — total count, and a plain statement of which sections are source-verified, which are concept picks, and which individual ideas carry an unverified flag.
 
 ## Stage 8 — Persist and deliver the batch
