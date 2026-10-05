@@ -10,15 +10,12 @@ DB_PATH = ROOT / "scrape" / "db" / "influencer.db"
 
 VALID_SERIES = {"tbbt", "updates"}
 VALID_STATUSES = {"new", "viewed", "done"}
-VALID_IDEA_SERIES = {
-    "tbbt",
-    "updates",
-    "tech-in-one-breathe",
-    "interesting-tech",
-    "ai-fundamentals",
-    "hot-takes",
-}
 VALID_IDEA_STATUSES = {"new", "viewed", "done", "rejected"}
+
+
+def series_slugs(root: Path = ROOT) -> set[str]:
+    """The channel's series: one `series/<slug>.md` file each (the template excluded)."""
+    return {p.stem for p in (root / "series").glob("*.md")} - {"series-template"}
 
 
 def get_db(path: Path | None = None) -> sqlite3.Connection:

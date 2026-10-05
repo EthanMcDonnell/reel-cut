@@ -39,12 +39,11 @@ ALL_HEADERS = REQUIRED_HEADERS + OPTIONAL_HEADERS
 # tag, every hook variant (split into separate videos), and the appended CTA tag.
 NON_BODY_SECTIONS = {"**VIDEO TYPE**", "**HOOK**", "**CTA**"}
 
-# Valid **VIDEO TYPE** values — the series slugs plus misc, which has no
-# series file. Kept in sync with produce-script.md's SERIES field by hand.
+# Valid **VIDEO TYPE** values — one per series/<slug>.md file, plus misc,
+# which has no series file. The template sits in series/ but is not a series.
 KNOWN_SERIES = {
-    "tbbt", "updates", "tech-in-one-breathe", "interesting-tech",
-    "ai-fundamentals", "hot-takes", "misc",
-}
+    p.stem for p in (PROJECT_ROOT / "series").glob("*.md")
+} - {"series-template"} | {"misc"}
 
 # Throat-clearing openers (banned). Deliberately narrow so it never catches the
 # open-loop phrase "But here's the part nobody talks about", which is legitimate

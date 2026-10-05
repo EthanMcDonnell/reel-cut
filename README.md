@@ -30,6 +30,22 @@ playwright install chromium    # required for JS-heavy article screenshots
 > [!IMPORTANT]
 > Always use `.venv/bin/python`. **Never** system python/pip.
 
+### Make it yours
+
+The pipeline is niche-agnostic; everything about *your* channel lives in gitignored files.
+
+| File | What goes in it |
+|:-----|:----------------|
+| `series/<slug>.md` | One file per series: audience, voice, length, title card, CTA, hook patterns, where ideas come from. Copy `series/series-template.md`. The files **are** the series list. |
+| `config.local.yaml` | Overrides deep-merged over `config.yaml` — at minimum `whisper.initial_prompt` with your niche's vocabulary, plus any `inbound.series` upload links. |
+| `scrape/sources-<table>.yaml` | Optional article feeds for the scraper. See `scrape/sources.example.yaml`. |
+| `.mcp.json` | social-cockpit MCP server — see [Social Cockpit (MCP)](#social-cockpit-mcp). |
+| `SERIES.md` | Optional channel-wide notes `/video-ideas` reads. |
+
+Generated as you go, also gitignored: `ideas/` (idea banks from `/video-ideas`) and `.claude/voice/` (your hooks and speaking style, mined by `/voice-profile`).
+
+The bundled skills (`hooks`, `scripts`, `stop-slop`) use tech examples, but their rules are general and your series files override them.
+
 ---
 
 ## The Four-Phase Workflow

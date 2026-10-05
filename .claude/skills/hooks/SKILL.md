@@ -38,7 +38,7 @@ A surprising fact stops the scroll. An unresolved implication or personal threat
 
 This skill is the craft. **Which pattern wins belongs to the audience, so it lives with that audience** — no pattern library here, and none carried from memory. Read both sources below before generating, every time:
 
-1. **The series file.** When a `SERIES` is known, read `series/<slug>.md` — every slug is indexed in `SERIES.md`. Its `## Best Hooks` section is the source of truth for that series: which patterns win, the register the hook has to be spoken in, the hooks that have actually shipped, and their real numbers.
+1. **The series file.** When a `SERIES` is known, read `series/<slug>.md` — every series is one file there. Its `## Best Hooks` section is the source of truth for that series: which patterns win, the register the hook has to be spoken in, the hooks that have actually shipped, and their real numbers.
 2. **`.claude/voice/proven-hooks.md`**, if it exists — the creator's own shipped hooks across every series, ranked by real engagement, with the recurring templates distilled. Refresh it with `/voice-profile`.
 
 Use a pattern only if it fits the topic and the content of the video. Don't force one that doesn't.

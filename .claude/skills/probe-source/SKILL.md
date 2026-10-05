@@ -16,6 +16,6 @@ Discover the best fetch method for a new sources.yaml entry.
 
 2. Read the output — it will print a ready-to-paste YAML snippet under `── Recommendation`.
 
-3. Copy the snippet into the appropriate sources file (`scrape/sources-tbbt.yaml` or `scrape/sources-updates.yaml`).
+3. Copy the snippet into the appropriate `scrape/sources-<table>.yaml` (gitignored; format and table naming in `scrape/sources.example.yaml`).
 
 That's it. No edits needed — the script handles RSS discovery, HTTP scraping, and Playwright.

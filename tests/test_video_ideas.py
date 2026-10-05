@@ -6,7 +6,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scrape"))
 
 from db import get_db  # noqa: E402
 from ideas import dedupe_sources, record_idea_response, save_batch  # noqa: E402
+import ideas  # noqa: E402
+import pytest  # noqa: E402
 import telegram  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _series(monkeypatch):
+    # series/ is per-user and gitignored; pin the slugs these tests use.
+    monkeypatch.setattr(ideas, "series_slugs", lambda: {"updates", "tbbt"})
 
 
 def _payload(batch_id="ideas-2026-08-24"):

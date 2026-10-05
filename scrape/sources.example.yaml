@@ -1,0 +1,66 @@
+# Example scraper source list. Copy to scrape/sources-<table>.yaml (gitignored)
+# and point the scraper at it:
+#   .venv/bin/python scrape/scraper.py --config scrape/sources-<table>.yaml
+# The filename suffix picks the article table in scrape/db/influencer.db, and
+# only two exist (scrape/db.py VALID_SERIES): `tbbt` (evergreen, sorted by
+# score) and `updates` (news, sorted by date). Name your file after whichever
+# behaves like your feed, whatever your series are called.
+# Use /probe-source <homepage> to pick the right fetch method for a new source.
+#
+# fetch: rss        - working RSS feed, used directly
+# fetch: scrape     - no RSS; falls back to HTML scraping
+# fetch: playwright - requires headless browser (JS-rendered pages)
+# fetch: reddit     - a subreddit (reddit_subreddit) or user (reddit_user)
+# fetch: manual     - neither works automatically; visit homepage manually
+
+# db_sort: date  — most recent articles first (default)
+# db_sort: score — highest relevance score first, then date
+db_sort: date
+
+sources:
+  - name: Example Blog
+    company: Example Co          # who published it; shown on idea cards
+    fetch: rss
+    rss: https://example.com/feed/
+    homepage: https://example.com/blog
+    output_limit: 10             # max articles kept from this source per run
+
+  - name: Example Magazine
+    company: Example Magazine
+    fetch: scrape
+    homepage: https://example.org/articles
+
+  - name: Reddit r/example
+    company: Community
+    fetch: reddit
+    reddit_subreddit: example
+    reddit_sort: top
+    reddit_time: day
+    scrape_limit: 25
+    output_limit: 10
+    require_link: true           # skip text-only posts
+
+# Scoring: strong keyword = 3pts, weak keyword in title = 2pts / in excerpt = 1pt,
+# title_keyword (title only) = 3pts. Needs >= min_relevance_score to pass.
+strong_keywords: []
+title_keywords: []
+weak_keywords: []
+
+# Exclude articles whose title or excerpt contains any of these (case-insensitive)
+excluded_keywords:
+  - "we're hiring"
+  - "job opening"
+
+# Exclude articles whose URL path contains any of these
+excluded_url_patterns:
+  - /careers/
+  - /jobs/
+
+# Relevance threshold — articles below this score are excluded
+min_relevance_score: 0
+
+# Rolling retention — articles older than this many days are pruned from the db on each merge
+db_retention_days: 30
+
+# Only consider articles published within this many days
+lookback_days: 7

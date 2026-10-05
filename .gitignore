@@ -210,7 +210,9 @@ content.db
 SERIES.md
 /models
 whisper.cpp/
-/series
+# Your series are personal; only the schema template ships.
+/series/*
+!/series/series-template.md
 
 # Persistent browser profile for single_scrape.py --solve-captcha
 scrape/.captcha-profile/
@@ -223,3 +225,12 @@ scrape/.captcha-profile/
 
 # Machine-specific MCP server paths — see README "Social Cockpit (MCP)".
 .mcp.json
+
+# Personal config overlay (deep-merged over config.yaml).
+config.local.yaml
+
+# Mined from your own analytics by /voice-profile.
+/.claude/voice/
+
+# Your scraper source lists; scrape/sources.example.yaml shows the format.
+/scrape/sources-*.yaml

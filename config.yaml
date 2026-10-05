@@ -1,12 +1,15 @@
 assets:
   location: ./assets               # working files per video (captions.json, debug.txt, screenshots, manifest)
 
+# Personal values (Whisper vocabulary, upload series, provider) go in a
+# gitignored config.local.yaml beside this file; it is deep-merged over this one.
+
 # Which agent CLI an upload's production job runs on. claude-cli: the queued,
 # single-worker `claude -p` flow with Telegram status and a captured log.
 # mission-control: fire-and-forget — opens a session in the `mission-control`
 # dashboard immediately per upload, no queue, no status notifications.
 production:
-  ai_provider: mission-control
+  ai_provider: claude-cli
   # ai_model: opus                  # model the job runs on, forwarded to the provider's
                                     # CLI as --model (claude --model …, mission-control
                                     # --model …). Omit for the provider's own default.
@@ -15,11 +18,13 @@ production:
 # Permanent direct-recording upload links. Each key is served at /upload/<key>
 # and creates a fresh flat assets/<slug_prefix>-<timestamp>/ job.
 inbound:
-  series:
-    hot-take:
-      slug_prefix: hot-take
-      series: hot-takes
-      hook_policy: single
+  series: {}
+  # Example (put yours in config.local.yaml):
+  #   series:
+  #     hot-take:                    # served at /upload/hot-take
+  #       slug_prefix: hot-take
+  #       series: hot-takes          # must match a series/<slug>.md file
+  #       hook_policy: single
 
 cuts:
   # --- What gets cut ---
@@ -228,8 +233,9 @@ whisper:
   language: en                     # default: en
   beam_size: 4                     # default: 1  |  1 = greedy/fastest but error-prone; higher = beam search,
                                    # considers multiple candidates — reduces errors on numbers and proper nouns.
-  initial_prompt: "Hello. Software engineering. AI for 12 months. Claude, GPT, the API, context window, 200k tokens"
-                                   # default: null  |  primes Whisper toward expected vocabulary. Update to match content.
+  initial_prompt: null
+                                   # default: null  |  primes Whisper toward your niche's vocabulary, e.g.
+                                   # "Hello. Sourdough, levain, autolyse, banneton." Set it in config.local.yaml.
   condition_on_previous_text: false # default: false  |  true = segments share context (more fluent but
                                    # hallucinations can cascade); false = each segment decoded independently.
   min_alignment_confidence: 0.2   # default: 0.1  |  WhisperX wav2vec2 score below which a word falls back

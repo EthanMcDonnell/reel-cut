@@ -58,9 +58,9 @@ Ground every claim in the transcripts — quote real fragments. This file is rea
 
 ## Stage 3.5 — Push per-video hooks into series files
 
-The `series/<slug>.md` files (indexed in `SERIES.md`) are the source of truth the pipeline reads, and each has a **Best Hooks** section. The individual proven hooks live here (per-audience), not in `proven-hooks.md`. Push real top-performer hooks into the matching series file — but **do this only with the user's confirmation**, because the cockpit data is not tagged by series and these files are hand-curated.
+The `series/<slug>.md` files are the source of truth the pipeline reads, and each has a **Best Hooks** section. The individual proven hooks live here (per-audience), not in `proven-hooks.md`. Push real top-performer hooks into the matching series file — but **do this only with the user's confirmation**, because the cockpit data is not tagged by series and these files are hand-curated.
 
-1. **Infer a series for each top performer** from its caption + transcript, using the canonical slugs: `tbbt` (how big tech solved an engineering problem), `updates` (timely news/price/release), `tech-in-one-breathe` (one tool, ~30s), `interesting-tech` (mystery artifact / "what is X"), `ai-fundamentals` (practical AI concept the viewer is confused about today), `hot-takes` (first-person contested opinion, no source article).
+1. **Infer a series for each top performer** from its caption + transcript, using the slugs in `series/` (every `*.md` but `series-template.md`) and matching against each file's `## Identity`.
 2. **Show the user the inferred mapping** (hook → series → metric) and ask them to confirm or correct it before writing anything.
 3. On confirmation, for each affected `series/<slug>.md`, **add or refresh a single bolded block under its Best Hooks section**, exactly in this format and nowhere else in the file:
 

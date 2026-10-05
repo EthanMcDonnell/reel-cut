@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from db import (  # noqa: E402
-    VALID_IDEA_SERIES,
+    series_slugs,
     VALID_IDEA_STATUSES,
     get_db,
 )
@@ -33,7 +33,7 @@ def _string(value: object, field: str) -> str:
 
 def _idea_from_payload(raw: dict) -> dict:
     series = _string(raw.get("series"), "idea.series")
-    if series not in VALID_IDEA_SERIES:
+    if series not in series_slugs():
         raise ValueError(f"Unknown idea series '{series}'")
 
     slug = _string(raw.get("slug"), "idea.slug")

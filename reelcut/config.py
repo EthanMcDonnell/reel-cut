@@ -348,8 +348,23 @@ class ReelCutConfig(BaseModel):
 # Loader
 # ---------------------------------------------------------------------------
 
+def _deep_merge(base: dict, override: dict) -> dict:
+    merged = dict(base)
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _deep_merge(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
 def load_config(path: str | Path) -> ReelCutConfig:
-    """Load and validate a YAML config file. Raises with clear messages on error."""
+    """Load and validate a YAML config file. Raises with clear messages on error.
+
+    A gitignored `config.local.yaml` beside the file, if present, is deep-merged
+    over it — personal values (Whisper vocabulary, upload series, provider) live
+    there so the committed config.yaml stays niche-neutral.
+    """
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(f"Config file not found: {path}")
@@ -359,6 +374,13 @@ def load_config(path: str | Path) -> ReelCutConfig:
 
     if not isinstance(raw, dict):
         raise ValueError(f"Config file must be a YAML mapping, got {type(raw).__name__}")
+
+    local = path.with_name("config.local.yaml")
+    if local.exists() and local != path:
+        override = yaml.safe_load(local.read_text()) or {}
+        if not isinstance(override, dict):
+            raise ValueError(f"{local} must be a YAML mapping, got {type(override).__name__}")
+        raw = _deep_merge(raw, override)
 
     try:
         return ReelCutConfig.model_validate(raw)

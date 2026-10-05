@@ -1,6 +1,6 @@
 ---
 name: video-ideas
-description: Generate a fresh, source-verified batch of video ideas across the six series, driven by live social-cockpit analytics and deduped against every existing idea bank.
+description: Generate a fresh, source-verified batch of video ideas across every series in series/, driven by live social-cockpit analytics and deduped against every existing idea bank.
 tools: Read, Glob, Grep, Write, Bash, WebFetch, WebSearch
 model: opus
 permissionMode: default
@@ -12,26 +12,19 @@ This command does not write scripts. It creates a **persisted, Telegram-delivere
 **Paths:** `{TOKEN}` references are machine-specific paths defined in [glossary.md](glossary.md) — resolve each before running. Repo-relative paths (`scrape/…`, `series/…`, `.claude/…`) are written inline. Run all `.venv/bin/…` commands from `{PROJECT_ROOT}`.
 
 The user's prompt (optional) is: `$ARGUMENTS` — it may narrow the run. Honour any of:
-- **a series slug** (`tbbt`, `updates`, `tech-in-one-breathe`, `interesting-tech`, `ai-fundamentals`, `hot-takes`) → only that series
+- **a series slug** (any `series/<slug>.md` filename, excluding `series-template`) → only that series
 - **a count** ("5 per series", "20 ideas") → override the defaults in Stage 5
-- **a focus** ("only shareable", "lean into ai-fundamentals", "no news") → weight selection accordingly
+- **a focus** ("only shareable", "lean into <series>", "no news") → weight selection accordingly
 
-Default with no arguments: **5 `updates` ideas and 3 ideas in every other series**. `hot-takes` may be below three only when fewer than three user-authored opinions survive the sourcing gate; state the shortfall plainly rather than inventing a take.
+Default with no arguments: every series, at the count its file's `**Ideas per batch:**` line sets under `## Topic Selection`, or **3** when it sets none. A series may come in under its count only when its file allows it; state the shortfall plainly rather than padding.
+
+**The series files drive this command.** In-scope series are the `series/*.md` files (not `series-template.md`). Read each one's `## Identity` and `## Topic Selection` before Stage 0: its `**Source:**` and `**Harvest (/video-ideas):**` lines say where ideas come from and how to gather them. If `SERIES.md` exists, read it too — it holds channel-wide notes.
 
 ---
 
-## Stage 0 — Refresh the article candidates silently
+## Stage 0 — Refresh scraped feeds silently
 
-This command is the curated alternative to raw article notifications. Refresh the `tbbt` source list before looking for `tbbt` ideas, but **never send its individual article cards**:
-
-```bash
-.venv/bin/python scrape/scraper.py --config scrape/sources-tbbt.yaml --no-telegram
-.venv/bin/python scrape/prune_db.py --series tbbt --config scrape/sources-tbbt.yaml
-```
-
-The configured sites remain the source of truth. If the refresh fails, stop and report it rather than silently building a supposedly fresh batch from old candidates.
-
-`updates` has no scraped feed: it never produced a shipped video, so it is sourced by `WebSearch` in Stage 4 instead. `scrape/sources-updates.yaml` is kept only for reference — do not run it.
+This command is the curated alternative to raw article notifications. For every in-scope series whose **Harvest** names a scraper refresh, run it now with `--no-telegram` — **never send individual article cards**. The configured sites remain the source of truth. If a refresh fails, stop and report it rather than silently building a supposedly fresh batch from old candidates.
 
 ## Stage 1 — Pull the analytics
 
@@ -51,11 +44,11 @@ If a command errors with "could not reach cockpit", tell the user to start the s
 
 Read the pulled data and answer three questions in writing. These drive every selection downstream, so be concrete and quantified.
 
-1. **Which series is over-performing, and by how much?** Map each top performer to a series (`tbbt`, `updates`, `tech-in-one-breathe`, `interesting-tech`, `ai-fundamentals`, `hot-takes`) from its caption and transcript. A series carrying an outlier deserves disproportionate ideas even in an even-spread run.
+1. **Which series is over-performing, and by how much?** Map each top performer to a series from its caption and transcript, using each series file's `## Identity`. A series carrying an outlier deserves disproportionate ideas even in an even-spread run.
 2. **Which shape drives which action?** Compare `shares` against `saved` per video. They are different intents — breakages, price hikes, and "this affects you" news get *shared*; mechanism explainers get *saved*. Tag each idea you later write with `[share]` or `[save]` where its shape clearly favours one.
 3. **What is the weak tail telling you?** Look at the bottom of the ranking, not just the top. The lowest performers usually share a shape, and that shape is the thing to stop making.
 
-**Calibration note (2026-07-30 — re-derive, don't copy):** on that pull, `ai-fundamentals` carried a large outlier (Claude usage limits: 122k views, ~7× the saves and ~10× the comments of anything else); shares split cleanly from saves (Copilot price hike 2461 shares vs. 222 saves); and the weak tail was entirely company-*origins* content (React origins 5k, lava lamps 7k) — a company doing something absurd or expensive *now* beat a company's backstory. Treat this as a prior to check against fresh numbers, never as a conclusion to restate.
+Treat any calibration notes in `SERIES.md` as priors to check against fresh numbers, never as conclusions to restate.
 
 ## Stage 3 — Build the dedup set
 
@@ -72,70 +65,27 @@ Record the exclusion set. Every idea in the final file must clear it.
 
 ## Stage 4 — Harvest source material per series
 
-The six series have different sourcing rules — follow each series file, don't apply one standard to all.
+Each series has its own sourcing rules — follow its file's `**Source:**` and `**Harvest (/video-ideas):**` lines, don't apply one standard to all. Rules that hold whichever series:
 
-### tbbt — the article DB
-
-This series has a real feed. Pull unread candidates:
-
-```bash
-.venv/bin/python scrape/query.py articles tbbt --status new --limit 200
-```
-
-Skim titles first (`jq -r '.[] | "\(.published_date[0:10]) | \(.company) | \(.title)"'` keeps it readable), shortlist the ones with a real story, then **scrape each shortlisted article in full**:
-
-```bash
-.venv/bin/python scrape/single_scrape.py "<url>"
-```
-
-Prefer, in this order: a **surprising mechanism or reversal**, a **shocking concrete number**, a **visible breakage or incident report**, a **counter-intuitive engineering decision**. Skip product announcements, "we improved X by N%" with no mechanism, and marketing posts — a large share of the feed is these.
-
-### updates — WebSearch, no feed
-
-No DB. Use `WebSearch` for anything breaking in the last 1–2 weeks, then **scrape each shortlisted article in full** with `single_scrape.py` as above — the same full-text verification applies. Apply the same preference order and skip the same shapes as `tbbt`.
-
-### interesting-tech — verified incidents, and mind the rut
-
-No DB. The bar is a **real, concrete, named artifact or incident** that survives a thumbnail — never an abstract concept. Verify each with `WebSearch` and, where possible, a primary source.
-
-This series is where the Stage 5 mechanism test matters most, because it's the one that accepts news. The named artifact has to *be* the technical subject — Ariane 5's 16-bit overflow, Knight Capital's stale deploy, the Therac-25 race condition. A dramatic incident that merely happened to involve a computer does not qualify. If you find yourself writing a handling note about sensitive subject matter, that is a signal to re-run the mechanism test, not a way to keep an idea that already failed it.
-
-Check the existing banks before generating: this series drifts hard toward malware/exploits. If the existing pool is already malware-heavy, deliberately branch — aviation, finance, space hardware, infrastructure, legal, cryptography, detective stories with no attacker at all.
-
-### tech-in-one-breathe and ai-fundamentals — concept picks
-
-No source DB **by design** (per their series files) — these are concepts, not news, so no citation is expected. Two rules instead:
-
-- Dedup hard. Both series have long queued backlogs in the vault and in prior banks; most "obvious" picks are already taken.
-- Prefer concepts that are the **mechanism behind a `tbbt` idea in the same batch** — they double as companion pieces and cost nothing extra to find.
-
-For `ai-fundamentals` specifically: the series file allows a "confused right now" flavour, and that is where the channel's top performer came from. Pegging an idea to something published in the last two weeks is unusual for this series and worth doing when the peg is real.
-
-### hot-takes — mined from the user, never invented
-
-No DB and no research: the material is the user's own opinions, and **you cannot generate those for them**. Do not write a take the user has not expressed — a first-person video asserting a belief they don't hold is the one failure mode this series cannot absorb.
-
-Mine candidates instead, from two places, and label where each came from:
-
-- **Their own transcripts** (already pulled in Stage 1). Opinions get voiced in passing inside other videos and buried there — e.g. "I spend days on some skills only to find out using no skill at all provided better outputs", said as tip #1 in a listicle. A take the user has already stated on camera is proven to be theirs; quote it back verbatim as the candidate.
-- **The `Queued` list** in `series/hot-takes.md`.
-
-Present every hot-takes idea as a **candidate for the user to confirm, edit, or reject**, with the quote or queue entry it came from — not as a finished idea. Flag any where you can see the opposing case is weak: per the series file, an uncontested take is a recommendation and draws no comments.
+- **Scrape every shortlisted article in full** before using it: `.venv/bin/python scrape/single_scrape.py "<url>"`. A feed blurb is not the article.
+- **A series sourced from a scraped table** (`scrape/query.py articles <table> --status new`): skim titles first, shortlist the ones with a real story, then scrape. Skip announcements, vague "we improved X" posts and marketing — feeds are full of them.
+- **A series with no source DB** (concept picks): no citation is expected, so dedup is the whole job — most "obvious" picks are already in the backlog or a prior bank.
+- **A series sourced from the user's own opinions or experience:** never invent one. Mine their transcripts (pulled in Stage 1) and the series' **Queued** list, quote where each came from, and present every idea as a candidate for them to confirm, edit, or reject.
 
 ## Stage 5 — Generate and select
 
-For each in-scope series, generate **wide then cut** — do not write the target count and keep all of it. Aim for ~2× the target, then drop everything that fails the checks below. The default target is **5 for `updates` and 3 for every other series**, adjusted only by an explicit count in `$ARGUMENTS`.
+For each in-scope series, generate **wide then cut** — do not write the target count and keep all of it. Aim for ~2× the target, then drop everything that fails the checks below. The default target is each series' `**Ideas per batch:**` (3 when unset), adjusted only by an explicit count in `$ARGUMENTS`.
 
 Write each idea in the series' own winning hook pattern, taken from `series/<slug>.md` **Best Hooks** and `.claude/voice/proven-hooks.md` — not a generic phrasing. Each idea needs:
 
 - **The hook**, bolded, in the series' pattern.
 - **`[share]` / `[save]` tag** where the shape clearly favours one (from Stage 2).
 - **The angle** — what the video actually has to deliver. Concrete: the mechanism, the numbers, the reversal. Quote real figures from the scraped article, never remembered ones.
-- **The source**, linked, with publication and date — for `tbbt`, `updates`, and `interesting-tech`.
+- **The source**, linked, with publication and date — for every series whose ideas come from articles or events.
 - **A "why" line** tying it to a specific top performer from Stage 1, where the link is real.
 - **Notes** for anything the user must know: adjacency to an existing idea, a company already used, a handling sensitivity, a figure that needs re-checking at produce time.
 
-**The mechanism test.** Before keeping an idea, write its technical core as one sentence: the system, algorithm, or engineering decision the video explains. If that sentence contains no mechanism — only *what happened* and *to whom* — the idea has nothing to fill 60 seconds with and it fails, however striking the outcome. Compare:
+**The mechanism test.** Before keeping an idea, write its core as one sentence: the mechanism — how or why the thing works — that the video explains. If that sentence contains no mechanism — only *what happened* and *to whom* — the idea has nothing to fill 60 seconds with and it fails, however striking the outcome. Compare:
 
 - *"The SMTP connect timeout compiled to zero, aborting after ~3ms, and 3 millilightseconds is 558 miles"* — a mechanism. The whole video is the explanation.
 - *"Someone typed the wrong username into a records request"* — not a mechanism. It's an outcome. The explanation ends with the hook.
@@ -146,21 +96,21 @@ Drop an idea if any of these fail:
 
 - It collides with the Stage 3 exclusion set.
 - Its source doesn't actually support the hook's claim (see Stage 6).
-- **It fails the mechanism test above** — a news event, court case, or political story with no technical substance under it. Tech that merely *appears* in the story (a username, an app, a device) is not the same as tech the story is *about*.
+- **It fails the mechanism test above** — a news event, court case, or political story with nothing of the channel's subject under it. The subject merely *appearing* in a story is not the same as the story being *about* it.
 - It's a company-origins story, or any other shape the Stage 2 weak tail flagged.
 - It's a reworded version of another idea in the same batch.
 
-This is a judgement call, not a keyword ban. Politics, crime, and law are fine subjects when the video is genuinely about the engineering — a court ruling on how a system works, a regulation that forces an architectural change, a breach with a real root cause. What doesn't belong is a story the channel would be covering purely because it's in the news. When an idea is borderline, keep it and say plainly in its **Notes** why it's borderline, so the user makes the call.
+This is a judgement call, not a keyword ban. Politics, crime, and law are fine subjects when the video is genuinely about the channel's subject — e.g. for a tech channel, a court ruling on how a system works or a breach with a real root cause. What doesn't belong is a story the channel would be covering purely because it's in the news. When an idea is borderline, keep it and say plainly in its **Notes** why it's borderline, so the user makes the call.
 
 ## Stage 6 — The verification gate
 
 This is the stage that makes the output trustworthy. Apply it before writing the file.
 
-1. **Full text, not the blurb.** Every `tbbt`/`updates` fact must come from the scraped article body. An RSS `description` is not verification — it is frequently a marketing summary that contradicts the post.
+1. **Full text, not the blurb.** Every fact from an article must come from the scraped article body. An RSS `description` is not verification — it is frequently a marketing summary that contradicts the post.
 2. **Every number is quoted, not recalled.** If you cannot point at the sentence in the scraped content, the number does not go in the file.
 3. **Attribute correctly.** A claim inside a quote block belongs to the person quoted, not the publication. A fact from source B is not from source A.
 4. **Say so when you couldn't verify.** If an idea is worth keeping but a figure went unconfirmed, keep it and **mark it explicitly** (`**Verify before producing:** …`). Never quietly present an unverified claim as verified, and never drop a good idea silently to keep the batch looking clean.
-5. **Flag decay.** Anything in `updates` — and any live pricing, valuation, or "first company to" figure anywhere — gets a re-check-at-produce-time note.
+5. **Flag decay.** Anything news-pegged — and any live pricing, valuation, or "first company to" figure anywhere — gets a re-check-at-produce-time note.
 
 ## Stage 7 — Write the file
 
@@ -185,7 +135,7 @@ After writing the Markdown bank, create a temporary JSON payload and persist it 
   "bank_path": "ideas/VIDEO_IDEAS_<YYYY-MM-DD>.md",
   "ideas": [
     {
-      "series": "updates",
+      "series": "<series-slug>",
       "slug": "stable-topic-slug",
       "hook": "The exact hook from the Markdown bank",
       "angle": "What the video has to explain",
@@ -212,7 +162,7 @@ Use the bank filename's date and optional numeric suffix in `batch_id`: for exam
 .venv/bin/python scrape/ideas.py import /tmp/video-ideas-<YYYY-MM-DD>.json --send
 ```
 
-This sends one grouped digest, then an individual **Keep/Delete** approval card for every new idea, then one supporting-article link per unique source URL. Keep marks the idea `viewed` and, for `tbbt`/`updates`, marks its matching source article viewed too; Delete marks the idea `rejected` and adds its topic to the permanent reject set. The command is retry-safe: rerunning the same payload sends only messages that were not successfully delivered.
+This sends one grouped digest, then an individual **Keep/Delete** approval card for every new idea, then one supporting-article link per unique source URL. Keep marks the idea `viewed` and, when it came from a scraped table, marks its matching source article viewed too; Delete marks the idea `rejected` and adds its topic to the permanent reject set. The command is retry-safe: rerunning the same payload sends only messages that were not successfully delivered.
 
 ## Final Output
 

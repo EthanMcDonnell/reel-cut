@@ -2,7 +2,7 @@
 name: produce-script
 description: Produce a single video script from a user-supplied prompt (URL, phrase, idea-bank reference, or a bare contested claim)
 ---
-Produces a complete, validated video script from a user-supplied prompt. The prompt may be a URL (engineering blog post, article), a phrase or topic idea, a reference to an idea in an idea bank under `ideas/` (`ideas/*VIDEO_IDEA*.md`, written by `/video-ideas`, or the standing backlog in `ideas/VIDEO_IDEAS_BACKLOG.md`), or a bare contested claim (a `hot-takes` opinion with no source).
+Produces a complete, validated video script from a user-supplied prompt. The prompt may be a URL (engineering blog post, article), a phrase or topic idea, a reference to an idea in an idea bank under `ideas/` (`ideas/*VIDEO_IDEA*.md`, written by `/video-ideas`, or the standing backlog in `ideas/VIDEO_IDEAS_BACKLOG.md`), or a bare contested claim (an opinion with no source).
 
 **Everything lives in the repo.** `/video-ideas` writes its banks to `ideas/` (gitignored), Stage 0 resolves against them, and Stage 3.5 saves the script to `assets/<video-slug>/script.md` — next to that slug's screenshots, where `/prepare-video` reads it as ground truth for the transcript.
 
@@ -32,7 +32,7 @@ Idea banks live in **`ideas/`** (gitignored) — that is where `/video-ideas` wr
 
 ### 3. If the prompt is a bare claim (an opinion with no source)
 
-A prompt that states a contested position about how to build software — "GitHub Desktop is better than the git CLI", "long Claude skills are worse than no skill" — is a **hot take**, not a topic to research. Set `SERIES` to `hot-takes` and read `series/hot-takes.md` before going further.
+A prompt that states a contested position — "GitHub Desktop is better than the git CLI", "long Claude skills are worse than no skill" — is a **hot take**, not a topic to research. Set `SERIES` to the series whose `## Identity` is first-person opinion (e.g. `hot-takes`) and read its file before going further. If no series is, ask the user which one to use.
 
 There is no article to fetch, so the material has to come from the user:
 
@@ -76,7 +76,7 @@ Either way, say so plainly and record `STORY_STRENGTH: thin` with the reason. Do
 Build the following `topic_package` once resolved:
 
 ```
-SERIES: <tbbt | updates | tech-in-one-breathe | interesting-tech | ai-fundamentals | hot-takes | misc>
+SERIES: <a series/<slug>.md filename (not series-template) | misc>
 MOST_SURPRISING_FACT: <the single most counterintuitive fact across the sources, and the assumption the viewer probably holds that it overturns>
 HOW_IT_WAS_SOLVED: <the solution-side material — the methods, the core mechanism, the tradeoff, and any reversal/irony in how it was done>
 STORY_STRENGTH: <strong | thin — the story-gate judgement in one line, and why>
@@ -96,11 +96,11 @@ If no usable content can be resolved from the prompt, abort with: "Could not res
 
 ### Load the series profile
 
-Once `SERIES` is resolved (and it is not `misc`), **read `series/<SERIES>.md`** — that file is the source of truth for this series, and it outranks the defaults written into this command. It drives Stage 0.5 (spine), Stage 1 (hooks), Stage 3 (voice), and Stage 3.6 (CTA and resources). The canonical slugs are `tbbt`, `updates`, `tech-in-one-breathe`, `interesting-tech`, `ai-fundamentals`, `hot-takes`; `misc` has no file and uses the `scripts` skill's default voice, no CTA, and no resources.
+Once `SERIES` is resolved (and it is not `misc`), **read `series/<SERIES>.md`** — that file is the source of truth for this series, and it outranks the defaults written into this command. It drives Stage 0.5 (spine), Stage 1 (hooks), Stage 3 (voice), and Stage 3.6 (CTA and resources). The canonical slugs are the `series/*.md` filenames (not `series-template`); `misc` has no file and uses the `scripts` skill's default voice, no CTA, and no resources.
 
 Three of its sections replace the defaults written into this command and the `scripts` skill outright, rather than adding to them:
 
-- **`## Audience`** (always present) — the series owns who is watching, what they already know, and what needs explaining. This sets the jargon bar for Stage 3; there is no channel-wide default, and the six audiences differ enough that assuming one is the main way a script ends up pitched at the wrong viewer.
+- **`## Audience`** (always present) — the series owns who is watching, what they already know, and what needs explaining. This sets the jargon bar for Stage 3; there is no channel-wide default, and series audiences differ enough that assuming one is the main way a script ends up pitched at the wrong viewer.
 - **`## Structure`** (when present) — the series has a fixed body shape, so it *is* the spine; Stage 0.5 fills in its beats instead of choosing a shape.
 - **`## CTA & Resources`** (always present) — the series owns its CTA type, how many resources ship, and what kind. Stage 3.6 does what it says.
 
