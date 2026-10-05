@@ -89,6 +89,7 @@ A few quirky Wikipedia image can add a fun extra dimension — drop a literal ph
   - ❌ Terms whose page art is a **diagram/schematic, not a photo**: e.g. `Race condition` (an SVG diagram). A chart is not a gag.
   - When in doubt, picture the literal noun and use *that* title (e.g. `Rubber duck`, not "debugging"). If you can't name an object you're confident has a real photo on Wikipedia, omit it.
 - **A gag is a flash; an illustration can hold.** A visual joke on a punchline should appear and vanish in 0.5–1.0s. A ladybug flickering on "a new bug crept into the codebase" lands; the same image lingering for 3 seconds kills the pace. A concept showing the thing being discussed can hold until the next overlay.
+- **Show the idea, not just the word.** A line's meaning can map to a photo even with no noun in it: a huge user count → `Crowd`, a cost or saving → `Money`, servers or scale → `Server room`, speed → `Cheetah`. These are illustrations, not gags, so they can hold until the next overlay.
 - Place it on the *meaning*, even when the exact word isn't spoken. Anchor to the words in captions.json: `start` = the anchor word's `start`, `end` = the `end` of the line it punctuates, `source_clip` from the anchor word.
 - Add `{ "type": "concept", "name": "<Wikipedia subject>", "start": ..., "end": ..., "source_clip": "...", "path": "" }`.
 
