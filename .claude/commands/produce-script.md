@@ -70,7 +70,7 @@ Before continuing, judge whether there is a video here at all. The bar depends o
 
 - **With sources:** the material must hold a non-obvious mechanism, a surprising cause or reversal, and a concrete outcome. Thin looks like an announcement, or a plain "we improved X by N%" with no mechanism or twist.
 - **Without sources:** the claim must be genuinely contested — would a competent engineer argue the other side? Thin looks like a recommendation nobody opposes, which this channel's data says draws no comments.
-- **Either way, name the stakes:** who loses money, time or safety, and how much. Strongest is the viewer personally; next is a big company spending or wasting an absurd amount; then danger (an exploit or outage). Every reel on this channel over 50k views had one of these. Material with none of them isn't thin on that alone, but record `STAKES: none` and say so. Then look for a framing that has stakes before building the spine: the same mechanism told around who it costs.
+- **Either way, name the stakes:** who loses money, time or safety, and how much. If there are none, record `STAKES: none` and look for a framing around who it costs before building the spine.
 
 Either way, say so plainly and record `STORY_STRENGTH: thin` with the reason. Do not manufacture drama the material doesn't support. A thin gate isn't an automatic stop: surface it and let the user decide whether to proceed, pick a different source, or reframe.
 
@@ -279,7 +279,7 @@ For each candidate, name the category, a one-line "why a viewer wants this," and
 
 *Comment-bait series only. For `follow`, write the series' follow line as the CTA and go to Step 3.6.4. For `disagreement`, write the CTA the series describes and go to Step 3.6.4.*
 
-**Rank a steal-this asset above everything a viewer could find by Googling the keyword.** On this channel, the CTA that drew 3,035 comments offered the creator's own status-bar script. CTAs offering public docs, a blog post or the source article have mostly drawn 0–4 comments; the Jev video offered TypeSafe's docs and got none. A script, config, prompt, template or cheat sheet the viewer can use straight away is the strongest pull. If the best verified candidate is only the article or public docs, say so: flag the CTA as a **weak lead magnet** and suggest one concrete asset the creator could make from the video's mechanism (for example a cheat sheet of the steps the body walks through). The user decides whether to make it.
+**Prefer a steal-this asset** (script, config, prompt, template, cheat sheet) over anything the viewer could find by searching the keyword. If the best candidate is only the article or public docs, flag it as a **weak lead magnet** and suggest an asset the creator could make.
 
 From the verified candidates, select the **single best lead magnet**: the one with the strongest "I want that" pull *and* the tightest tie to the article's actual topic (a steal-this asset, the source's own deeper material, or the article itself). Then write a comment-bait CTA:
 
