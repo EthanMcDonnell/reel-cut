@@ -8,8 +8,8 @@ Repo-relative paths (`scrape/…`, `assets/<slug>/`, `assets/<slug>/script.md`, 
 
 | Token | Path |
 | --- | --- |
-| `{PROJECT_ROOT}` | `/Users/ethanmcdonnell/Development/reel-cut` |
-| `{SOCIAL_COCKPIT_DIR}` | `/Users/ethanmcdonnell/Development/social-cockpit` |
+| `{PROJECT_ROOT}` | This repo's root — the git top level (`git rev-parse --show-toplevel`) |
+| `{SOCIAL_COCKPIT_DIR}` | The [social-cockpit](https://github.com/EthanMcDonnell/social-cockpit) checkout: the directory two levels above the `mcp/dist/index.js` path in `.mcp.json`; if there's no `.mcp.json`, `../social-cockpit` relative to `{PROJECT_ROOT}` |
 
 Run all `.venv/bin/…` and `scrape/…` commands from `{PROJECT_ROOT}`.
 
