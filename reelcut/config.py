@@ -110,7 +110,7 @@ class FlipConfig(BaseModel):
     #   "duplicate" the hook also gets an extra flipped file (3 hooks + mode:all → 6 videos)
     #
     # NOT a proven Instagram dedup lever: SSCD is explicitly trained on horizontal flips, so a
-    # mirrored copy still matches its original (INSTAGRAM_DEDUP_EVASION_PLAN.md, technique #4).
+    # mirrored copy still matches its original.
     mode: Literal["off", "alternate", "all"] = "off"
     apply: Literal["in_place", "duplicate"] = "duplicate"
     suffix: str = "-flipped"   # appended to the filename of *duplicate* flipped outputs only
@@ -123,10 +123,10 @@ class FlipConfig(BaseModel):
 
 class EncodeVariationConfig(BaseModel):
     # Per-hook encoder settings, deterministically seeded by output filename, so the three
-    # hooks are distinct *files* (different bitstream, different hash). Tier 0 render
-    # hygiene from INSTAGRAM_DEDUP_EVASION_PLAN.md: this defeats naive file/perceptual-hash
-    # clustering only. It is NOT a content-matching lever — measured jitter/crop results in
-    # that doc show SSCD and audio fingerprinting are unaffected by this class of change.
+    # hooks are distinct *files* (different bitstream, different hash). Render hygiene:
+    # this defeats naive file/perceptual-hash clustering only. It is NOT a content-matching
+    # lever — measured jitter/crop tests showed SSCD and audio fingerprinting are unaffected
+    # by this class of change.
     # Kept because it is free and touches nothing but the encoder.
     enabled: bool = True
     crf_jitter: int = 1          # libx264: +/- CRF steps around the x264 default (23)

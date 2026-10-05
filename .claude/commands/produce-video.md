@@ -195,7 +195,7 @@ Field reference:
 
 ### Every entry gets its OWN title and caption
 
-**Do NOT stamp one shared title across the cards, and do not let a mirror reuse the text of the hook it mirrors.** This is deliberate. All of these videos (`render-hooks` → `output/<slug>/*.mp4`) share an identical body and voiceover, so the burned-in card and the caption are the elements we can cheaply make distinct per variant. Reused text stamps a byte-identical overlay onto the exact region Instagram scans hardest for near-duplicates; distinct text removes that shared signal and keeps each card matching the hook the viewer just heard. (This alone does **not** de-cluster the videos — the shared body + voiceover cap that; see `INSTAGRAM_DEDUP_EVASION_PLAN.md`. It is cheap, on-strategy hygiene, not a silver bullet.)
+**Do NOT stamp one shared title across the cards, and do not let a mirror reuse the text of the hook it mirrors.** This is deliberate. All of these videos (`render-hooks` → `output/<slug>/*.mp4`) share an identical body and voiceover, so the burned-in card and the caption are the elements we can cheaply make distinct per variant. Reused text stamps a byte-identical overlay onto the exact region Instagram scans hardest for near-duplicates; distinct text removes that shared signal and keeps each card matching the hook the viewer just heard. (This alone does **not** de-cluster the videos — the shared body + voiceover cap that. It is cheap, on-strategy hygiene, not a silver bullet.)
 
 A mirror entry is a *second angle on the same hook*, not a different video: it sits over the same spoken words, so it must stay true to them.
 

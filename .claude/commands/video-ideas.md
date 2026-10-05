@@ -7,7 +7,7 @@ permissionMode: default
 ---
 Produce a new dated batch of video ideas, grounded in what is **actually performing** on the channel right now rather than in what seems interesting. Each idea is a **hook** in its series' winning pattern, plus the **angle** it has to deliver, plus (where the series requires one) a **verified source**.
 
-This command does not write scripts. It creates a **persisted, Telegram-delivered idea batch** and also writes a dated idea bank at the **repo root** (Stage 7), which is where `/produce-script` looks when a prompt names an idea rather than a URL. Keep the bank at the root and keep the `## <series-slug> — <Series Name>` headings intact: `/produce-script` reads the series straight off the heading of the entry it matches.
+This command does not write scripts. It creates a **persisted, Telegram-delivered idea batch** and also writes a dated idea bank to **`ideas/`** (Stage 7, gitignored), which is where `/produce-script` looks when a prompt names an idea rather than a URL. Keep the bank in `ideas/` and keep the `## <series-slug> — <Series Name>` headings intact: `/produce-script` reads the series straight off the heading of the entry it matches.
 
 **Paths:** `{TOKEN}` references are machine-specific paths defined in [glossary.md](glossary.md) — resolve each before running. Repo-relative paths (`scrape/…`, `series/…`, `.claude/…`) are written inline. Run all `.venv/bin/…` commands from `{PROJECT_ROOT}`.
 
@@ -62,7 +62,7 @@ Read the pulled data and answer three questions in writing. These drive every se
 An idea that repeats something shipped, queued, or already proposed is worthless. Before generating anything, assemble the full exclusion list:
 
 - **Shipped / produced:** `ls assets/archive/` and `ls output/` — every slug there is done.
-- **Existing idea banks:** read every `VIDEO_IDEAS*.md` and `*_VIDEO_IDEA*.md` at the repo root (`Glob` for `*VIDEO_IDEA*.md` — the set grows each time this command runs). This includes `VIDEO_IDEAS_BACKLOG.md`, a large standing backlog of unproduced ideas — much of what looks "missing" from a series is really already queued there.
+- **Existing idea banks:** read every `VIDEO_IDEAS*.md` and `*_VIDEO_IDEA*.md` in `ideas/` (`Glob` for `ideas/*VIDEO_IDEA*.md` — the set grows each time this command runs). This includes `ideas/VIDEO_IDEAS_BACKLOG.md`, a large standing backlog of unproduced ideas — much of what looks "missing" from a series is really already queued there.
 - **Series files:** read `series/<slug>.md` for each in-scope series — the **Queued** and **Best Hooks** sections list both what is planned and what already shipped.
 - **Scripted but not yet shot:** `assets/*/script.md` — a slug with a script is already written.
 - **Rejected topics:** `.venv/bin/python scrape/query.py rejected --series <series>` — topics previously ruled out. Do not re-propose them.
@@ -164,7 +164,7 @@ This is the stage that makes the output trustworthy. Apply it before writing the
 
 ## Stage 7 — Write the file
 
-Write to `VIDEO_IDEAS_<YYYY-MM-DD>.md` at the repo root (today's date). **Never overwrite an existing bank** — each run is a new dated file, so prior batches stay readable and the Stage 3 glob keeps picking them all up. If a bank already exists for today, add a numeric suffix such as `VIDEO_IDEAS_<YYYY-MM-DD>_2.md`.
+Write to `ideas/VIDEO_IDEAS_<YYYY-MM-DD>.md` (today's date). **Never overwrite an existing bank** — each run is a new dated file, so prior batches stay readable and the Stage 3 glob keeps picking them all up. If a bank already exists for today, add a numeric suffix such as `ideas/VIDEO_IDEAS_<YYYY-MM-DD>_2.md`.
 
 Structure:
 
@@ -182,7 +182,7 @@ After writing the Markdown bank, create a temporary JSON payload and persist it 
 {
   "batch_id": "ideas-<YYYY-MM-DD[-N]>",
   "generated_at": "<UTC ISO-8601 timestamp>",
-  "bank_path": "VIDEO_IDEAS_<YYYY-MM-DD>.md",
+  "bank_path": "ideas/VIDEO_IDEAS_<YYYY-MM-DD>.md",
   "ideas": [
     {
       "series": "updates",

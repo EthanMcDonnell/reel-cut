@@ -177,6 +177,29 @@ output/<slug>/<hook>.mp4 ──(upload_server.py)──▶ http://100.x.y.z:8770
 
 ---
 
+## Social Cockpit (MCP)
+
+`/schedule-video`, `/post-video` and `/video-ideas` talk to **social-cockpit** (posting
+calendar, scheduler, analytics) through its MCP server. The server path is machine-specific,
+so `.mcp.json` is gitignored — create it at the repo root:
+
+```json
+{
+  "mcpServers": {
+    "social-cockpit": {
+      "command": "node",
+      "args": ["/absolute/path/to/social-cockpit/mcp/dist/index.js"]
+    }
+  }
+}
+```
+
+Build social-cockpit first so `mcp/dist/index.js` exists, then restart Claude Code and approve
+the server when prompted. Without it, everything up to render still works; only scheduling,
+posting and analytics-driven ideas need it.
+
+---
+
 ## Script out, footage in (phone ↔ `assets/`)
 
 `/produce-script` sends a script page and an upload link to Telegram. The script is served live

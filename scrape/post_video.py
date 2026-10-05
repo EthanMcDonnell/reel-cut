@@ -8,8 +8,8 @@ captioned from ``assets/<slug>/title.json`` and posted as a trial reel.
 
 **Exactly one hook is posted per invocation.** Every hook of a slug shares an
 identical body and a byte-identical voiceover, so posting them close together
-gets the later ones clustered as near-duplicates and throttled to ~no reach
-(see ``INSTAGRAM_DEDUP_EVASION_PLAN.md``). ``--min-gap-days`` enforces the
+gets the later ones clustered as near-duplicates and throttled to ~no reach.
+``--min-gap-days`` enforces the
 spacing by asking **social-cockpit** what is within that window — both what
 actually went out and what is booked to go out. So it is safe to run on a daily
 schedule, with the calendar deciding when a hook is actually due.

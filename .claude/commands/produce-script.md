@@ -2,9 +2,9 @@
 name: produce-script
 description: Produce a single video script from a user-supplied prompt (URL, phrase, idea-bank reference, or a bare contested claim)
 ---
-Produces a complete, validated video script from a user-supplied prompt. The prompt may be a URL (engineering blog post, article), a phrase or topic idea, a reference to an idea in a repo-root idea bank (`*VIDEO_IDEA*.md`, written by `/video-ideas`, or the standing backlog in `VIDEO_IDEAS_BACKLOG.md`), or a bare contested claim (a `hot-takes` opinion with no source).
+Produces a complete, validated video script from a user-supplied prompt. The prompt may be a URL (engineering blog post, article), a phrase or topic idea, a reference to an idea in an idea bank under `ideas/` (`ideas/*VIDEO_IDEA*.md`, written by `/video-ideas`, or the standing backlog in `ideas/VIDEO_IDEAS_BACKLOG.md`), or a bare contested claim (a `hot-takes` opinion with no source).
 
-**Everything lives in the repo.** `/video-ideas` writes its banks at the root, Stage 0 resolves against them, and Stage 3.5 saves the script to `assets/<video-slug>/script.md` — next to that slug's screenshots, where `/prepare-video` reads it as ground truth for the transcript.
+**Everything lives in the repo.** `/video-ideas` writes its banks to `ideas/` (gitignored), Stage 0 resolves against them, and Stage 3.5 saves the script to `assets/<video-slug>/script.md` — next to that slug's screenshots, where `/prepare-video` reads it as ground truth for the transcript.
 
 **Paths:** `{TOKEN}` references below are machine-specific absolute paths defined in [glossary.md](glossary.md) — resolve each to its value before running. Repo-relative paths (`scrape/…`, `assets/…`, `.claude/…`) are written inline as-is. Run everything from the project root (`{PROJECT_ROOT}`).
 
@@ -20,15 +20,15 @@ The URL is the source. Note it and go to the fetch step.
 
 ### 2. If the prompt references a video idea (a hook, a topic, an idea-bank entry, or a note title)
 
-Idea banks live at the **repo root** — that is where `/video-ideas` writes them and where this command looks.
+Idea banks live in **`ideas/`** (gitignored) — that is where `/video-ideas` writes them and where this command looks.
 
-**First, the dated idea banks.** `Glob` `VIDEO_IDEAS_*.md` / `*_VIDEO_IDEA*.md` at the repo root and read the matches (the set grows every time `/video-ideas` runs, so search them all, newest first). A dated bank groups ideas under `## <series-slug> — <Series Name>` headings, and each idea is a numbered entry: a bolded hook, a paragraph of angle and detail, and a `- **Source:** [title](url)` line. Match the prompt against the hooks and topics, and when one entry fits:
+**First, the dated idea banks.** `Glob` `ideas/VIDEO_IDEAS_*.md` / `ideas/*_VIDEO_IDEA*.md` and read the matches (the set grows every time `/video-ideas` runs, so search them all, newest first). A dated bank groups ideas under `## <series-slug> — <Series Name>` headings, and each idea is a numbered entry: a bolded hook, a paragraph of angle and detail, and a `- **Source:** [title](url)` line. Match the prompt against the hooks and topics, and when one entry fits:
 
 - `SERIES` is the **enclosing heading's slug**, when the file uses them — take it from there rather than inferring. Some older one-topic banks have no series headings and instead name the series in prose; use what the file says. Judge it yourself only when nothing in the file states it.
 - The entry's paragraph is the angle; carry it into `KEY_DISCUSSION_POINTS`.
 - The URL on its `**Source:**` line is the source. An entry with no source line resolves to no source, and the source gate below handles it.
 
-**Otherwise, the backlog bank.** `VIDEO_IDEAS_BACKLOG.md` at the root is an older, undated list of one-idea-per-entry notes. Match the prompt against its entries and read the one that fits. Extract topic and angle; the first URL it lists, if any, is the source (most of these entries have none, which is normal). These entries carry **no series heading**, so work out which series the idea belongs to from its subject, judging against the series identities rather than defaulting. Fall back to `misc` only when it genuinely fits no series.
+**Otherwise, the backlog bank.** `ideas/VIDEO_IDEAS_BACKLOG.md` is an older, undated list of one-idea-per-entry notes. Match the prompt against its entries and read the one that fits. Extract topic and angle; the first URL it lists, if any, is the source (most of these entries have none, which is normal). These entries carry **no series heading**, so work out which series the idea belongs to from its subject, judging against the series identities rather than defaulting. Fall back to `misc` only when it genuinely fits no series.
 
 ### 3. If the prompt is a bare claim (an opinion with no source)
 

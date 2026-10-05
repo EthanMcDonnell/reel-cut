@@ -113,9 +113,9 @@ output:
     min: 0.96                       # fraction of frame kept (0.96 = zoom in up to 4%)
     max: 1.0
   encode_variation:                 # per-hook encoder settings, seeded by output filename.
-    enabled: true                   # Tier 0 hash hygiene: distinct bitstream per hook. Free, and
+    enabled: true                   # Hash hygiene: distinct bitstream per hook. Free, and
                                     # touches only the encoder — but beats naive hashing ONLY, not
-                                    # SSCD or audio fingerprinting (see INSTAGRAM_DEDUP_EVASION_PLAN.md).
+                                    # SSCD or audio fingerprinting.
     crf_jitter: 1                   # libx264: +/- CRF steps around 23. Raise for more spread (visible above ~2).
     bitrate_jitter: 0.08            # videotoolbox: +/- fraction of the 8000k base bitrate
   flip:                             # horizontal mirror of the footage. Captions/title cards are
@@ -133,8 +133,8 @@ output:
                                     # whose "of" names the hook) is named, captioned and titled by
                                     # that entry instead — see /produce-video Step 4b. Also the
                                     # convention for that entry's id: "<base-id><suffix>".
-                                    # NOTE: not a proven IG dedup lever — SSCD is trained on flips
-                                    # (INSTAGRAM_DEDUP_EVASION_PLAN.md #4). Cheap, but don't expect
+                                    # NOTE: not a proven IG dedup lever — SSCD is trained on flips.
+                                    # Cheap, but don't expect
                                     # a mirrored copy to de-cluster from its original.
 
 audio:

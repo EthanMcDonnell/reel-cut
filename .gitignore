@@ -217,3 +217,9 @@ scrape/.captcha-profile/
 
 # Local phone-upload production queue and job logs.
 .reelcut/
+
+# Personal idea banks (/video-ideas writes here, /produce-script reads here).
+/ideas/
+
+# Machine-specific MCP server paths — see README "Social Cockpit (MCP)".
+.mcp.json
