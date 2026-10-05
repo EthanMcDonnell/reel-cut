@@ -25,6 +25,9 @@ class TestSlugVariants:
     def test_non_aliased_word_unchanged(self):
         assert _slug_variants("Anthropic", normalize_slug) == ["anthropic"]
 
+    def test_product_falls_back_to_company_logo(self):
+        assert "openai" in _slug_variants("ChatGPT's", normalize_slug)
+
     def test_every_alias_target_is_namespaced(self):
         # guards against typo'd alias values (bare == target would be pointless)
         for bare, target in LOGO_ALIASES.items():

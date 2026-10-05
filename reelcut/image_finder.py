@@ -133,9 +133,11 @@ def _slug_variants(word: str, normalize_slug) -> list[str]:
 
     # Map bare product names to their namespaced slug (e.g. "onedrive" →
     # "microsoft-onedrive"). Appended last so an exact slug always wins first.
-    from .image_resolver import LOGO_ALIASES
+    from .image_resolver import COMPANY_LOGOS, LOGO_ALIASES
     for v in list(variants):
         if v in LOGO_ALIASES:
             _add(LOGO_ALIASES[v])
+        if v in COMPANY_LOGOS:
+            _add(COMPANY_LOGOS[v])
 
     return variants

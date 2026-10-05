@@ -89,6 +89,13 @@ LOGO_ALIASES: dict[str, str] = {
     "incopy": "adobe-incopy",
 }
 
+# Spoken product names with no logo of their own, shown with their maker's logo instead
+# (e.g. "ChatGPT" → "openai"). Kept apart from LOGO_ALIASES, whose targets are the
+# product's own namespaced logo.
+COMPANY_LOGOS: dict[str, str] = {
+    "chatgpt": "openai",
+}
+
 
 def normalize_slug(word: str) -> str:
     """Normalize a transcript word to a logos shortname slug."""
