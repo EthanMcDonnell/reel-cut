@@ -26,7 +26,8 @@ def spy(monkeypatch, tmp_path):
     def fake_level(voice_path, audio_tracks, ducking_lufs):
         calls["level"] += 1
 
-    def fake_encode(input_path, output_path, config, caption_seq, audio_tracks, flip):
+    def fake_encode(input_path, output_path, config, caption_seq, audio_tracks, flip,
+                    video_overlays=None):
         calls["encode"].append((output_path.name, flip))
         output_path.write_bytes(b"")
 

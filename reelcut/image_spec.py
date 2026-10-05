@@ -21,14 +21,17 @@ class ImageSpec:
                          debugging"); image fetched automatically, same as person
     type: "figure"     — path points to a local image harvested from the source article
                          (chart/diagram); rendered on a padded card. `kind` tags which.
+    type: "video"      — path points to a local video file (mp4/mov, or webm/ProRes 4444 with
+                         alpha); plays muted in the centre from `clip_start` for end-start seconds
     """
-    type: str               # "person" | "screenshot" | "concept" | "figure"
+    type: str               # "person" | "screenshot" | "concept" | "figure" | "video"
     start: float            # source-clip seconds (same timeline as words/edl)
     end: float              # source-clip seconds (remapped to output-timeline at render time)
     source_clip: str = ""   # path to source clip — copy from the words the image is anchored to
     name: str = ""          # Wikipedia subject (type=person: a person; type=concept: a thing)
     path: str = ""          # absolute path to screenshot/figure PNG/JPG
     kind: str = ""          # type=figure only: "chart" | "diagram"
+    clip_start: float = 0.0 # type=video only: seconds into the video file to start playing
 
 
 def load_images(path: Path) -> list[ImageSpec]:
@@ -48,6 +51,7 @@ def load_images(path: Path) -> list[ImageSpec]:
             name=i.get("name", ""),
             path=i.get("path", ""),
             kind=i.get("kind", ""),
+            clip_start=float(i.get("clip_start", 0.0)),
         )
         for i in raw
     ]

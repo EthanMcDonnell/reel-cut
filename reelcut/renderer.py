@@ -42,6 +42,7 @@ def render(
     config: ReelCutConfig,
     outputs: list[tuple[str | Path, bool]] | None = None,
     audio_tracks: list[dict] | None = None,
+    video_overlays: list | None = None,
 ) -> list[Path]:
     """Render one or more output files from EDL keep-segments with optional caption overlay.
 
@@ -56,6 +57,9 @@ def render(
     entry shares a single segment-extraction, concat and caption-sequence pass — they differ
     only in the final encode — so a flipped duplicate costs one encode, not a whole render.
     Segment extraction is ~80% of a render, so this is the difference between 2x and ~1.1x.
+
+    `video_overlays` are `type="video"` ImageCues (output-timeline), played muted in the
+    centre under the caption/image layer.
     """
     if not outputs:
         outputs = [(Path(config.output.location) / "output.mp4", False)]
@@ -111,7 +115,8 @@ def render(
             for n, (path, flip) in enumerate(out_specs, 1):
                 pos = f" ({n}/{len(out_specs)})" if len(out_specs) > 1 else ""
                 progress.update(task, description=f"Encoding {path.name}{pos}…")
-                _final_encode(concat_path, path, config, caption_seq, audio_tracks, flip)
+                _final_encode(concat_path, path, config, caption_seq, audio_tracks, flip,
+                              video_overlays)
 
         written = [path for path, _ in out_specs]
         progress.update(task, description=f"Done → {written[-1]}", completed=1, total=1)
@@ -307,6 +312,7 @@ def _final_encode(
     caption_seq: tuple[Path, int] | None = None,
     audio_tracks: list[dict] | None = None,
     flip: bool = False,
+    video_overlays: list | None = None,
 ) -> None:
     """Re-encode to final output spec, optionally overlaying caption frames in the same pass."""
     w, h = config.output.resolution
@@ -331,6 +337,10 @@ def _final_encode(
         # async resampling keeps audio locked to video PTS after the fps conversion.
         audio = main.audio.filter("aresample", **{"async": 1000})
         audio = _mix_audio_tracks(audio, audio_tracks)
+        # Video clips go under the caption layer, so captions, stills and the title card
+        # stay on top of them.
+        for cue in video_overlays or []:
+            video = _overlay_video_clip(video, cue, config)
         if caption_seq is not None:
             seq_dir, min_frame = caption_seq
             overlay_raw = ffmpeg.input(
@@ -390,6 +400,36 @@ def _final_encode(
     except ffmpeg.Error as exc:
         stderr = exc.stderr.decode() if exc.stderr else ""
         raise RuntimeError(f"Final encode failed:\n{stderr}") from exc
+
+
+def _overlay_video_clip(video, cue, config: ReelCutConfig):
+    """Play `cue`'s video file, muted, in the centre slot from cue.start to cue.end.
+
+    Sized like a figure card and placed per images.position, matching the still overlays.
+    The clip is shifted to start at cue.start; once it runs out the footage shows through.
+    """
+    w, h = config.output.resolution
+    img = config.images
+    target_w = int(w * img.figure_overlay_size_pct / 100) // 2 * 2
+    margin = int(h * img.margin_pct / 100)
+    y = {"top": str(margin), "bottom": f"main_h-overlay_h-{margin}"}.get(
+        img.position, "(main_h-overlay_h)/2")
+
+    duration = max(0.0, cue.end - cue.start)
+    # webm alpha only decodes through libvpx; the native vp9 decoder drops it.
+    in_kwargs = {"vcodec": "libvpx-vp9"} if cue.image_path.lower().endswith(".webm") else {}
+    clip = (
+        ffmpeg.input(cue.image_path, ss=cue.clip_start, t=duration, **in_kwargs)
+        .video
+        .filter("fps", fps=config.output.fps)
+        .filter("scale", target_w, -2)
+        .filter("format", "rgba")
+        .filter("setpts", f"PTS-STARTPTS+{cue.start}/TB")
+    )
+    return ffmpeg.overlay(
+        video, clip, x="(main_w-overlay_w)/2", y=y, eof_action="pass",
+        enable=f"between(t,{cue.start},{cue.end})",
+    )
 
 
 def _measure_lufs(path: str | Path) -> float | None:

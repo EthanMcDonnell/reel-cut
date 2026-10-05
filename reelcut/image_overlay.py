@@ -16,8 +16,9 @@ from .image_finder import ImageCue
 # one in the center rather than displacing it (see _resolve_logo_swaps).
 _SLOTS = ("center", "top_left", "top_right")
 
-# Lower number = higher priority for the center slot: figure > screenshot > person > concept > logo.
-_TYPE_PRIORITY = {"figure": 0, "screenshot": 1, "person": 2, "concept": 3, "logo": 4}
+# Lower number = higher priority for the center slot:
+# video > figure > screenshot > person > concept > logo.
+_TYPE_PRIORITY = {"video": -1, "figure": 0, "screenshot": 1, "person": 2, "concept": 3, "logo": 4}
 
 
 def _assign_slots(cues: list[ImageCue]) -> list[str]:
@@ -141,6 +142,8 @@ def render_image_frames(
 
     prepared: list[dict] = []
     for i, (cue, slot) in enumerate(zip(cues, slots)):
+        if cue.type == "video":
+            continue  # drawn by the renderer; here it only claims the center slot
         try:
             logo = Image.open(cue.image_path).convert("RGBA")
         except Exception:

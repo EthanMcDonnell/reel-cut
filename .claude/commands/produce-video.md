@@ -143,9 +143,12 @@ Example `images.json`:
   { "type": "screenshot", "start": 12.935, "end": 16.402, "source_clip": "assets/slug/clip.MP4", "name": "", "path": "{PROJECT_ROOT}/assets/slug/snippet-01.png" },
   { "type": "person", "start": 4.205, "end": 7.444, "source_clip": "assets/slug/clip.MP4", "name": "Reed Hastings", "path": "" },
   { "type": "concept", "start": 31.2, "end": 34.1, "source_clip": "assets/slug/clip.MP4", "name": "Rubber duck debugging", "path": "" },
-  { "type": "figure", "kind": "diagram", "start": 21.4, "end": 26.8, "source_clip": "assets/slug/clip.MP4", "name": "", "path": "{PROJECT_ROOT}/assets/slug/figures/figure-01.png" }
+  { "type": "figure", "kind": "diagram", "start": 21.4, "end": 26.8, "source_clip": "assets/slug/clip.MP4", "name": "", "path": "{PROJECT_ROOT}/assets/slug/figures/figure-01.png" },
+  { "type": "video", "start": 40.2, "end": 43.5, "source_clip": "assets/slug/clip.MP4", "name": "", "path": "{PROJECT_ROOT}/assets/slug/clips/demo.mp4", "clip_start": 12.0 }
 ]
 ```
+
+A `video` entry plays a local clip, muted, in the centre from `clip_start` seconds into the file, and takes the centre over any still image. Only use clips published by the company being discussed, by the article the video is about, or by a news report on it, never one from a source that merely supports a point. Keep `end - start` within the clip's remaining length; once the clip runs out the footage shows through. A webm or ProRes 4444 file with alpha keeps its transparency, which is how animations are overlaid.
 
 All `start`/`end` values are **source-clip seconds** taken from the `words` array in captions.json (the renderer remaps them to the output timeline).
 

@@ -897,6 +897,7 @@ def _phase2(cfg, doc, outputs: list[tuple[Path, bool]], verbose: bool,
                 name=spec.name,
                 path=spec.path,
                 kind=spec.kind,
+                clip_start=spec.clip_start,
             )
             # An overlay is anchored to source times, so a later EDL change can move a
             # cut over it. Once remapped it just gets shorter (or vanishes at zero
@@ -988,7 +989,9 @@ def _phase2(cfg, doc, outputs: list[tuple[Path, bool]], verbose: bool,
         n_out = f"{len(outputs)} videos" if len(outputs) > 1 else "final video"
         console.print(f"[bold]Step 6c/6[/bold] Rendering {n_out}… encoder: [cyan]{encoder}[/cyan]")
         t = time.perf_counter()
-        written = do_render(edl, caption_frames, cfg, outputs, audio_tracks=audio_tracks)
+        video_cues = [c for c in all_image_cues if c.type == "video"]
+        written = do_render(edl, caption_frames, cfg, outputs, audio_tracks=audio_tracks,
+                            video_overlays=video_cues)
         console.print(f"\n[green bold]Done![/green bold] ({time.perf_counter() - t:.1f}s)")
         for p in written:
             console.print(f"  → {p}")
@@ -1161,6 +1164,20 @@ def _resolve_image_spec(spec, display_duration_s: float):
             image_path=str(p),
             type="figure",
             kind=spec.kind,
+        )
+
+    elif spec.type == "video":
+        p = Path(spec.path)
+        if not spec.path or not p.exists():
+            console.print(f"  [yellow]Video not found: {spec.path}[/yellow]")
+            return None
+        return ImageCue(
+            keyword=p.stem,
+            start=spec.start,
+            end=spec.end,
+            image_path=str(p),
+            type="video",
+            clip_start=spec.clip_start,
         )
 
     elif spec.type == "concept":
