@@ -39,7 +39,7 @@ The pipeline is niche-agnostic; everything about *your* channel lives in gitigno
 | `series/<slug>.md` | One file per series: audience, voice, length, title card, CTA, hook patterns, where ideas come from. Copy `series/series-template.md`. The files **are** the series list. |
 | `config.local.yaml` | Overrides deep-merged over `config.yaml` — at minimum `whisper.initial_prompt` with your niche's vocabulary, plus any `inbound.series` upload links. |
 | `scrape/sources-<table>.yaml` | Optional article feeds for the scraper. See `scrape/sources.example.yaml`. |
-| `.mcp.json` | social-cockpit MCP server — see [Social Cockpit (MCP)](#social-cockpit-mcp). |
+| `.mcp.json` | MCP server for [social-cockpit](https://github.com/EthanMcDonnell/social-cockpit), the separate repo that handles posting and analytics — see [Social Cockpit (MCP)](#social-cockpit-mcp). |
 | `SERIES.md` | Optional channel-wide notes `/video-ideas` reads. |
 
 Generated as you go, also gitignored: `ideas/` (idea banks from `/video-ideas`) and `.claude/voice/` (your hooks and speaking style, mined by `/voice-profile`).
@@ -195,9 +195,23 @@ output/<slug>/<hook>.mp4 ──(upload_server.py)──▶ http://100.x.y.z:8770
 
 ## Social Cockpit (MCP)
 
-`/schedule-video`, `/post-video` and `/video-ideas` talk to **social-cockpit** (posting
-calendar, scheduler, analytics) through its MCP server. The server path is machine-specific,
-so `.mcp.json` is gitignored — create it at the repo root:
+[**social-cockpit**](https://github.com/EthanMcDonnell/social-cockpit) is a separate project, not
+part of this repo: a self-hosted Instagram dashboard (analytics, publishing, scheduler) that runs
+on your own machine. ReelCut doesn't post anything itself — `/schedule-video`, `/post-video`,
+`/video-ideas` and `/voice-profile` hand off to social-cockpit, through its HTTP API
+(`http://localhost:3000` by default, override with `COCKPIT_URL`) and its MCP server.
+
+Clone it alongside this repo and follow its README to connect your Instagram account, then
+build it:
+
+```bash
+git clone https://github.com/EthanMcDonnell/social-cockpit.git
+cd social-cockpit && npm install && npm run build   # also builds mcp/dist/index.js
+npm run dev                                          # serves http://localhost:3000
+```
+
+The MCP server path is machine-specific, so `.mcp.json` is gitignored — create it at this
+repo's root:
 
 ```json
 {
@@ -210,9 +224,8 @@ so `.mcp.json` is gitignored — create it at the repo root:
 }
 ```
 
-Build social-cockpit first so `mcp/dist/index.js` exists, then restart Claude Code and approve
-the server when prompted. Without it, everything up to render still works; only scheduling,
-posting and analytics-driven ideas need it.
+Restart Claude Code and approve the server when prompted. Without social-cockpit, everything up
+to render still works; only scheduling, posting and analytics-driven ideas need it.
 
 ---
 
