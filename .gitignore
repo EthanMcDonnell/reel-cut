@@ -234,3 +234,6 @@ config.local.yaml
 
 # Your scraper source lists; scrape/sources.example.yaml shows the format.
 /scrape/sources-*.yaml
+
+# Personal feature backlog.
+/FUTURE_FEATURES.md
