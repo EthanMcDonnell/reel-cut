@@ -141,5 +141,16 @@ class TestUnprovenFigures:
         snippet = "more than 480TB of source code. Every byte is case-folded"
         assert screenshot._unproven_figures(context, snippet) == []
 
+    def test_a_more_precise_article_figure_proves_the_spoken_whole_number(self):
+        context = "that made it 193 times faster and 444 times cheaper"
+        snippet = "the claims of 193.6x faster, 444.6x cheaper"
+        assert screenshot._unproven_figures(context, snippet) == []
+
+    def test_only_the_triggered_span_counts(self):
+        context = "that made it 193 times faster, with output tokens free."
+        snippet = "Output tokens: FREE (too cheap to meter)."
+        assert screenshot._unproven_figures(context, snippet, "with output tokens", "free") == []
+        assert screenshot._unproven_figures(context, snippet) == ["193"]
+
     def test_a_line_with_no_figures_is_never_flagged(self):
         assert screenshot._unproven_figures("the real problem was the break itself", "x") == []

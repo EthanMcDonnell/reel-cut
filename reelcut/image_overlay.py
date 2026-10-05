@@ -82,6 +82,11 @@ def _resolve_logo_swaps(
 # A stretch with no overlay at least this long is reported as a coverage gap.
 COVERAGE_GAP_S = 1.0
 
+# A screenshot's highlight sweeps in over this share of its time on screen, within these bounds.
+SWEEP_SHARE = 0.6
+SWEEP_MIN_S = 0.6
+SWEEP_MAX_S = 2.5
+
 
 def clamp_to_hook(cues: list[ImageCue], hook_end: float) -> list[ImageCue]:
     """End every cue that starts inside the hook by `hook_end`.
@@ -159,6 +164,7 @@ def render_image_frames(
 
         # Figures (article charts/diagrams) sit on an opaque padded card so transparent
         # or wide images read against the footage; the card's total width is target_w.
+        sweep = None
         if cue.type == "figure":
             logo = _figure_card(logo, target_w)
             logo_h = logo.height
@@ -166,6 +172,8 @@ def render_image_frames(
             # Resize maintaining aspect ratio
             logo_h = int(target_w * logo.height / logo.width)
             logo = logo.resize((target_w, logo_h), Image.LANCZOS)
+            if cue.type == "screenshot":
+                sweep = _load_sweep(cue.image_path, target_w, logo_h)
 
         # Position. Displaced (overlapping) images sit in a top corner, dropped
         # slightly below the edge; the center slot uses the configured base position.
@@ -192,10 +200,15 @@ def render_image_frames(
         # Clamp fade so it doesn't exceed half the display window. A logo at a
         # swap seam suppresses that edge's fade for a hard cut.
         effective_fade = min(fade_frames, total // 2)
+        sweep_frames = 0
+        if sweep:
+            sweep_frames = min(total, max(int(SWEEP_MIN_S * fps),
+                                          min(int(SWEEP_MAX_S * fps), int(total * SWEEP_SHARE))))
         prepared.append(
             {"logo": logo, "x": x, "y": y, "start": start_frame, "total": total,
              "fade_in": 0 if suppress_in[i] else effective_fade,
-             "fade_out": 0 if suppress_out[i] else effective_fade}
+             "fade_out": 0 if suppress_out[i] else effective_fade,
+             "sweep": sweep, "sweep_frames": sweep_frames}
         )
 
     if not prepared:
@@ -208,7 +221,7 @@ def render_image_frames(
     cache: dict[tuple, str] = {}  # active-layer signature → composited file path
 
     for frame_num in range(min_frame, max_frame):
-        layers: list[tuple[int, float]] = []  # (prepared index, alpha)
+        layers: list[tuple[int, float, int]] = []  # (prepared index, alpha, sweep step)
         for idx, p in enumerate(prepared):
             i = frame_num - p["start"]
             if i < 0 or i >= p["total"]:
@@ -221,7 +234,9 @@ def render_image_frames(
             else:
                 alpha = 1.0
             if alpha > 0:
-                layers.append((idx, round(alpha, 3)))
+                # Frames still sweeping are each distinct; -1 marks the settled highlight.
+                step = i if i < p["sweep_frames"] else -1
+                layers.append((idx, round(alpha, 3), step))
 
         if not layers:
             continue
@@ -230,9 +245,12 @@ def render_image_frames(
         path = cache.get(sig)
         if path is None:
             canvas = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-            for idx, alpha in layers:
+            for idx, alpha, step in layers:
                 p = prepared[idx]
-                _composite_logo(canvas, p["logo"], alpha, p["x"], p["y"])
+                img = p["logo"]
+                if step >= 0:
+                    img = _sweep_frame(img, *p["sweep"], (step + 1) / p["sweep_frames"])
+                _composite_logo(canvas, img, alpha, p["x"], p["y"])
             path = str(output_dir / f"img_{frame_num:06d}.png")
             canvas.save(path, format="PNG")
             cache[sig] = path
@@ -298,6 +316,45 @@ def merge_with_caption_frames(
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+def _load_sweep(path: str, w: int, h: int) -> tuple[Image.Image, list] | None:
+    """The un-highlighted crop and highlighted line boxes saved beside a screenshot.
+
+    `scrape/screenshot.py` writes `<stem>.plain.png` and `<stem>.rects.json` (line boxes as
+    fractions of the crop). Returns the plain image at (w, h) and the boxes in its pixels,
+    or None when either is missing, so older screenshots keep showing as a still.
+    """
+    import json
+
+    base = Path(path)
+    plain_path = base.with_name(f"{base.stem}.plain.png")
+    rects_path = base.with_name(f"{base.stem}.rects.json")
+    if not (plain_path.exists() and rects_path.exists()):
+        return None
+    try:
+        plain = Image.open(plain_path).convert("RGBA").resize((w, h), Image.LANCZOS)
+        rects = [(rx * w, ry * h, rw * w, rh * h) for rx, ry, rw, rh in json.loads(rects_path.read_text())]
+    except Exception:
+        return None
+    return (plain, rects) if rects else None
+
+
+def _sweep_frame(highlighted: Image.Image, plain: Image.Image, rects: list, progress: float) -> Image.Image:
+    """The plain crop with the highlight revealed left to right, line by line, to `progress`.
+
+    Eased out so the sweep starts quickly and settles onto the end of the line.
+    """
+    reveal = (1 - (1 - min(1.0, progress)) ** 3) * sum(r[2] for r in rects)
+    out = plain.copy()
+    for x, y, w, h in rects:
+        if reveal <= 0:
+            break
+        box = (int(x), int(y), int(x + min(w, reveal)), int(y + h))
+        if box[2] > box[0] and box[3] > box[1]:
+            out.paste(highlighted.crop(box), box[:2])
+        reveal -= w
+    return out
+
 
 def _figure_card(img: Image.Image, card_w: int) -> Image.Image:
     """Place a figure image on an opaque white rounded card of total width `card_w`.

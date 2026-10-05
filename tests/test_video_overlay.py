@@ -118,3 +118,18 @@ def test_transparent_webm_shows_footage_through(tmp_path):
     px = _frame(out, tmp_path, 24)
     assert _close(px.getpixel((W // 2, H // 2)), RED), "opaque part of the animation"
     assert _close(px.getpixel((W // 2 - 60, H // 2 - 60)), BLUE), "transparent part shows footage"
+
+
+def test_short_clip_holds_its_last_frame(tmp_path):
+    """A 1s clip in a 1s+ window: once it runs out, its final frame stays up until the window ends."""
+    cfg = _cfg()
+    clip = tmp_path / "short.mp4"
+    _ffmpeg("-f", "lavfi", "-i", f"color=c=red:s=160x160:r={FPS}:d=0.5",
+            "-f", "lavfi", "-i", f"color=c=yellow:s=160x160:r={FPS}:d=0.5",
+            "-filter_complex", "[0][1]concat=n=2:v=1", "-pix_fmt", "yuv420p", str(clip))
+    cue = ImageCue(keyword="short", start=0.2, end=1.8, image_path=str(clip), type="video")
+    out = tmp_path / "out.mp4"
+    _final_encode(_footage(tmp_path), out, cfg, None, None, False, [cue])
+    centre = (W // 2, H // 2)
+    assert _close(_frame(out, tmp_path, 45).getpixel(centre), YELLOW), "held on the last frame"
+    assert _close(_frame(out, tmp_path, 57).getpixel(centre), BLUE), "gone after the window"

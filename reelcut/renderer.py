@@ -406,7 +406,8 @@ def _overlay_video_clip(video, cue, config: ReelCutConfig):
     """Play `cue`'s video file, muted, in the centre slot from cue.start to cue.end.
 
     Sized like a figure card and placed per images.position, matching the still overlays.
-    The clip is shifted to start at cue.start; once it runs out the footage shows through.
+    The clip is shifted to start at cue.start. A clip shorter than its window holds its last
+    frame, so an animation ends on its final state rather than leaving a gap.
     """
     w, h = config.output.resolution
     img = config.images
@@ -422,6 +423,8 @@ def _overlay_video_clip(video, cue, config: ReelCutConfig):
         ffmpeg.input(cue.image_path, ss=cue.clip_start, t=duration, **in_kwargs)
         .video
         .filter("fps", fps=config.output.fps)
+        .filter("tpad", stop_mode="clone", stop_duration=duration)
+        .filter("trim", duration=duration)
         .filter("scale", target_w, -2)
         .filter("format", "rgba")
         .filter("setpts", f"PTS-STARTPTS+{cue.start}/TB")

@@ -111,6 +111,15 @@ _JS_LASTMATCH = "() => window.__ssLastMatch || {found: false, confidence: 0, mat
 # this field is the only signal that the highlight is a prefix.
 _JS_HIGHLIGHT = "() => window.__ssHighlight || 'none'"
 
+# Viewport rects of every highlighted line box: the tight-match bands, else the whole-block
+# fallback. The renderer sweeps the highlight in across these, line by line.
+_JS_HIGHLIGHT_RECTS = (
+    "() => { let els = [...document.querySelectorAll('span[data-snippet-band]')];"
+    " if (!els.length) els = [...document.querySelectorAll('[data-snippet-highlight]')];"
+    " const out = []; for (const e of els) for (const r of e.getClientRects())"
+    " if (r.width > 0 && r.height > 0) out.push([r.x, r.y, r.width, r.height]); return out; }"
+)
+
 _ANCHOR_MAX_CHARS = 80
 
 
@@ -213,16 +222,29 @@ async def _block_ancestor(page, el) -> object:
     return el
 
 
-def _unproven_figures(context: str, snippet: str) -> list[str]:
+def _unproven_figures(context: str, snippet: str, show: str = "", go: str = "") -> list[str]:
     """Numbers the script says out loud that the highlighted snippet doesn't contain.
 
     The highlight is drawn over `article_snippet` alone, so a figure outside it is
     unproven even when it sits in the captured crop — the viewer's eye follows the
     colour, not the paragraph. Digits only: a spelled-out number in the script has no
     verbatim form to match against the article anyway.
+
+    Only the words the screenshot plays under count: with both trigger anchors present,
+    that's the span from `show` to `go`. A spoken whole number is proven by an article
+    figure that states it more precisely ("193" by "193.6x"), but a spoken decimal is not
+    proven by a rounded one ("3.1" by "3").
     """
-    want = set(re.findall(r"\d+(?:\.\d+)?", context))
-    return sorted(want - set(re.findall(r"\d+(?:\.\d+)?", snippet)), key=float)
+    low = context.lower()
+    i = low.find(show.lower()) if show else -1
+    j = low.find(go.lower(), max(i, 0)) if go else -1
+    if i >= 0 and j >= 0:
+        context = context[i:j + len(go)]
+    have = re.findall(r"\d+(?:\.\d+)?", snippet)
+    have_whole = {h.split(".")[0] for h in have}
+    missing = [w for w in set(re.findall(r"\d+(?:\.\d+)?", context))
+               if w not in have and ("." in w or w not in have_whole)]
+    return sorted(missing, key=float)
 
 
 def _crop_window(el_top: float, el_height: float, vh: int) -> tuple[float, float]:
@@ -239,6 +261,28 @@ def _crop_window(el_top: float, el_height: float, vh: int) -> tuple[float, float
     y = max(0, el_center_y - crop_h / 2)
     y = min(y, max(0, vh - crop_h))
     return y, min(crop_h, vh - y)
+
+
+def _line_rects(rects: list, clip: dict) -> list[list[float]]:
+    """Merge highlight rects into one box per text line, as fractions of the clip.
+
+    A highlighted line is often several spans (one per inline tag), so boxes sharing a
+    line are joined left to right. Lines are returned top to bottom, the order a reader
+    (and the highlight sweep) follows. Fractions keep them valid at any render scale.
+    """
+    lines: list[list[float]] = []
+    for x, y, w, h in sorted(rects, key=lambda r: (round(r[1]), r[0])):
+        if lines and abs(lines[-1][1] - y) < 2:
+            last = lines[-1]
+            right = max(last[0] + last[2], x + w)
+            last[0] = min(last[0], x)
+            last[2] = right - last[0]
+            last[3] = max(last[3], h)
+        else:
+            lines.append([x, y, w, h])
+    cw, ch, cy = clip[_KW], clip[_KH], clip[_KY]
+    return [[round(x / cw, 4), round((y - cy) / ch, 4), round(w / cw, 4), round(h / ch, 4)]
+            for x, y, w, h in lines]
 
 
 def _write_manifest(output_dir: Path, url: str, source_entry: dict) -> None:
@@ -310,7 +354,8 @@ async def _capture_snippet(
         "script_context": context,
         "trigger_show_word": spec.get("trigger_show_word", ""),
         "trigger_go_away_word": spec.get("trigger_go_away_word", ""),
-        "unproven_figures": _unproven_figures(context, snippet),
+        "unproven_figures": _unproven_figures(
+            context, snippet, spec.get("trigger_show_word", ""), spec.get("trigger_go_away_word", "")),
     }
 
     def _miss(reason: str, meta: dict | None = None) -> dict:
@@ -359,7 +404,14 @@ async def _capture_snippet(
         highlight = await page.evaluate(_JS_HIGHLIGHT)
         fname = f"snippet-{index:02d}.png"
         await page.screenshot(path=str(source_dir / fname), clip=clip)
+        # Sidecars for the highlight sweep: where the highlighted lines sit, and the same crop
+        # without the highlight. The renderer reveals the highlight across them as it plays.
+        rects = _line_rects(await page.evaluate(_JS_HIGHLIGHT_RECTS), clip)
         await page.evaluate(js_unhighlight)
+        if rects:
+            stem = source_dir / Path(fname).stem
+            await page.screenshot(path=f"{stem}.plain.png", clip=clip)
+            Path(f"{stem}.rects.json").write_text(json.dumps(rects))
         return {
             "index": index, "found": True, "fname": fname, **meta_fields,
             "match_type": meta.get("matchType", "exact"),
@@ -371,7 +423,8 @@ async def _capture_snippet(
 
 
 async def capture(url: str, output_dir: Path, snippets: list[str | dict] | None = None,
-                  solve_captcha: bool = False, solve_timeout: int = 300) -> dict:
+                  solve_captcha: bool = False, solve_timeout: int = 300,
+                  page_top: str | None = None) -> dict:
     try:
         from playwright.async_api import async_playwright
     except ImportError:
@@ -437,6 +490,21 @@ async def capture(url: str, output_dir: Path, snippets: list[str | dict] | None 
                                    f"— no screenshots captured. Re-running often clears it; "
                                    f"otherwise use --solve-captcha to clear it by hand."}
 
+        # --page-top: one unhighlighted crop of the top of the page, shown under `page_top`
+        # (a script line) — e.g. the resource a CTA offers. No snippet to find.
+        top_entry = None
+        if page_top is not None:
+            await main_page.evaluate("() => window.scrollTo(0, 0)")
+            await main_page.wait_for_timeout(300)
+            fname = "page-top.png"
+            await main_page.screenshot(path=str(source_dir / fname),
+                                       clip={_KX: 0, _KY: 0, _KW: 390, _KH: SNIPPET_MAX_HEIGHT})
+            top_entry = {
+                "file": f"{source_dir.name}/{fname}", "article_snippet": "",
+                "script_context": page_top, "trigger_show_word": "", "trigger_go_away_word": "",
+                "match_type": "page_top", "confidence": 1.0, "highlight": "page_top",
+            }
+
         # --- Load snippet-targeting JS helpers ---
         # bytes([95,115,115,95,42,46,106,115]) == b'_ss_*.js'
         _js_dir = Path(__file__).parent
@@ -497,6 +565,8 @@ async def capture(url: str, output_dir: Path, snippets: list[str | dict] | None 
         }
         for h in hits
     ]
+    if top_entry:
+        snippet_entries.append(top_entry)
     source_entry = {"url": url, "screenshots": snippet_entries}
     if misses:
         source_entry["missed"] = [
@@ -534,6 +604,9 @@ def main():
                              '{"article_snippet": "...", "script_context": "...", '
                              '"trigger_show_word": "...", "trigger_go_away_word": "..."} '
                              '(context/trigger fields optional), or a bare string for article_snippet only.')
+    parser.add_argument("--page-top", default=None, metavar="SCRIPT_LINE",
+                        help="Also capture the top of the page, unhighlighted, to show under this "
+                             "verbatim script line (e.g. the CTA naming this page as its resource).")
     parser.add_argument("--solve-captcha", action="store_true",
                         help="Use the persistent browser profile shared with single_scrape.py and, "
                              "if a wall still appears, open it visibly and wait for you to clear it.")
@@ -545,7 +618,8 @@ def main():
     output_dir = Path(args.output_dir)
     result = asyncio.run(capture(args.url, output_dir, snippets=snippets,
                                  solve_captcha=args.solve_captcha,
-                                 solve_timeout=args.solve_timeout))
+                                 solve_timeout=args.solve_timeout,
+                                 page_top=args.page_top))
     print(json.dumps(result, indent=2))
 
 

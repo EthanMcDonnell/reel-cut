@@ -383,7 +383,7 @@ Screenshots exist to kill doubt: when the script makes a claim a viewer can't qu
 
 **1. List the script's checkable claims.** Read the delivered script and note every line a skeptical viewer would stop on: the surprising statistic, the bold assertion, the "that can't be real" number, the direct quote, the dollar / date / percentage figure. Ignore setup, transitions, opinion, and anything unfalsifiable — those need no proof.
 
-**2. Rank, then cap.** Order those claims by **how much the viewer doubts it × how central it is to the video**. Keep the strongest from the top down — **up to 6 per URL, and fewer is better than padding with weak ones**. Drop a claim when either: it's only mildly doubted or peripheral to the story, or the source doesn't actually state it. A claim with no verbatim backing in `FULL_CONTENT` gets **no screenshot** — flag it as unsupported (Step 4.3 / Final Output) rather than forcing a loose match.
+**2. Rank, then cap.** Order those claims by **how much the viewer doubts it × how central it is to the video**. Keep the strongest from the top down — **up to 6 per URL, and fewer is better than padding with weak ones**. **Then add one per hook** that states a checkable fact, with the hook line as `script_context`; it becomes that hook's overlay. Reusing a body claim's proof sentence is fine, and a hook whose figure the source doesn't state verbatim gets flagged by `unproven_figures` like any other. Drop a claim when either: it's only mildly doubted or peripheral to the story, or the source doesn't actually state it. A claim with no verbatim backing in `FULL_CONTENT` gets **no screenshot** — flag it as unsupported (Step 4.3 / Final Output) rather than forcing a loose match.
 
 **3. Find the sentence each claim came from — search `FULL_CONTENT`, don't pick from memory.** The script was written from this article, so nearly every claim has a sentence saying the same thing in nearly the same words. Search the claim's most distinctive tokens — the figure *as the script states it*, the proper noun, the verb — and read the hits. Choosing a sentence you remember as important is how a claim ends up backed by a passage on the same topic that never states it.
 
@@ -419,6 +419,14 @@ For each source URL, run:
 Where `<video-slug>` is the slug fixed in Stage 0 (the same one Stage 0.4 harvested figures into).
 
 If a source URL is a Reddit post, use the linked article URL instead (already fetched in Stage 0).
+
+**For a comment-bait CTA, also capture the lead magnet's page** so the CTA shows what the viewer gets. Run it once for the resource the CTA names, passing the CTA line verbatim:
+
+```bash
+.venv/bin/python scrape/screenshot.py --url "<lead_magnet_url>" --output-dir "assets/<video-slug>/" --page-top "<CTA line, verbatim>"
+```
+
+Look at the capture. If it shows a login wall, a cookie banner or nothing that identifies the resource, delete its manifest entry rather than ship it.
 
 ### Step 4.3: Check what was actually captured
 

@@ -60,6 +60,8 @@ Image timings are stored in **source-clip time** (same as `words` and `edl`). Th
 
 Work through every screenshot in the manifest (skip `body.png`). **Skip any screenshot whose `script_context` or `article_snippet` cannot be matched to words in the `words` array — do not invent a placement.**
 
+A screenshot with `highlight: "page_top"` is the top of a page (usually the CTA's resource) with no snippet: skip the snippet check below and span its whole `script_context` line.
+
 **Check the snippet against the words it will play under.** A figure that differs on screen reads as a contradiction even when the two are equivalent, so compare every number, name and date in `script_context` against `article_snippet` before placing:
 
 - **They disagree** — move `start` to the part of the line the snippet does prove, or drop the screenshot. Report it either way; the fix belongs in the manifest, which produce-script writes.
@@ -148,7 +150,9 @@ Example `images.json`:
 ]
 ```
 
-A `video` entry plays a local clip, muted, in the centre from `clip_start` seconds into the file, and takes the centre over any still image. Only use clips published by the company being discussed, by the article the video is about, or by a news report on it, never one from a source that merely supports a point. Keep `end - start` within the clip's remaining length; once the clip runs out the footage shows through. A webm or ProRes 4444 file with alpha keeps its transparency, which is how animations are overlaid.
+A `video` entry plays a local clip, muted, in the centre from `clip_start` seconds into the file, and takes the centre over any still image. Only use clips published by the company being discussed, by the article the video is about, or by a news report on it, never one from a source that merely supports a point. A clip shorter than its window holds its last frame. A webm or ProRes 4444 file with alpha keeps its transparency, which is how animations are overlaid.
+
+If `assets/<video-slug>/clips/` exists, place each clip in it where it shows what is being said: a hook it proves, or a gap the coverage check reports. Clips there have already been scoped to the sources above; one that fits nowhere is left out and named in the report.
 
 All `start`/`end` values are **source-clip seconds** taken from the `words` array in captions.json (the renderer remaps them to the output timeline).
 
