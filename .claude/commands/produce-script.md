@@ -449,7 +449,7 @@ A few seconds of the product moving (a launch demo, a feature in use) is proof a
 .venv/bin/python scrape/fetch_clip.py list --url "<page_url>"
 ```
 
-Only use footage published by the company the video is about, by the article it's about, or by a news report on it. Never use a clip that only supports a point. Download a candidate and read its contact sheet (one labelled frame every few seconds):
+Only use footage published by the company the video is about, by the article it's about, or by a news report on it. Never use a clip that only supports a point. Download a candidate and read its contact sheet (one labelled frame every few seconds). For an `embed`, add `--referer "<page_url>"` to both `get` calls, since embed-only players refuse a download without it:
 
 ```bash
 .venv/bin/python scrape/fetch_clip.py get --url "<video_url>" --slug <video-slug> --name <name>

@@ -9,9 +9,11 @@ Usage:
   python scrape/fetch_clip.py list --url "<page url>"
   python scrape/fetch_clip.py get --url "<video url>" --slug <slug> --name <name>
   python scrape/fetch_clip.py get --url "<video url>" --slug <slug> --name <name> --start 12 --end 16
+  python scrape/fetch_clip.py get --url "<embed url>" --referer "<page url>" --slug <slug> --name <name>
 
 `list` prints the page's own <video> files and the YouTube, Vimeo, X and Loom videos it
-embeds or links to.
+embeds or links to. An embed-only player (most Vimeo embeds) refuses a download unless
+`get` passes the page it was listed from as --referer.
 
 `get` without a range downloads the video (yt-dlp) to clips/.source/ and writes a contact
 sheet beside it: a frame every few seconds, each labelled with its time, to choose the
@@ -107,7 +109,7 @@ def _duration(path: Path) -> float:
     return float(out.strip())
 
 
-def fetch(url: str, source_dir: Path, name: str) -> Path:
+def fetch(url: str, source_dir: Path, name: str, referer: str | None = None) -> Path:
     """The downloaded video for `name`, downloading it first unless it is already there."""
     have = sorted(p for p in source_dir.glob(f"{name}.*") if p.suffix not in (".jpg", ".part"))
     if have:
@@ -116,6 +118,7 @@ def fetch(url: str, source_dir: Path, name: str) -> Path:
     out = subprocess.run(
         [sys.executable, "-m", "yt_dlp", "--quiet", "--no-warnings", "--no-playlist",
          "-f", "bv*[height<=1080]/b[height<=1080]/bv*/b",
+         *(["--referer", referer] if referer else []),
          "-o", str(source_dir / f"{name}.%(ext)s"), "--print", "after_move:filepath", url],
         capture_output=True, text=True,
     )
@@ -162,9 +165,10 @@ def cut(src: Path, out: Path, start: float, end: float) -> None:
     )
 
 
-def get(url: str, slug: str, name: str, start: float | None, end: float | None) -> dict:
+def get(url: str, slug: str, name: str, start: float | None, end: float | None,
+        referer: str | None = None) -> dict:
     clips = ROOT / "assets" / slug / "clips"
-    src = fetch(url, clips / ".source", name)
+    src = fetch(url, clips / ".source", name, referer)
     if start is None or end is None:
         sheet = src.with_suffix(".sheet.jpg")
         every = contact_sheet(src, sheet)
@@ -182,6 +186,7 @@ def main():
     ls.add_argument("--url", required=True)
     g = sub.add_parser("get", help="Download a video; with --start/--end, cut a clip from it")
     g.add_argument("--url", required=True, help="Video file, or a YouTube/Vimeo/X/Loom page")
+    g.add_argument("--referer", help="The page an embed was listed from; embed-only players need it")
     g.add_argument("--slug", required=True)
     g.add_argument("--name", required=True, help="Clip name: clips/<name>.mp4")
     g.add_argument("--start", type=float, help="Seconds into the video")
@@ -191,7 +196,7 @@ def main():
     if args.cmd == "list":
         result = asyncio.run(list_videos(args.url))
     else:
-        result = get(args.url, args.slug, args.name, args.start, args.end)
+        result = get(args.url, args.slug, args.name, args.start, args.end, args.referer)
     print(json.dumps(result, indent=2))
 
 

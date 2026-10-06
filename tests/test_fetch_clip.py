@@ -97,3 +97,18 @@ def test_fetch_reuses_a_download_and_ignores_its_sheet(tmp_path):
     (tmp_path / "demo.webm").write_bytes(b"")
 
     assert fetch_clip.fetch("https://unused.example.com/v", tmp_path, "demo") == tmp_path / "demo.webm"
+
+
+def test_fetch_passes_the_embedding_page_as_referer(tmp_path, monkeypatch):
+    calls = []
+
+    def fake_run(cmd, **kw):
+        calls.append(cmd)
+        (tmp_path / "demo.mp4").write_bytes(b"")
+        return subprocess.CompletedProcess(cmd, 0, stdout=f"{tmp_path / 'demo.mp4'}\n", stderr="")
+
+    monkeypatch.setattr(fetch_clip.subprocess, "run", fake_run)
+    fetch_clip.fetch("https://player.vimeo.com/video/1", tmp_path, "demo", "https://blog.example.com/post")
+
+    i = calls[0].index("--referer")
+    assert calls[0][i + 1] == "https://blog.example.com/post"
