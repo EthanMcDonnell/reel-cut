@@ -8,7 +8,9 @@ A still card renders to `<name>.png` beside it, re-rendered whenever the fragmen
 stylesheet is newer, so images.json can point at the .html and always show its current text.
 
 An animated card renders to `<name>.<key>.webm` (VP9 with alpha). Elements marked
-`data-beat="N"` enter at the Nth offset, so a list or flow builds in time with the words.
+`data-beat="N"` enter at the Nth offset, so a list or flow builds in time with the words;
+`data-hot="N"` lights an element at the Nth offset until the next one lights, and a `.count`
+number counts up.
 The card's CSS animations are paused and stepped frame by frame, so the capture is exact
 whatever the machine's speed. Capture stops once every animation has finished; the overlay
 holds the last frame for the rest of its window.
@@ -31,15 +33,33 @@ _FONTS = {  # @font-face family → (bundled file, weight range, style)
     "Playfair Display": ("PlayfairDisplay.ttf", "400 900", "normal"),
 }
 
-# Marks the card animated and gives each [data-beat] its entrance time as --at.
+# Marks the card animated and gives each [data-beat] its entrance time as --at. A [data-hot]
+# lights up at its beat (--hot-at) and dims at the next higher data-hot's beat (--hot-off), so
+# the highlight moves through the card. A whole-number .count counts up from 0.
 # Returns the highest beat number used, so a fragment with more beats than times is caught.
 _JS_SET_BEATS = """offs => {
   document.querySelector('.card').classList.add('animated');
   let top = 0;
+  const at = n => (offs[n - 1] ?? 0) + 's';
   document.querySelectorAll('[data-beat]').forEach(el => {
     const n = parseInt(el.dataset.beat, 10) || 0;
     top = Math.max(top, n);
-    el.style.setProperty('--at', (offs[n - 1] ?? 0) + 's');
+    el.style.setProperty('--at', at(n));
+  });
+  const hots = [...document.querySelectorAll('[data-hot]')].map(el => [parseInt(el.dataset.hot, 10) || 0, el]);
+  hots.forEach(([n, el]) => {
+    top = Math.max(top, n);
+    el.style.setProperty('--hot-at', at(n));
+    const next = Math.min(...hots.map(([m]) => m).filter(m => m > n));
+    if (Number.isFinite(next)) { el.style.setProperty('--hot-off', at(next)); el.dataset.cools = ''; }
+  });
+  document.querySelectorAll('.count').forEach(el => {
+    const s = el.textContent.trim();
+    if (!/^[0-9]+$/.test(s)) return;
+    el.style.setProperty('--to', s);
+    el.style.minWidth = s.length + 'ch';
+    el.textContent = '';
+    el.classList.add('counting');
   });
   return top;
 }"""

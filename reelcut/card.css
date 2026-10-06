@@ -102,3 +102,40 @@ pre {
 @keyframes beat-in { from { opacity: 0; transform: translateY(24px); } }
 :where(.card.animated) { animation: card-in 0.25s ease-out both; }
 :where(.card.animated [data-beat]) { animation: beat-in 0.35s ease-out both; animation-delay: var(--at, 0s); }
+
+/* A flow step's arrow draws toward it as the step enters. */
+@keyframes draw-down { from { clip-path: inset(0 0 100% 0); } }
+@keyframes draw-right { from { clip-path: inset(0 100% 0 0); } }
+:where(.card.animated .flow > [data-beat])::before { animation: draw-down 0.35s ease-out var(--at, 0s) both; }
+:where(.card.animated .flow.row > [data-beat])::before { animation-name: draw-right; }
+
+/* Moving highlight: data-hot="N" lights an element at the Nth beat and dims it when the next
+   data-hot lights, so the last stays lit. A flow step lights its border, anything else its text. */
+@property --hot { syntax: "<number>"; inherits: false; initial-value: 0; }
+@keyframes hot-on { from { --hot: 0; } to { --hot: 1; } }
+@keyframes hot-off { from { --hot: 1; } to { --hot: 0; } }
+.card.animated [data-hot] { color: color-mix(in srgb, var(--accent) calc(var(--hot) * 100%), var(--fg)); }
+.card.animated .flow > [data-hot] {
+  color: var(--fg);
+  border-color: color-mix(in srgb, var(--accent) calc(var(--hot) * 100%), var(--line));
+}
+:where(.card.animated [data-hot]) { animation: hot-on 0.3s ease-out var(--hot-at) both; }
+:where(.card.animated [data-hot][data-cools]) {
+  animation: hot-on 0.3s ease-out var(--hot-at) both, hot-off 0.3s ease-in var(--hot-off) forwards;
+}
+:where(.card.animated [data-beat][data-hot]) {
+  animation: beat-in 0.35s ease-out var(--at) both, hot-on 0.3s ease-out var(--hot-at) both;
+}
+:where(.card.animated [data-beat][data-hot][data-cools]) {
+  animation: beat-in 0.35s ease-out var(--at) both, hot-on 0.3s ease-out var(--hot-at) both,
+             hot-off 0.3s ease-in var(--hot-off) forwards;
+}
+
+/* Count-up: <span class="count">193</span> counts from 0 when its data-beat element enters
+   (with the card if none). Whole numbers only; put units outside the span. */
+@property --n { syntax: "<integer>"; inherits: false; initial-value: 0; }
+@keyframes count-up { from { --n: 0; } }
+.count { font-variant-numeric: tabular-nums; }
+.count.counting { display: inline-block; text-align: right; --n: var(--to); counter-reset: n var(--n); }
+.count.counting::after { content: counter(n); }
+:where(.card.animated .count.counting) { animation: count-up 0.8s ease-out var(--at, 0s) both; }
