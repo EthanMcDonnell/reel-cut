@@ -124,3 +124,34 @@ def test_a_deleted_line_is_orphaned_and_removed_not_reanchored(tmp_path, monkeyp
     assert report["lost_anchors"] == []
     manifest = json.loads((tmp_path / "assets" / "demo" / "manifest.json").read_text())
     assert [s["file"] for s in manifest[0]["screenshots"]] == ["snippet-02.png"]
+
+
+def test_a_short_cut_line_without_triggers_is_orphaned(tmp_path, monkeypatch):
+    # "Jev doesn't write." was cut whole. Its letters still match "Jev and how is it"
+    # at 0.61, past MATCH_THRESHOLD, and with no triggers nothing else caught it.
+    slug = _slug(tmp_path, monkeypatch,
+                 "What actually is Jev and how is it 400 times cheaper? You define the answers.", [{
+        "file": "snippet-01.png",
+        "script_context": "Jev doesn't write.",
+        "trigger_show_word": "",
+        "trigger_go_away_word": "",
+    }])
+
+    report = reconcile_manifest.reconcile(slug, dry_run=True)
+
+    assert [e["file"] for e in report["orphaned"]] == ["snippet-01.png"]
+
+
+def test_a_reworded_line_keeps_its_screenshot(tmp_path, monkeypatch):
+    # Whisper mishears a few words; most of the line's words are still there.
+    slug = _slug(tmp_path, monkeypatch,
+                 "Jev is the new AI model from Type Safe AI, who's found to help build the research behind ChatGPT.", [{
+        "file": "snippet-01.png",
+        "script_context": "Jev is the new AI model from TypeSafe AI, whose founder helped build the research behind ChatGPT.",
+        "trigger_show_word": "",
+        "trigger_go_away_word": "",
+    }])
+
+    report = reconcile_manifest.reconcile(slug, dry_run=True)
+
+    assert report["orphaned"] == []

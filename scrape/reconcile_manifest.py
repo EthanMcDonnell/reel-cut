@@ -15,8 +15,8 @@ This re-aligns the manifest to the current transcript (captions.json):
   1. CONTEXT FIX (auto-applied)  — for each screenshot, find the closest run of
      words in the transcript and rewrite `script_context` to that verbatim span.
   2. ORPHANED (removed)         — screenshots whose line was cut: the best match is
-     too weak, or it lands on a neighbouring line that has none of the trigger
-     words. Dropped from the manifest (the image file stays on disk) so
+     too weak, shares under half the line's words, or lands on a neighbouring line
+     that has none of the trigger words. Dropped from the manifest (the image file stays on disk) so
      produce-video can't pin evidence for a deleted claim onto another line.
   3. UNSUPPORTED (flagged only)  — claim-bearing script sentences (numbers, %,
      $, money words) that no screenshot covers; candidates for a new screenshot.
@@ -40,6 +40,11 @@ ROOT = Path(__file__).parent.parent
 # Below this token-similarity ratio, a screenshot's context has no good home in
 # the current transcript — treat it as orphaned rather than forcing a placement.
 MATCH_THRESHOLD = 0.6
+
+# Below this share of the context's words found in the matched span, the match is
+# letters, not the line. A short line ("Jev doesn't write.") whose words were all cut
+# still clears MATCH_THRESHOLD against an unrelated neighbour ("Jev and how is it").
+WORD_THRESHOLD = 0.5
 
 # Terminal punctuation that ends a transcript sentence.
 _SENT_END = re.compile(r"[.!?]$")
@@ -69,6 +74,12 @@ def _best_window(context: str, tokens: list[str]) -> tuple[float, int, int]:
             if ratio > best[0]:
                 best = (ratio, i, i + size)
     return best
+
+
+def _word_share(context: str, span: str) -> float:
+    """Share of `context`'s words that appear anywhere in `span`."""
+    ctx, have = _norm(context).split(), set(_norm(span).split())
+    return sum(w in have for w in ctx) / len(ctx) if ctx else 0.0
 
 
 def _anchor_missing(trigger: str, context: str) -> bool:
@@ -128,7 +139,10 @@ def reconcile(slug: str, dry_run: bool) -> dict:
             # A line deleted from the script still has neighbours that share most of its
             # characters, so the ratio alone can clear the threshold on the wrong line.
             # The triggers are the claim itself: if none of them survive, the line is gone.
-            if ratio < MATCH_THRESHOLD or (triggers and gone == triggers):
+            # Without triggers, the line's own words are the only other check: a short
+            # line can match a neighbour's letters while sharing almost none of its words.
+            if (ratio < MATCH_THRESHOLD or (triggers and gone == triggers)
+                    or _word_share(old, new) < WORD_THRESHOLD):
                 orphaned.append({"file": shot.get("file"), "ratio": round(ratio, 2),
                                  "script_context": old, "article_snippet": shot.get("article_snippet"),
                                  "closest": new, "missing_triggers": gone})
