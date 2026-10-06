@@ -15,7 +15,7 @@ class ImageCue:
     end: float        # output timeline end (seconds)
     image_path: str   # absolute path to resolved PNG
     type: str = "logo"  # "logo" | "person" | "screenshot" | "concept" | "figure" | "video" | "card"
-    kind: str = ""    # type=figure only: "chart" | "diagram"
+    kind: str = ""    # type=figure: "chart" | "diagram"; type=video: "card" for an animated card
     clip_start: float = 0.0  # type=video only: seconds into the video file
 
 

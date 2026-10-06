@@ -917,6 +917,7 @@ def _phase2(cfg, doc, outputs: list[tuple[Path, bool]], verbose: bool,
                 path=spec.path,
                 kind=spec.kind,
                 clip_start=spec.clip_start,
+                beats=[remap(clip, b) for b in spec.beats],
             )
             # An overlay is anchored to source times, so a later EDL change can move a
             # cut over it. Once remapped it just gets shorter (or vanishes at zero
@@ -932,7 +933,7 @@ def _phase2(cfg, doc, outputs: list[tuple[Path, bool]], verbose: bool,
                 )
                 if actual <= 0.01:
                     continue
-            cue = _resolve_image_spec(remapped_spec, cfg.images.display_duration_s)
+            cue = _resolve_image_spec(remapped_spec, cfg.images.display_duration_s, cfg.output.fps)
             if cue:
                 all_image_cues.append(cue)
 
@@ -1134,7 +1135,7 @@ def _resolve_audio_tracks(cfg, edl, audio_path: Path | None, warnings: list[str]
     return tracks
 
 
-def _resolve_image_spec(spec, display_duration_s: float):
+def _resolve_image_spec(spec, display_duration_s: float, fps: int = 30):
     """Resolve an ImageSpec from the captions doc to an ImageCue."""
     from .image_finder import ImageCue
 
@@ -1204,6 +1205,22 @@ def _resolve_image_spec(spec, display_duration_s: float):
         if not spec.path or not p.exists():
             console.print(f"  [yellow]Card not found: {spec.path}[/yellow]")
             return None
+        if spec.beats:
+            from .card import card_webm
+            webm, top_beat = card_webm(p, [b - spec.start for b in spec.beats], fps)
+            if top_beat != len(spec.beats):
+                console.print(
+                    f"  [yellow]Card {p.name}: {top_beat} data-beat(s) but "
+                    f"{len(spec.beats)} beat time(s)[/yellow]"
+                )
+            return ImageCue(
+                keyword=p.stem,
+                start=spec.start,
+                end=spec.end,
+                image_path=str(webm),
+                type="video",
+                kind="card",
+            )
         from .card import card_png
         return ImageCue(
             keyword=p.stem,

@@ -92,3 +92,13 @@ pre {
   background: #000; color: #e6e6e6; font-size: 34px; font-weight: 500; line-height: 1.4;
   white-space: pre-wrap; word-break: break-word;
 }
+
+/* Animated cards. An element marked data-beat="N" enters at the Nth time in its images.json
+   entry's `beats`; reelcut sets that offset on it as --at. Elements without data-beat show with
+   the card. These defaults have zero specificity, so a fragment's own animation (using
+   animation-delay: var(--at)) replaces them. Animate opacity/transform only: layout must not
+   move between frames. */
+@keyframes card-in { from { opacity: 0; transform: scale(0.96); } }
+@keyframes beat-in { from { opacity: 0; transform: translateY(24px); } }
+:where(.card.animated) { animation: card-in 0.25s ease-out both; }
+:where(.card.animated [data-beat]) { animation: beat-in 0.35s ease-out both; animation-delay: var(--at, 0s); }

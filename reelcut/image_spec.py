@@ -7,7 +7,7 @@ same timeline as `words`/`edl` — and are remapped to the output timeline at re
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 
@@ -24,7 +24,8 @@ class ImageSpec:
     type: "video"      — path points to a local video file (mp4/mov, or webm/ProRes 4444 with
                          alpha); plays muted in the centre from `clip_start` for end-start seconds
     type: "card"       — path points to a designed card's HTML fragment (assets/<slug>/cards/),
-                         rendered to a PNG beside it (see card.py)
+                         rendered to a PNG beside it (see card.py). With `beats`, it animates:
+                         its Nth `data-beat` element enters at beats[N-1], rendered to a webm
     """
     type: str               # "person" | "screenshot" | "concept" | "figure" | "video" | "card"
     start: float            # source-clip seconds (same timeline as words/edl)
@@ -34,6 +35,7 @@ class ImageSpec:
     path: str = ""          # absolute path to screenshot/figure PNG/JPG, video, or card .html
     kind: str = ""          # type=figure only: "chart" | "diagram"
     clip_start: float = 0.0 # type=video only: seconds into the video file to start playing
+    beats: list[float] = field(default_factory=list)  # type=card only: source-clip seconds each data-beat enters
 
 
 def load_images(path: Path) -> list[ImageSpec]:
@@ -54,6 +56,7 @@ def load_images(path: Path) -> list[ImageSpec]:
             path=i.get("path", ""),
             kind=i.get("kind", ""),
             clip_start=float(i.get("clip_start", 0.0)),
+            beats=[float(b) for b in i.get("beats", [])],
         )
         for i in raw
     ]

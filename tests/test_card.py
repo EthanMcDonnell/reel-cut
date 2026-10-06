@@ -58,3 +58,58 @@ def test_card_is_drawn_at_card_overlay_width(tmp_path):
 
     bbox = Image.open(frames[0].image_path).getchannel("A").getbbox()
     assert bbox[2] - bbox[0] == 400
+
+
+def _bright_rows(png) -> int:
+    """Rows of the frame holding opaque white text pixels."""
+    im = Image.open(png).convert("RGBA")
+    px = im.load()
+    return sum(
+        any(px[x, y][3] > 200 and min(px[x, y][:3]) > 200 for x in range(0, im.width, 4))
+        for y in range(im.height)
+    )
+
+
+def _frame_at(webm, t, out):
+    import subprocess
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-c:v", "libvpx-vp9", "-ss", str(t),
+                    "-i", str(webm), "-frames:v", "1", str(out)], check=True)
+    return out
+
+
+def test_beat_element_enters_at_its_beat(tmp_path):
+    from reelcut.card import card_webm
+
+    html = tmp_path / "c.html"
+    html.write_text('<p>Always</p><p data-beat="1">Later</p>')
+
+    webm, top_beat = card_webm(html, [0.8], fps=10)
+
+    assert top_beat == 1
+    before = _bright_rows(_frame_at(webm, 0.5, tmp_path / "before.png"))
+    after = _bright_rows(_frame_at(webm, 1.1, tmp_path / "after.png"))
+    assert after > before * 1.5  # the second line has appeared
+
+
+def test_card_with_beats_resolves_to_a_card_sized_video(tmp_path):
+    html = tmp_path / "c.html"
+    html.write_text('<p data-beat="1">A</p>')
+
+    cue = _resolve_image_spec(
+        ImageSpec(type="card", start=2.0, end=4.0, path=str(html), beats=[2.5]), 1.0, 10)
+
+    assert (cue.type, cue.kind) == ("video", "card")
+    assert cue.image_path.endswith(".webm")
+
+
+def test_still_card_shows_its_own_animations_finished(tmp_path):
+    html = tmp_path / "c.html"
+    html.write_text(
+        "<style>@keyframes hide { from { opacity: 0 } to { opacity: 0 } }"
+        " p.late { animation: hide 5s 1s backwards; }</style>"
+        '<p>One</p><p class="late">Two</p><p class="late">Three</p>'
+    )
+    plain = tmp_path / "plain.html"
+    plain.write_text("<p>One</p><p>Two</p><p>Three</p>")
+
+    assert _bright_rows(card_png(html)) == _bright_rows(card_png(plain))

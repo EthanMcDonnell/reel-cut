@@ -105,6 +105,7 @@ A card is a visual you design for a line no source can show: how something works
 - Render and look at every card before placing it: `.venv/bin/reelcut card assets/<video-slug>/cards/*.html`. Fix overflow, clipping or crowding and re-render.
 - Span the line or lines it explains: `start` = the first anchor word's `start`, `end` = the last word's `end`, holding until the next overlay.
 - Add `{ "type": "card", "start": ..., "end": ..., "source_clip": "...", "name": "", "path": "{PROJECT_ROOT}/assets/<video-slug>/cards/<name>.html" }`. The PNG beside it is re-rendered whenever the fragment changes.
+- **Build it as it's said.** When the parts of a card are spoken one after another (points, flow steps, the second side of a comparison), mark each with `data-beat="1"`, `"2"`… and add `"beats": [...]` to the entry: the `start` of the word each part lands on, in order. Unmarked elements show with the card. For a different entrance, give the marked elements your own `@keyframes` with `animation-delay: var(--at)`, animating opacity and transform only. A card said in one breath stays still.
 
 ## Step 3d — Assign figure timings (from figures.json)
 
@@ -158,7 +159,7 @@ Example `images.json`:
   { "type": "concept", "start": 31.2, "end": 34.1, "source_clip": "assets/slug/clip.MP4", "name": "Rubber duck debugging", "path": "" },
   { "type": "figure", "kind": "diagram", "start": 21.4, "end": 26.8, "source_clip": "assets/slug/clip.MP4", "name": "", "path": "{PROJECT_ROOT}/assets/slug/figures/figure-01.png" },
   { "type": "video", "start": 40.2, "end": 43.5, "source_clip": "assets/slug/clip.MP4", "name": "", "path": "{PROJECT_ROOT}/assets/slug/clips/demo.mp4", "clip_start": 12.0 },
-  { "type": "card", "start": 44.0, "end": 48.6, "source_clip": "assets/slug/clip.MP4", "name": "", "path": "{PROJECT_ROOT}/assets/slug/cards/how-it-works.html" }
+  { "type": "card", "start": 44.0, "end": 48.6, "source_clip": "assets/slug/clip.MP4", "name": "", "path": "{PROJECT_ROOT}/assets/slug/cards/how-it-works.html", "beats": [44.0, 45.9, 47.2] }
 ]
 ```
 

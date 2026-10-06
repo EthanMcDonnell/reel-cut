@@ -405,13 +405,15 @@ def _final_encode(
 def _overlay_video_clip(video, cue, config: ReelCutConfig):
     """Play `cue`'s video file, muted, in the centre slot from cue.start to cue.end.
 
-    Sized like a figure card and placed per images.position, matching the still overlays.
+    Sized like a figure card (an animated card like a card) and placed per images.position,
+    matching the still overlays.
     The clip is shifted to start at cue.start. A clip shorter than its window holds its last
     frame, so an animation ends on its final state rather than leaving a gap.
     """
     w, h = config.output.resolution
     img = config.images
-    target_w = int(w * img.figure_overlay_size_pct / 100) // 2 * 2
+    size_pct = img.card_overlay_size_pct if cue.kind == "card" else img.figure_overlay_size_pct
+    target_w = int(w * size_pct / 100) // 2 * 2
     margin = int(h * img.margin_pct / 100)
     y = {"top": str(margin), "bottom": f"main_h-overlay_h-{margin}"}.get(
         img.position, "(main_h-overlay_h)/2")
