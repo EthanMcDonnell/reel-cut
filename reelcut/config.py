@@ -188,6 +188,7 @@ class ImagesConfig(BaseModel):
     logo_overlay_size_pct: float = 25.0  # logo width as % of video width
     overlay_size_pct: float = 50.0     # person/screenshot/concept width as % of video width
     figure_overlay_size_pct: float = 66.0  # figure (article chart/diagram) card width as % of video width
+    card_overlay_size_pct: float = 80.0    # designed card (cards/*.html) width as % of video width
     display_duration_s: float = 2.0
     fade_duration_s: float = 0.25
     start_delay_s: float = 0.1         # image overlays won't appear before this time so they flash on rather than look frozen from frame 0

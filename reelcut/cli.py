@@ -522,6 +522,25 @@ def preview_edl(
 
 
 # ---------------------------------------------------------------------------
+# reelcut card
+# ---------------------------------------------------------------------------
+
+@app.command()
+def card(
+    html_paths: list[str] = typer.Argument(..., help="Card fragments (assets/<slug>/cards/*.html)."),
+) -> None:
+    """Render designed cards to PNG beside each fragment, to look at before placing them."""
+    from .card import render_cards
+
+    missing = [p for p in html_paths if not Path(p).exists()]
+    if missing:
+        err_console.print(f"[red]Error:[/red] not found: {', '.join(missing)}")
+        raise typer.Exit(1)
+    for png in render_cards([Path(p) for p in html_paths]):
+        console.print(f"  → {png}")
+
+
+# ---------------------------------------------------------------------------
 # reelcut timeline
 # ---------------------------------------------------------------------------
 
@@ -1178,6 +1197,20 @@ def _resolve_image_spec(spec, display_duration_s: float):
             image_path=str(p),
             type="video",
             clip_start=spec.clip_start,
+        )
+
+    elif spec.type == "card":
+        p = Path(spec.path)
+        if not spec.path or not p.exists():
+            console.print(f"  [yellow]Card not found: {spec.path}[/yellow]")
+            return None
+        from .card import card_png
+        return ImageCue(
+            keyword=p.stem,
+            start=spec.start,
+            end=spec.end,
+            image_path=str(card_png(p)),
+            type="card",
         )
 
     elif spec.type == "concept":

@@ -1,0 +1,94 @@
+/* Base styles for designed cards (assets/<slug>/cards/*.html).
+   A card file is an HTML fragment; reelcut/card.py wraps it in <div class="card"> with this
+   sheet and renders it to a transparent PNG. Sizes are px at the 1000px design width, which is
+   scaled to images.card_overlay_size_pct of the video width (~0.86x at 80% of 1080). */
+
+:root {
+  --bg: rgba(14, 14, 16, 0.94);
+  --fg: #ffffff;
+  --muted: #b8b8c0;
+  --accent: #F3C84E;   /* the title card's gold */
+  --line: rgba(255, 255, 255, 0.16);
+}
+
+html, body { margin: 0; padding: 0; background: transparent; }
+
+.card {
+  box-sizing: border-box;
+  width: 1000px;
+  padding: 56px 60px;
+  border-radius: 40px;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: "Inter", sans-serif;
+  font-size: 46px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+.card > :first-child { margin-top: 0; }
+.card > :last-child { margin-bottom: 0; }
+
+/* Heading over the card's content. */
+.card h1 {
+  font-family: "Playfair Display", serif;
+  font-size: 64px;
+  font-weight: 700;
+  color: var(--accent);
+  line-height: 1.1;
+  margin: 0 0 32px;
+}
+
+.accent { color: var(--accent); }
+.muted { color: var(--muted); font-weight: 500; }
+
+/* Numbered points: <ol class="points"><li>...</li></ol> */
+ol.points { list-style: none; counter-reset: pt; margin: 0; padding: 0; }
+ol.points li {
+  counter-increment: pt;
+  display: flex; align-items: center; gap: 28px;
+  margin: 0 0 28px;
+}
+ol.points li:last-child { margin-bottom: 0; }
+ol.points li::before {
+  content: counter(pt);
+  flex: 0 0 72px; height: 72px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--accent); color: #111; font-size: 40px; font-weight: 800;
+}
+
+/* Side by side: <div class="compare"><div><h2>LLM</h2><p>...</p></div><div>...</div></div> */
+.compare { display: flex; gap: 0; }
+.compare > div { flex: 1; padding: 0 32px; }
+.compare > div:first-child { padding-left: 0; }
+.compare > div:last-child { padding-right: 0; border-left: 3px solid var(--line); }
+.compare h2 { font-size: 40px; font-weight: 800; color: var(--muted); text-transform: uppercase;
+              letter-spacing: 0.04em; margin: 0 0 20px; }
+.compare > div:last-child h2 { color: var(--accent); }
+.compare p { margin: 0; }
+
+/* Steps joined by arrows, top to bottom: <div class="flow"><div>...</div><div>...</div></div>
+   Add class "row" for left to right (keep to 3 short steps). */
+.flow { display: flex; flex-direction: column; align-items: stretch; }
+.flow > div {
+  border: 3px solid var(--line); border-radius: 24px; padding: 24px 32px; text-align: center;
+}
+.flow > div + div { margin-top: 76px; position: relative; }
+.flow > div + div::before {
+  content: "↓"; position: absolute; left: 0; right: 0; top: -70px;
+  color: var(--accent); font-size: 52px; font-weight: 800; line-height: 64px;
+}
+.flow > div.hot { border-color: var(--accent); }
+.flow.row { flex-direction: row; align-items: center; }
+.flow.row > div { flex: 1; }
+.flow.row > div + div { margin-top: 0; margin-left: 76px; }
+.flow.row > div + div::before {
+  content: "→"; left: -70px; right: auto; top: 50%; transform: translateY(-50%); width: 64px;
+}
+
+/* Code or terminal output. */
+pre, code { font-family: "SF Mono", Menlo, monospace; }
+pre {
+  margin: 0; padding: 32px 36px; border-radius: 20px;
+  background: #000; color: #e6e6e6; font-size: 34px; font-weight: 500; line-height: 1.4;
+  white-space: pre-wrap; word-break: break-word;
+}

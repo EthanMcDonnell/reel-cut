@@ -56,7 +56,7 @@ Image timings are stored in **source-clip time** (same as `words` and `edl`). Th
 
 **Every hook gets its own overlay**, so no variant opens on a bare talking head. An auto-detected logo counts. Otherwise place a hook-only overlay showing what the hook leads with: a `person` for a name, the proving screenshot or figure for a number, a `concept` for an object. Start it on the hook's first words and end it by the hook's last word (the renderer clips it there anyway).
 
-**Keep the centre filled.** Any stretch of 1s or more with no overlay is a gap. Hold screenshots and figures until the next overlay starts, fill what's left with `person` and `concept` overlays (Step 3b), and leave a gap rather than place an unrelated image.
+**Keep the centre filled.** Any stretch of 1s or more with no overlay is a gap. Hold screenshots and figures until the next overlay starts, fill what's left with `person` and `concept` overlays (Step 3b) and designed cards (Step 3e), and leave a gap rather than place an unrelated image.
 
 Work through every screenshot in the manifest (skip `body.png`). **Skip any screenshot whose `script_context` or `article_snippet` cannot be matched to words in the `words` array — do not invent a placement.**
 
@@ -78,7 +78,7 @@ Then scan the `words` array for person names (consecutive capitalised words that
 - Use the source-clip timestamps from those words
 - Add a `type: "person"` entry with `name: "<Full Name>"`, `source_clip` from the anchor word, and `path: ""` — the renderer resolves Wikipedia headshots automatically
 
-Build the complete images list: one entry per screenshot, any person entries, the hook overlays, and the concept images that fill the remaining gaps (Step 3b).
+Build the complete images list: one entry per screenshot, any person entries, the hook overlays, and the concept images and cards that fill the remaining gaps (Steps 3b, 3e).
 
 ## Step 3b — Concept images (fill the gaps)
 
@@ -94,6 +94,17 @@ A few quirky Wikipedia image can add a fun extra dimension — drop a literal ph
 - **Show the idea, not just the word.** A line's meaning can map to a photo even with no noun in it: a huge user count → `Crowd`, a cost or saving → `Money`, servers or scale → `Server room`, speed → `Cheetah`. These are illustrations, not gags, so they can hold until the next overlay.
 - Place it on the *meaning*, even when the exact word isn't spoken. Anchor to the words in captions.json: `start` = the anchor word's `start`, `end` = the `end` of the line it punctuates, `source_clip` from the anchor word.
 - Add `{ "type": "concept", "name": "<Wikipedia subject>", "start": ..., "end": ..., "source_clip": "...", "path": "" }`.
+
+## Step 3e — Designed cards (fill the explanation gaps)
+
+A card is a visual you design for a line no source can show: how something works, a list, a contrast, a sequence, code. Write each as an HTML fragment in `assets/<video-slug>/cards/<name>.html`; it is wrapped in a dark rounded card styled by `reelcut/card.css`, which provides `h1`, `.accent`, `.muted`, `ol.points` (numbered dots), `.compare` (two columns), `.flow` / `.flow.row` (steps joined by arrows, `.hot` to highlight one) and `pre`. Add a `<style>` block or inline SVG for anything else, keeping the stylesheet's colours and fonts.
+
+- **Never for a sourced claim.** A number, quote or result from the article is shown with its screenshot or figure; a card restating it proves nothing.
+- **Script words only.** Card text paraphrases what is said under it and adds no facts, names or numbers the script doesn't.
+- **Readable while it's up.** One idea per card, about 12 words or fewer, no text smaller than the stylesheet's.
+- Render and look at every card before placing it: `.venv/bin/reelcut card assets/<video-slug>/cards/*.html`. Fix overflow, clipping or crowding and re-render.
+- Span the line or lines it explains: `start` = the first anchor word's `start`, `end` = the last word's `end`, holding until the next overlay.
+- Add `{ "type": "card", "start": ..., "end": ..., "source_clip": "...", "name": "", "path": "{PROJECT_ROOT}/assets/<video-slug>/cards/<name>.html" }`. The PNG beside it is re-rendered whenever the fragment changes.
 
 ## Step 3d — Assign figure timings (from figures.json)
 
@@ -146,7 +157,8 @@ Example `images.json`:
   { "type": "person", "start": 4.205, "end": 7.444, "source_clip": "assets/slug/clip.MP4", "name": "Reed Hastings", "path": "" },
   { "type": "concept", "start": 31.2, "end": 34.1, "source_clip": "assets/slug/clip.MP4", "name": "Rubber duck debugging", "path": "" },
   { "type": "figure", "kind": "diagram", "start": 21.4, "end": 26.8, "source_clip": "assets/slug/clip.MP4", "name": "", "path": "{PROJECT_ROOT}/assets/slug/figures/figure-01.png" },
-  { "type": "video", "start": 40.2, "end": 43.5, "source_clip": "assets/slug/clip.MP4", "name": "", "path": "{PROJECT_ROOT}/assets/slug/clips/demo.mp4", "clip_start": 12.0 }
+  { "type": "video", "start": 40.2, "end": 43.5, "source_clip": "assets/slug/clip.MP4", "name": "", "path": "{PROJECT_ROOT}/assets/slug/clips/demo.mp4", "clip_start": 12.0 },
+  { "type": "card", "start": 44.0, "end": 48.6, "source_clip": "assets/slug/clip.MP4", "name": "", "path": "{PROJECT_ROOT}/assets/slug/cards/how-it-works.html" }
 ]
 ```
 

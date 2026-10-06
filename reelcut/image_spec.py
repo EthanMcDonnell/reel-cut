@@ -23,13 +23,15 @@ class ImageSpec:
                          (chart/diagram); rendered on a padded card. `kind` tags which.
     type: "video"      — path points to a local video file (mp4/mov, or webm/ProRes 4444 with
                          alpha); plays muted in the centre from `clip_start` for end-start seconds
+    type: "card"       — path points to a designed card's HTML fragment (assets/<slug>/cards/),
+                         rendered to a PNG beside it (see card.py)
     """
-    type: str               # "person" | "screenshot" | "concept" | "figure" | "video"
+    type: str               # "person" | "screenshot" | "concept" | "figure" | "video" | "card"
     start: float            # source-clip seconds (same timeline as words/edl)
     end: float              # source-clip seconds (remapped to output-timeline at render time)
     source_clip: str = ""   # path to source clip — copy from the words the image is anchored to
     name: str = ""          # Wikipedia subject (type=person: a person; type=concept: a thing)
-    path: str = ""          # absolute path to screenshot/figure PNG/JPG
+    path: str = ""          # absolute path to screenshot/figure PNG/JPG, video, or card .html
     kind: str = ""          # type=figure only: "chart" | "diagram"
     clip_start: float = 0.0 # type=video only: seconds into the video file to start playing
 

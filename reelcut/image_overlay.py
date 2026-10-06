@@ -17,8 +17,8 @@ from .image_finder import ImageCue
 _SLOTS = ("center", "top_left", "top_right")
 
 # Lower number = higher priority for the center slot:
-# video > figure > screenshot > person > concept > logo.
-_TYPE_PRIORITY = {"video": -1, "figure": 0, "screenshot": 1, "person": 2, "concept": 3, "logo": 4}
+# video > figure = card > screenshot > person > concept > logo.
+_TYPE_PRIORITY = {"video": -1, "figure": 0, "card": 0, "screenshot": 1, "person": 2, "concept": 3, "logo": 4}
 
 
 def _assign_slots(cues: list[ImageCue]) -> list[str]:
@@ -158,6 +158,8 @@ def render_image_frames(
             size_pct = config.logo_overlay_size_pct
         elif cue.type == "figure":
             size_pct = config.figure_overlay_size_pct
+        elif cue.type == "card":
+            size_pct = config.card_overlay_size_pct
         else:
             size_pct = config.overlay_size_pct
         target_w = int(w * size_pct / 100)
