@@ -389,6 +389,8 @@ Screenshots exist to kill doubt: when the script makes a claim a viewer can't qu
 
 A hit on the figure is not the right hit by default: the same number often recurs meaning different things. Read the sentence around each hit and keep the one that asserts what the script asserts.
 
+**Prefer the product's own page for a claim about the product.** A price, limit, feature, release or benchmark score is proved best by the company's own page: its pricing page, repo README, changelog, docs or model card. When one states the claim, fetch it with `single_scrape.py --json`, search it the same way, and screenshot it in Step 4.2 as its own URL, with its own cap. Only pages published by the company the video is about. Pages behind a login (X, dashboards) can't be captured, so keep the article's proof for those.
+
 **4. Grab the tightest proof.** From that sentence, take the span that **contains the proof itself** — the number, the name, the figure — plus only enough surrounding words to read as a clause. Prefer the **smallest verbatim span that still proves the claim** over the surrounding topic sentence: a tight highlight on `reclaimed millions from 47% idle capacity` beats a wide highlight on a three-clause sentence that merely mentions it. Tighter spans read as stronger evidence and crop cleaner on screen.
 
 **5. Make the snippet say what the viewer is hearing.** The screenshot is read against that exact moment of narration, so the two must agree on their face — *equivalent* is not enough. Two checks:
@@ -407,7 +409,7 @@ The trigger anchors let produce-video bound the on-screen window precisely inste
 
 ### Step 4.2: Run the screenshot tool
 
-For each source URL, run:
+For each source URL and product page from Step 4.1, run:
 
 ```bash
 .venv/bin/python scrape/screenshot.py \
@@ -432,7 +434,7 @@ Look at the capture. If it shows a login wall, a cookie banner or nothing that i
 
 The JSON result includes a `snippets` array — one entry per requested snippet with `found`, `match_type` (`exact` | `fuzzy` | `none`), `confidence`, `highlight` (`range` | `fuzzy_range` | `whole_block`), and (on a miss) `reason`. The same misses are also recorded under `missed` in `manifest.json`.
 
-- **Report every snippet with `found: false`** and its `reason`. That claim will have **no on-screen evidence** in the video — either revise the `article_snippet` to match the article's wording verbatim and re-run for that URL, or call the claim out as unsupported.
+- **Report every snippet with `found: false`** and its `reason`. That claim will have **no on-screen evidence** in the video — either revise the `article_snippet` to match the article's wording verbatim and re-run for that URL, or call the claim out as unsupported. A reason of `fuzzy match highlights a block without …` means the closest block on the page lacks the snippet's figures. This is common on pricing cards and tables, where the scraped text joins words the page shows apart. Try a shorter snippet that sits inside one element, or fall back to the article's proof.
 - **Flag any `match_type: "fuzzy"` match with `confidence` below 0.8** — find located an approximate block rather than the exact phrase, so it's worth an eyeball before relying on it.
 - **Flag any `highlight: "whole_block"`** — the exact phrase couldn't be pinpointed so the whole paragraph was coloured; the screenshot shows a wall of highlight rather than the specific proof. Worth eyeballing, and often fixed by trimming the `article_snippet` to a span that matches the live page verbatim and re-running.
 - **Fix any snippet with a non-empty `unproven_figures`** — the script says those numbers out loud and the highlighted span doesn't contain them, so the shot proves something adjacent to the claim instead of the claim. The number often sits in the same sentence just past where the snippet was cut; **start `article_snippet` later** so the figure lands inside it and inside the first 80 characters, rather than extending the snippet rightwards to reach the figure (that pushes it past the anchor and into the `anchor_range` fallback below). The dropped run-up stays readable in the crop either way. Re-run for that URL after editing.

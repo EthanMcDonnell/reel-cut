@@ -120,6 +120,13 @@ _JS_HIGHLIGHT_RECTS = (
     " if (r.width > 0 && r.height > 0) out.push([r.x, r.y, r.width, r.height]); return out; }"
 )
 
+# The text under the highlight, for checking a fuzzy match landed on the snippet's figures.
+_JS_HIGHLIGHT_TEXT = (
+    "() => { let els = [...document.querySelectorAll('span[data-snippet-band]')];"
+    " if (!els.length) els = [...document.querySelectorAll('[data-snippet-highlight]')];"
+    " return els.map(e => e.textContent).join(' '); }"
+)
+
 _ANCHOR_MAX_CHARS = 80
 
 
@@ -402,6 +409,13 @@ async def _capture_snippet(
         clip = {_KX: 0, _KY: y, _KW: vw, _KH: crop_h}
 
         highlight = await page.evaluate(_JS_HIGHLIGHT)
+        # A fuzzy match on a layout-heavy page (pricing cards, tables) can land on a sibling
+        # block that shares the snippet's words but not its numbers: a $100 tier for a $39
+        # snippet. The highlight would then prove the wrong figure, so treat it as a miss.
+        if meta.get("matchType") == "fuzzy":
+            wrong = _unproven_figures(snippet, await page.evaluate(_JS_HIGHLIGHT_TEXT))
+            if wrong:
+                return _miss(f"fuzzy match highlights a block without {', '.join(wrong)}", meta)
         fname = f"snippet-{index:02d}.png"
         await page.screenshot(path=str(source_dir / fname), clip=clip)
         # Sidecars for the highlight sweep: where the highlighted lines sit, and the same crop
