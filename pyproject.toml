@@ -36,6 +36,7 @@ dependencies = [
     "python-dotenv",
     "praw",
     "playwright",
+    "yt-dlp",
 ]
 
 [project.scripts]

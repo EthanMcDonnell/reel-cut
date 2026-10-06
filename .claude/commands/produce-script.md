@@ -441,6 +441,28 @@ The JSON result includes a `snippets` array — one entry per requested snippet 
 - **Flag any `highlight: "anchor_range"`** — only the snippet's first 80 characters were highlighted, so the shot stops before the proof. `match_type` and `confidence` still read `exact` / 1.0, so this field is the only signal. Shorten `article_snippet` so the proof falls inside that prefix, then re-run for that URL.
 - If `skipped` is non-null, the whole page failed to load — report that reason; no screenshots were captured for that URL.
 
+### Step 4.4: Cut clips from the company's own footage
+
+A few seconds of the product moving (a launch demo, a feature in use) is proof and motion in one overlay. List the videos each source URL and product page plays, embeds or links to:
+
+```bash
+.venv/bin/python scrape/fetch_clip.py list --url "<page_url>"
+```
+
+Only use footage published by the company the video is about, by the article it's about, or by a news report on it. Never use a clip that only supports a point. Download a candidate and read its contact sheet (one labelled frame every few seconds):
+
+```bash
+.venv/bin/python scrape/fetch_clip.py get --url "<video_url>" --slug <video-slug> --name <name>
+```
+
+Choose 2–5 seconds that show what a specific script line says, then cut them to `assets/<video-slug>/clips/<name>.mp4`, where produce-video places them:
+
+```bash
+.venv/bin/python scrape/fetch_clip.py get --url "<video_url>" --slug <video-slug> --name <name> --start <s> --end <s>
+```
+
+Keep clips short, because Instagram can lower reach for reels built on someone else's footage. Skip footage of someone talking, since the clip plays muted. Most videos have no clip, and that's fine.
+
 ## Stage 4b — Match Figures to Script Beats
 
 The usable charts and diagrams were already harvested and judged in Stage 0.4 and carried forward as `FIGURES_AVAILABLE`. If it is `none`, skip to Final Output. This stage does the half that needed a finished script: anchoring each figure to the beat it supports.
@@ -510,9 +532,10 @@ Report to the user:
 - Script saved to: [file path]
 - CTA & resources: the CTA type the series called for and the line you wrote, plus the shipped links appended to the file. Note any verified candidate you cut, in case the user wants a different lead magnet
 - Automation: the keyword, the template and the resources the reward carries, written to `assets/<slug>/automation.json` and validated clean — or that none was written and why (the series' CTA type has no keyword)
-- **If `SOURCE_URLS: none`:** say the source gate skipped Stages 0.4, 4, and 4b, so the video ships with no screenshots and no figures. Skip the four items below
+- **If `SOURCE_URLS: none`:** say the source gate skipped Stages 0.4, 4, and 4b, so the video ships with no screenshots and no figures. Skip the five items below
 - Screenshots saved to: `assets/<slug>/`
 - Screenshot results: how many captured (with the exact/fuzzy breakdown), and explicitly list any snippets that were **not found** so the user knows which claims lack on-screen evidence
+- Clips: each clip cut (name, seconds, the line it shows), or that the sources had no usable footage
 - Figures: how many charts/diagrams were selected (with `kind` and the beat each supports), the count of candidates harvested vs. kept, and where they were saved (`assets/<slug>/figures/`, `figures.json`). Call out each figure **dropped by the span gate** and the span it fell short by — that means the body never got the sustained passage the diagram needed, and is worth a script edit. Say so if legibility was judged from metadata rather than from reading the images
 - Unsupported claims: any checkable claim you dropped at selection time because the source didn't state it verbatim (Step 4.1.2) — the user may want to re-source or soften it
 - Telegram: the `http://<tailnet-ip>:8770/script/<slug>` and `/upload/<slug>` links sent to `file-exchange` — or that nothing was sent, and why (upload server down, tailnet unreachable, broker off)
