@@ -292,11 +292,14 @@ def _line_rects(rects: list, clip: dict) -> list[list[float]]:
             for x, y, w, h in lines]
 
 
-def _write_manifest(output_dir: Path, url: str, source_entry: dict) -> None:
+def _write_manifest(output_dir: Path, url: str, source_entry: dict, *,
+                    keep_snippets: bool = False, keep_page_top: bool = False) -> None:
     """Append/replace this URL's entry in manifest.json under an exclusive file lock.
 
     The lock serialises the read-modify-write so concurrent screenshot processes writing
-    to the same output dir can't clobber each other's entries.
+    to the same output dir can't clobber each other's entries. ``keep_snippets`` /
+    ``keep_page_top`` carry over the URL's earlier captures of a kind this run didn't make,
+    so a --page-top run doesn't wipe the snippets captured from the same page, or vice versa.
     """
     manifest_path = output_dir / "manifest.json"
     lock_path = output_dir / ".manifest.lock"
@@ -305,6 +308,13 @@ def _write_manifest(output_dir: Path, url: str, source_entry: dict) -> None:
         existing = json.loads(manifest_path.read_text()) if manifest_path.exists() else []
         if not isinstance(existing, list):
             existing = [existing]  # migrate old single-object format
+        if keep_snippets or keep_page_top:
+            for prev in (s for s in existing if s.get("url") == url):
+                kept = [s for s in prev["screenshots"]
+                        if (keep_page_top if s.get("match_type") == "page_top" else keep_snippets)]
+                source_entry["screenshots"] = kept + source_entry["screenshots"]
+                if keep_snippets and prev.get("missed"):
+                    source_entry["missed"] = prev["missed"]
         existing = [s for s in existing if s.get("url") != url]  # replace if re-run for same URL
         existing.append(source_entry)
         manifest_path.write_text(json.dumps(existing, indent=2))
@@ -588,7 +598,8 @@ async def capture(url: str, output_dir: Path, snippets: list[str | dict] | None 
              "reason": m["reason"]}
             for m in misses
         ]
-    _write_manifest(output_dir, url, source_entry)
+    _write_manifest(output_dir, url, source_entry,
+                    keep_snippets=not specs, keep_page_top=top_entry is None)
 
     return {
         "dir": str(output_dir),

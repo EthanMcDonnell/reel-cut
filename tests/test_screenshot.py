@@ -84,6 +84,26 @@ class TestWriteManifest:
         assert len(data) == 1
         assert data[0]["screenshots"] == [2]
 
+    def test_page_top_run_keeps_snippets_of_same_url(self, tmp_path):
+        snip = {"file": "s/snippet-01.png", "match_type": "exact"}
+        top = {"file": "s/page-top.png", "match_type": "page_top"}
+        screenshot._write_manifest(tmp_path, "http://a", {"url": "http://a", "screenshots": [snip],
+                                                          "missed": [{"reason": "x"}]})
+        screenshot._write_manifest(tmp_path, "http://a", {"url": "http://a", "screenshots": [top]},
+                                   keep_snippets=True)
+        data = json.loads((tmp_path / "manifest.json").read_text())
+        assert data == [{"url": "http://a", "screenshots": [snip, top], "missed": [{"reason": "x"}]}]
+
+    def test_snippet_run_keeps_page_top_of_same_url(self, tmp_path):
+        old = {"file": "s/snippet-01.png", "match_type": "exact"}
+        top = {"file": "s/page-top.png", "match_type": "page_top"}
+        new = {"file": "s/snippet-01.png", "match_type": "fuzzy"}
+        screenshot._write_manifest(tmp_path, "http://a", {"url": "http://a", "screenshots": [old, top]})
+        screenshot._write_manifest(tmp_path, "http://a", {"url": "http://a", "screenshots": [new]},
+                                   keep_page_top=True)
+        data = json.loads((tmp_path / "manifest.json").read_text())
+        assert data[0]["screenshots"] == [top, new]
+
     def test_migrates_legacy_single_object(self, tmp_path):
         (tmp_path / "manifest.json").write_text(json.dumps({"url": "http://old", "screenshots": []}))
         screenshot._write_manifest(tmp_path, "http://new", {"url": "http://new", "screenshots": []})
