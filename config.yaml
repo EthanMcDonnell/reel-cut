@@ -159,6 +159,23 @@ audio:
       slow_pct: 10                  # slow the track by 10% (pitch drops with it). 0 = original
                                     # speed; max ~50.
 
+sfx:                                # a short sound on each overlay's first frame, generated from the
+                                    # render's own cues — nothing to author per video. Sounds are
+  enabled: true                     # auto-discovered from assets/sfx/ (untracked; stem = name), and
+                                    # each is shifted so its loudest moment lands on the frame.
+  level_db: 6                       # effect peak vs the voice's integrated loudness. Lower = quieter.
+  min_gap_s: 0.8                    # an effect this close after the one before is dropped
+  events:                           # listed in tie-break order: at the same instant the first wins
+    heading: {sounds: [thud], gain_db: -4}
+    screenshot: {sounds: [click-1, click-2, click-3]}
+    person: {sounds: [pop]}
+    concept: {sounds: [pop]}
+    logo: {sounds: [pop], gain_db: -2}
+    figure: {sounds: [paper]}
+    card: {sounds: [pop]}
+    video: {sounds: [whoosh], gain_db: -3}
+    beat: {sounds: [tick-1, tick-2, tick-3, tick-4], gain_db: -6}  # animated-card beats, rising
+
 captions:
   enabled: true
   style: full_line                 # word_highlight | full_line | none

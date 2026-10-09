@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .config import ImagesConfig
 from .transcriber import WordTimestamp
@@ -17,6 +17,7 @@ class ImageCue:
     type: str = "logo"  # "logo" | "person" | "screenshot" | "concept" | "figure" | "video" | "card"
     kind: str = ""    # type=figure: "chart" | "diagram"; type=video: "card" for an animated card
     clip_start: float = 0.0  # type=video only: seconds into the video file
+    beats: list[float] = field(default_factory=list)  # animated card: output-timeline beat times
 
 
 def detect_image_cues(

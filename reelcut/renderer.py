@@ -6,6 +6,7 @@ import hashlib
 import subprocess
 import sys
 import tempfile
+from collections import Counter
 from pathlib import Path
 
 import ffmpeg
@@ -476,6 +477,12 @@ def _level_audio_tracks(voice_path: Path, audio_tracks: list[dict], ducking_lufs
     voice_lufs = _measure_lufs(voice_path)
     for t in audio_tracks:
         manual = t.get("gain_db", 0.0)
+        if "peak_db" in t:
+            # A sound effect is too short for integrated loudness — level its peak instead,
+            # `level_db` above the voice (-16 LUFS assumed if the voice can't be measured).
+            voice = voice_lufs if voice_lufs is not None else -16.0
+            t["_gain_db"] = manual + voice + t["level_db"] - t["peak_db"]
+            continue
         music_lufs = _measure_lufs(t["path"])
         if voice_lufs is None or music_lufs is None:
             # Can't measure → fall back to a fixed attenuation by the ducking amount.
@@ -497,8 +504,16 @@ def _mix_audio_tracks(voice, audio_tracks: list[dict] | None):
 
     fmt = dict(sample_rates="48000", channel_layouts="stereo")
     mix = [voice.filter("aformat", **fmt)]
+    # ffmpeg-python merges identical inputs into one node and won't fan it out, so a file
+    # used more than once (the same click on every screenshot) is split explicitly.
+    uses = Counter(t["path"] for t in audio_tracks)
+    splits = {p: ffmpeg.input(p).audio.filter_multi_output("asplit", n)
+              for p, n in uses.items() if n > 1}
+    taken: Counter = Counter()
     for t in audio_tracks:
-        bg = ffmpeg.input(t["path"]).audio
+        p = t["path"]
+        bg = splits[p].stream(taken[p]) if p in splits else ffmpeg.input(p).audio
+        taken[p] += 1
         length = max(0.0, t["end"] - t["start"])
         src_start = t.get("source_start", 0.0)
         # Slowing (atempo < 1) stretches the audio, so pull `length * tempo` source

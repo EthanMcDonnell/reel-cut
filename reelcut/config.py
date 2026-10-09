@@ -332,6 +332,28 @@ class AudioConfig(BaseModel):
         return v or {}  # `tracks:` with only commented-out entries parses to None
 
 
+class SfxEvent(BaseModel):
+    """The sound for one kind of on-screen event."""
+    sounds: list[str] = Field(default_factory=list)  # names (file stems) in assets/sfx/. Several
+                              # rotate per occurrence; for card beats the Nth beat plays the Nth.
+    gain_db: float = 0.0      # trim on top of sfx.level_db
+
+
+class SfxConfig(BaseModel):
+    enabled: bool = True
+    level_db: float = 6.0     # each effect's peak sits this many dB above the voice's integrated
+                              # loudness (speech peaks run ~10-15 dB above it, so effects stay under)
+    min_gap_s: float = 0.8    # an effect this close after the one before is dropped
+    events: dict[str, SfxEvent] = Field(default_factory=dict)  # event → sound. Events: heading,
+                              # screenshot, person, concept, logo, figure, card, video, beat. Ties
+                              # at the same instant go to the event listed first.
+
+    @field_validator("events", mode="before")
+    @classmethod
+    def _empty_events(cls, v):
+        return v or {}
+
+
 class ReelCutConfig(BaseModel):
     cuts: CutsConfig = Field(default_factory=CutsConfig)
     output: OutputConfig = Field(default_factory=OutputConfig)
@@ -342,6 +364,7 @@ class ReelCutConfig(BaseModel):
     images: ImagesConfig = Field(default_factory=ImagesConfig)
     headings: HeadingsConfig = Field(default_factory=HeadingsConfig)
     audio: AudioConfig = Field(default_factory=AudioConfig)
+    sfx: SfxConfig = Field(default_factory=SfxConfig)
     whisper: WhisperConfig = Field(default_factory=WhisperConfig)
 
 

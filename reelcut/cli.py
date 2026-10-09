@@ -1002,6 +1002,15 @@ def _phase2(cfg, doc, outputs: list[tuple[Path, bool]], verbose: bool,
 
         # Background audio (audio.json) — music/SFX mixed under the voice
         audio_tracks = _resolve_audio_tracks(cfg, edl, audio_path, warnings)
+        if cfg.sfx.enabled:
+            from .sfx import plan_sfx, sfx_events, sfx_library
+            sfx_tracks = plan_sfx(
+                sfx_events(all_image_cues, heading_specs), cfg.sfx,
+                sfx_library(Path(cfg.assets.location) / "sfx"), total_output_s, warnings,
+            )
+            if sfx_tracks:
+                console.print(f"  Sound effects: {len(sfx_tracks)}")
+            audio_tracks += sfx_tracks
 
         # Final render
         from .renderer import _USE_VIDEOTOOLBOX
@@ -1220,6 +1229,7 @@ def _resolve_image_spec(spec, display_duration_s: float, fps: int = 30):
                 image_path=str(webm),
                 type="video",
                 kind="card",
+                beats=spec.beats,
             )
         from .card import card_png
         return ImageCue(
