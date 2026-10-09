@@ -92,7 +92,7 @@ _JS_TARGET_RECT = (
 _JS_SCROLL_REGION = (
     "() => { const r = window.__ssRegion; if (!r || !r.getBoundingClientRect) return false;"
     " const b = r.getBoundingClientRect(); if (!b.width && !b.height) return false;"
-    " window.scrollBy(0, b.top + b.height / 2 - window.innerHeight / 2); return true; }"
+    " window.scrollBy({top: b.top + b.height / 2 - window.innerHeight / 2, behavior: 'instant'}); return true; }"
 )
 _JS_REGION_RECT = (
     "() => { const r = window.__ssRegion; if (!r || !r.getBoundingClientRect) return null;"
