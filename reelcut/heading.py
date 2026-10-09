@@ -70,6 +70,8 @@ def render_heading_frames(
         if not h.title:
             continue
         end = total_output_s if h.end < 0 else h.end
+        if total_output_s > 0:
+            end = min(end, total_output_s)
         if end <= h.start:
             continue
         h = replace(

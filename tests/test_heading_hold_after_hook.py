@@ -1,8 +1,7 @@
-"""`headings.full_video` controls how long a hook's title card stays up.
+"""`headings.hold_after_hook_s` controls how long a hook's title card stays up.
 
-render-hooks builds a one-card HeadingSpec per render. Its `end` used to always be the
-hook's own duration, so the card vanished when the body started. With full_video on it
-passes -1 ("until the end of the video") instead.
+render-hooks builds a one-card HeadingSpec per render. Its `end` is the hook's own duration
+plus hold_after_hook_s, or -1 ("until the end of the video") when the hold is negative.
 """
 import json
 from pathlib import Path
@@ -45,22 +44,28 @@ def assets(tmp_path, monkeypatch):
     return slug_dir, cap, captured
 
 
-def _config(tmp_path: Path, full_video: bool) -> Path:
+def _config(tmp_path: Path, hold: float | None = None) -> Path:
     path = tmp_path / "config.yaml"
     path.write_text(yaml.safe_dump({
         "output": {"location": str(tmp_path / "output"), "flip": {"mode": "off"}},
-        "headings": {"full_video": full_video},
+        "headings": {} if hold is None else {"hold_after_hook_s": hold},
     }))
     return path
 
 
-def test_full_video_keeps_the_card_up_until_the_end(assets, tmp_path):
+def test_negative_hold_keeps_the_card_up_until_the_end(assets, tmp_path):
     slug_dir, cap, captured = assets
-    cli.render_hooks(str(_config(tmp_path, True)), str(cap), slug="a-slug", verbose=False)
+    cli.render_hooks(str(_config(tmp_path, -1)), str(cap), slug="a-slug", verbose=False)
     assert [c.end for c in captured] == [-1, -1]
 
 
-def test_card_ends_with_the_hook_by_default(assets, tmp_path):
+def test_card_outlasts_the_hook_by_three_seconds_by_default(assets, tmp_path):
     slug_dir, cap, captured = assets
-    cli.render_hooks(str(_config(tmp_path, False)), str(cap), slug="a-slug", verbose=False)
+    cli.render_hooks(str(_config(tmp_path)), str(cap), slug="a-slug", verbose=False)
+    assert [c.end for c in captured] == [5.0, 5.0]
+
+
+def test_zero_hold_ends_the_card_with_the_hook(assets, tmp_path):
+    slug_dir, cap, captured = assets
+    cli.render_hooks(str(_config(tmp_path, 0)), str(cap), slug="a-slug", verbose=False)
     assert [c.end for c in captured] == [2.0, 2.0]

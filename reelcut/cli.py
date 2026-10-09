@@ -375,8 +375,9 @@ def render_hooks(
                     title=entry.title or base.title,
                     subtitle=entry.subtitle or base.subtitle,
                     start=0.0,
-                    # -1 = until the end of the video; otherwise the card ends with the hook.
-                    end=-1 if cfg.headings.full_video else hook_dur,
+                    # -1 = until the end of the video; otherwise the card outlasts the hook.
+                    end=-1 if cfg.headings.hold_after_hook_s < 0
+                    else hook_dur + cfg.headings.hold_after_hook_s,
                     scrim=base.scrim if entry.scrim is None else entry.scrim,
                 )
                 all_warnings.extend(_phase2(

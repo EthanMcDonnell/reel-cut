@@ -51,6 +51,13 @@ class TestRenderHeadingFrames:
         ranges = sorted((min(v), max(v)) for v in by_png.values())
         assert ranges == [(0, 59), (60, 119), (120, 179)]
 
+    def test_window_past_the_video_end_is_clipped(self, tmp_path):
+        # A hook title held past the hook can outrun a very short video.
+        heads = [HeadingSpec(title="Hello", start=0.0, end=5.0)]
+        frames = render_heading_frames(heads, HeadingsConfig(), tmp_path, fps=30,
+                                       resolution=(108, 192), total_output_s=2.0)
+        assert [f.frame_number for f in frames] == list(range(0, 60))
+
     def test_skips_empty_or_zero_length(self, tmp_path):
         cfg = HeadingsConfig()
         heads = [
