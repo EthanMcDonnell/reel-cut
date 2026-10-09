@@ -59,8 +59,8 @@ def render(
     only in the final encode — so a flipped duplicate costs one encode, not a whole render.
     Segment extraction is ~80% of a render, so this is the difference between 2x and ~1.1x.
 
-    `video_overlays` are `type="video"` ImageCues (output-timeline), played muted in the
-    centre under the caption/image layer.
+    `video_overlays` are `(cue, placement)` pairs for `type="video"` ImageCues
+    (output-timeline), played muted in their box under the caption/image layer.
     """
     if not outputs:
         outputs = [(Path(config.output.location) / "output.mp4", False)]
@@ -340,8 +340,8 @@ def _final_encode(
         audio = _mix_audio_tracks(audio, audio_tracks)
         # Video clips go under the caption layer, so captions, stills and the title card
         # stay on top of them.
-        for cue in video_overlays or []:
-            video = _overlay_video_clip(video, cue, config)
+        for cue, place in video_overlays or []:
+            video = _overlay_video_clip(video, cue, place, config)
         if caption_seq is not None:
             seq_dir, min_frame = caption_seq
             overlay_raw = ffmpeg.input(
@@ -403,21 +403,17 @@ def _final_encode(
         raise RuntimeError(f"Final encode failed:\n{stderr}") from exc
 
 
-def _overlay_video_clip(video, cue, config: ReelCutConfig):
-    """Play `cue`'s video file, muted, in the centre slot from cue.start to cue.end.
+def _overlay_video_clip(video, cue, place, config: ReelCutConfig):
+    """Play `cue`'s video file, muted, in its `place` box (see image_overlay.place_cues)
+    from cue.start to cue.end, dimming the footage behind it when it is full screen.
 
-    Sized like a figure card (an animated card like a card) and placed per images.position,
-    matching the still overlays.
     The clip is shifted to start at cue.start. A clip shorter than its window holds its last
     frame, so an animation ends on its final state rather than leaving a gap.
     """
-    w, h = config.output.resolution
-    img = config.images
-    size_pct = img.card_overlay_size_pct if cue.kind == "card" else img.figure_overlay_size_pct
-    target_w = int(w * size_pct / 100) // 2 * 2
-    margin = int(h * img.margin_pct / 100)
-    y = {"top": str(margin), "bottom": f"main_h-overlay_h-{margin}"}.get(
-        img.position, "(main_h-overlay_h)/2")
+    enable = f"between(t,{cue.start},{cue.end})"
+    if place.band == "full":
+        video = video.filter("drawbox", x=0, y=0, w="iw", h="ih", t="fill",
+                             color=f"black@{config.images.full_dim}", enable=enable)
 
     duration = max(0.0, cue.end - cue.start)
     # webm alpha only decodes through libvpx; the native vp9 decoder drops it.
@@ -428,14 +424,11 @@ def _overlay_video_clip(video, cue, config: ReelCutConfig):
         .filter("fps", fps=config.output.fps)
         .filter("tpad", stop_mode="clone", stop_duration=duration)
         .filter("trim", duration=duration)
-        .filter("scale", target_w, -2)
+        .filter("scale", place.w, place.h)
         .filter("format", "rgba")
         .filter("setpts", f"PTS-STARTPTS+{cue.start}/TB")
     )
-    return ffmpeg.overlay(
-        video, clip, x="(main_w-overlay_w)/2", y=y, eof_action="pass",
-        enable=f"between(t,{cue.start},{cue.end})",
-    )
+    return ffmpeg.overlay(video, clip, x=place.x, y=place.y, eof_action="pass", enable=enable)
 
 
 def _measure_lufs(path: str | Path) -> float | None:

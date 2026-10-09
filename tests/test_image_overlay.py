@@ -1,152 +1,132 @@
-"""Tests for image-overlay slot assignment — overlapping images of different types
-are displaced from the center to top corners by priority
-(screenshot > person > concept > logo), while two overlapping logos swap in place."""
+"""Tests for image-overlay placement — the band each overlay sits in (top inset, under
+the title while it's up, lower, or full screen) and which single overlay shows when
+several overlap (the newest; a video hides stills; a logo never hides a non-logo)."""
 from PIL import Image
 
-from reelcut.config import ImagesConfig
+from reelcut.caption import render_caption_frames
+from reelcut.config import CaptionsConfig, ImagesConfig
 from reelcut.image_finder import ImageCue
 from reelcut.image_overlay import (
-    _assign_slots,
-    _resolve_logo_swaps,
+    _shown,
+    caption_lifts,
+    place_cues,
     render_image_frames,
 )
+from reelcut.transcriber import WordTimestamp
+
+RES = (200, 400)
 
 
-def _cue(keyword, start, end, type, image_path=None):
+def _cue(keyword, start, end, type, image_path=None, layout=""):
     return ImageCue(
         keyword=keyword, start=start, end=end,
-        image_path=image_path or f"{keyword}.png", type=type,
+        image_path=image_path or f"{keyword}.png", type=type, layout=layout,
     )
 
 
-class TestAssignSlots:
-    def test_non_overlapping_all_center(self):
-        cues = [_cue("a", 0.0, 2.0, "logo"), _cue("b", 3.0, 5.0, "logo")]
-        assert _assign_slots(cues) == ["center", "center"]
-
-    def test_priority_keeps_highest_in_center(self):
-        # All three overlap: screenshot wins center, person→top_left, logo→top_right.
-        cues = [
-            _cue("logo", 0.0, 2.0, "logo"),
-            _cue("person", 0.5, 2.5, "person"),
-            _cue("shot", 0.2, 2.2, "screenshot"),
-        ]
-        slots = dict(zip([c.type for c in cues], _assign_slots(cues)))
-        assert slots == {"logo": "top_right", "person": "top_left", "screenshot": "center"}
-
-    def test_lower_priority_bumped_to_top_left(self):
-        cues = [_cue("logo", 0.0, 2.0, "logo"), _cue("person", 0.5, 1.5, "person")]
-        slots = dict(zip([c.type for c in cues], _assign_slots(cues)))
-        assert slots == {"person": "center", "logo": "top_left"}
-
-    def test_concept_outranks_logo_for_center(self):
-        # concept (priority 2) keeps center over logo (priority 3) when overlapping.
-        cues = [_cue("logo", 0.0, 2.0, "logo"), _cue("concept", 0.5, 1.5, "concept")]
-        slots = dict(zip([c.type for c in cues], _assign_slots(cues)))
-        assert slots == {"concept": "center", "logo": "top_left"}
-
-    def test_freed_slot_is_reused(self):
-        # logo2 starts after the overlapping pair ends → center is free again.
-        cues = [
-            _cue("logo1", 0.0, 2.0, "logo"),
-            _cue("person", 0.5, 1.5, "person"),
-            _cue("logo2", 5.0, 6.0, "logo"),
-        ]
-        slots = dict(zip([c.keyword for c in cues], _assign_slots(cues)))
-        assert slots == {"person": "center", "logo1": "top_left", "logo2": "center"}
+def _solid(tmp_path, name, color, size=(40, 40)):
+    p = tmp_path / f"{name}.png"
+    Image.new("RGBA", size, color).save(p)
+    return str(p)
 
 
-class TestResolveLogoSwaps:
-    def test_overlapping_logos_swap_in_place(self):
-        # Second logo replaces the first: first clamped to the second's start,
-        # and the seam is a hard cut (no fade out on a, no fade in on b).
-        cues = [_cue("a", 0.0, 2.0, "logo"), _cue("b", 1.0, 3.0, "logo")]
-        ends, sin, sout = _resolve_logo_swaps(cues)
-        assert ends == [1.0, 3.0]
-        assert sin == [False, True]
-        assert sout == [True, False]
-
-    def test_non_overlapping_logos_untouched(self):
-        cues = [_cue("a", 0.0, 2.0, "logo"), _cue("b", 3.0, 5.0, "logo")]
-        ends, sin, sout = _resolve_logo_swaps(cues)
-        assert ends == [2.0, 5.0]
-        assert sin == [False, False]
-        assert sout == [False, False]
-
-    def test_chain_of_three_logos(self):
-        cues = [
-            _cue("a", 0.0, 2.0, "logo"),
-            _cue("b", 1.0, 3.0, "logo"),
-            _cue("c", 1.5, 3.5, "logo"),
-        ]
-        ends, sin, sout = _resolve_logo_swaps(cues)
-        assert ends == [1.0, 1.5, 3.5]
-        assert sin == [False, True, True]
-        assert sout == [True, True, False]
-
-    def test_only_logos_are_swapped(self):
-        # A screenshot overlapping a logo is not a logo-vs-logo swap; the logo
-        # keeps its full window and is handled by corner displacement instead.
-        cues = [_cue("logo", 0.0, 2.0, "logo"), _cue("shot", 1.0, 3.0, "screenshot")]
-        ends, sin, sout = _resolve_logo_swaps(cues)
-        assert ends == [2.0, 3.0]
-        assert sin == [False, False]
-        assert sout == [False, False]
+def _colors(path):
+    img = Image.open(path).convert("RGBA")
+    return {c[:3] for _, c in img.getcolors(img.width * img.height) if c[3] == 255}
 
 
-class TestRenderConcurrent:
-    def _solid(self, tmp_path, name, color):
-        p = tmp_path / f"{name}.png"
-        Image.new("RGBA", (40, 40), color).save(p)
-        return str(p)
+class TestPlaceCues:
+    def test_inset_sits_at_the_top_of_the_top_band(self, tmp_path):
+        p, = place_cues([_cue("a", 0, 2, "person", _solid(tmp_path, "a", "red"))], ImagesConfig(), RES)
+        assert p.band == "top"
+        assert p.y == int(400 * 0.08)
+        assert p.x == (200 - p.w) // 2
 
-    def test_overlapping_cues_appear_in_same_frame(self, tmp_path):
-        # Two screenshots overlapping in time: one keeps center, the other is
-        # bumped to a top corner. A frame inside the overlap must show BOTH
-        # (regression: previously the per-frame dict collision dropped one).
-        red = self._solid(tmp_path, "red", (255, 0, 0, 255))
-        blue = self._solid(tmp_path, "blue", (0, 0, 255, 255))
-        cues = [
-            _cue("red", 0.0, 2.0, "screenshot", image_path=red),
-            _cue("blue", 0.5, 2.5, "screenshot", image_path=blue),
-        ]
-        cfg = ImagesConfig(enabled=True, fade_duration_s=0.0, position="center")
-        frames = render_image_frames(
-            cues, cfg, tmp_path / "out", fps=30, resolution=(200, 400),
-        )
+    def test_inset_moves_under_the_title_while_it_is_up(self, tmp_path):
+        p, = place_cues([_cue("a", 1, 3, "person", _solid(tmp_path, "a", "red"))],
+                        ImagesConfig(), RES, title_windows=[(0.0, 2.0)])
+        assert (p.band, p.y) == ("under_title", int(400 * 0.26))
 
-        # Frame 30 (t=1.0s) is inside both windows.
-        overlap = next(f for f in frames if f.frame_number == 30)
-        img = Image.open(overlap.image_path).convert("RGBA")
-        colors = {c[:3] for _, c in img.getcolors(img.width * img.height) if c[3] > 0}
-        assert (255, 0, 0) in colors
-        assert (0, 0, 255) in colors
+    def test_lower_layout_hugs_the_bottom_of_the_lower_band(self, tmp_path):
+        p, = place_cues([_cue("a", 0, 2, "person", _solid(tmp_path, "a", "red"), layout="lower")],
+                        ImagesConfig(), RES)
+        assert (p.band, p.y + p.h) == ("lower", int(400 * 0.80))
 
-    def test_second_logo_replaces_first_in_center(self, tmp_path):
-        # Two overlapping logos: the second replaces the first in the center
-        # rather than displacing it to a corner. At t=1.5s the first (clamped to
-        # end at the second's 1.0s start) is gone and only the second shows.
-        red = self._solid(tmp_path, "red", (255, 0, 0, 255))
-        blue = self._solid(tmp_path, "blue", (0, 0, 255, 255))
-        cues = [
-            _cue("red", 0.0, 2.0, "logo", image_path=red),
-            _cue("blue", 1.0, 3.0, "logo", image_path=blue),
-        ]
-        cfg = ImagesConfig(enabled=True, fade_duration_s=0.0, position="center")
-        frames = render_image_frames(
-            cues, cfg, tmp_path / "out", fps=30, resolution=(200, 400),
-        )
+    def test_full_types_go_full_screen_unless_layout_says_otherwise(self, tmp_path):
+        img = _solid(tmp_path, "a", "red")
+        full, inset = place_cues([_cue("a", 0, 2, "screenshot", img),
+                                  _cue("b", 0, 2, "screenshot", img, layout="top")],
+                                 ImagesConfig(), RES)
+        assert (full.band, inset.band) == ("full", "top")
 
-        f = next(f for f in frames if f.frame_number == 45)
-        img = Image.open(f.image_path).convert("RGBA")
-        colors = {c[:3] for _, c in img.getcolors(img.width * img.height) if c[3] > 0}
-        assert (0, 0, 255) in colors
-        assert (255, 0, 0) not in colors
+    def test_tall_inset_shrinks_to_fit_its_band(self, tmp_path):
+        tall = _solid(tmp_path, "tall", "red", size=(40, 400))
+        p, = place_cues([_cue("a", 0, 2, "person", tall)], ImagesConfig(), RES)
+        assert p.h <= int(400 * 0.30) - int(400 * 0.08)
 
-        # The surviving logo sits in the center column, not a top corner.
-        xs = [x for x in range(img.width) for y in range(img.height)
-              if img.getpixel((x, y))[3] > 0]
-        assert abs((min(xs) + max(xs)) / 2 - img.width / 2) < 5
+    def test_full_screen_starts_below_the_title_while_it_is_up(self, tmp_path):
+        tall = _solid(tmp_path, "tall", "red", size=(40, 400))
+        p, = place_cues([_cue("a", 0, 2, "screenshot", tall)], ImagesConfig(), RES,
+                        title_windows=[(0.0, 1.0)])
+        assert p.y >= int(400 * 0.26)
+        assert p.y + p.h <= int(400 * 0.68)
+
+
+class TestShown:
+    def test_newest_overlay_wins(self):
+        cues = [_cue("a", 0, 4, "screenshot"), _cue("b", 1, 2, "concept")]
+        assert [_shown(cues, t) for t in (0.5, 1.5, 3.0)] == [0, 1, 0]
+
+    def test_logo_never_hides_a_non_logo(self):
+        cues = [_cue("shot", 0, 4, "screenshot"), _cue("logo", 1, 2, "logo")]
+        assert _shown(cues, 1.5) == 0
+
+    def test_newer_logo_replaces_older_logo(self):
+        cues = [_cue("a", 0, 2, "logo"), _cue("b", 1, 3, "logo")]
+        assert _shown(cues, 1.5) == 1
+
+    def test_video_hides_stills(self):
+        cues = [_cue("clip", 0, 4, "video"), _cue("p", 1, 2, "person")]
+        assert _shown(cues, 1.5) == 0
+
+    def test_nothing_active(self):
+        assert _shown([_cue("a", 0, 1, "logo")], 2.0) is None
+
+
+class TestRenderImageFrames:
+    def test_only_the_newest_overlapping_overlay_is_drawn(self, tmp_path):
+        red, blue = _solid(tmp_path, "red", (255, 0, 0, 255)), _solid(tmp_path, "blue", (0, 0, 255, 255))
+        cues = [_cue("red", 0.0, 2.0, "person", red), _cue("blue", 0.5, 2.5, "person", blue)]
+        cfg = ImagesConfig(enabled=True, fade_duration_s=0.0, start_delay_s=0)
+        frames = {f.frame_number: f.image_path for f in
+                  render_image_frames(cues, cfg, tmp_path / "out", fps=30, resolution=RES)}
+        assert _colors(frames[30]) == {(0, 0, 255)}
+        assert _colors(frames[5]) == {(255, 0, 0)}
+
+    def test_full_screen_dims_the_whole_frame(self, tmp_path):
+        red = _solid(tmp_path, "red", (255, 0, 0, 255))
+        cfg = ImagesConfig(enabled=True, fade_duration_s=0.0, start_delay_s=0, full_dim=0.5)
+        frames = render_image_frames([_cue("a", 0.0, 1.0, "screenshot", red)], cfg,
+                                     tmp_path / "out", fps=10, resolution=RES)
+        img = Image.open(frames[0].image_path)
+        assert img.getpixel((0, 0)) == (0, 0, 0, 127)
+
+
+class TestCaptionLifts:
+    def test_lower_band_overlay_lifts_captions_above_it(self, tmp_path):
+        img = _solid(tmp_path, "a", "red")
+        cues = [_cue("a", 1.0, 2.0, "person", img, layout="lower"), _cue("b", 3.0, 4.0, "person", img)]
+        places = place_cues(cues, ImagesConfig(), RES)
+        lifts = caption_lifts(cues, places, RES)
+        assert lifts == [(1.0, 2.0, places[0].y - int(400 * 0.015))]
+
+    def test_lifted_caption_ends_above_the_line(self, tmp_path):
+        words = [WordTimestamp(word="hello", start=0.0, end=1.0, confidence=1.0)]
+        cfg = CaptionsConfig(size=20, shadow=False)
+        frames = render_caption_frames(words, cfg, tmp_path, fps=10, resolution=RES,
+                                       lifts=[(0.0, 1.0, 150)])
+        bbox = Image.open(frames[0].image_path).getchannel("A").getbbox()
+        assert bbox[3] <= 150 + cfg.stroke_width
 
 
 class TestClampToHook:

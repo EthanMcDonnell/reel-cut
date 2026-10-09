@@ -30,8 +30,12 @@ def render_caption_frames(
     fps: int = 30,
     resolution: tuple[int, int] = (1080, 1920),
     sentence_pause_s: float = SENTENCE_PAUSE_S,
+    lifts: list[tuple[float, float, int]] = (),
 ) -> list[CaptionFrame]:
     """Generate per-frame PNG caption overlays.
+
+    `lifts` are (start, end, bottom_px) output-timeline windows where the caption block sits
+    with its bottom at bottom_px instead of at config.position (above a lower-band overlay).
 
     Returns a list of CaptionFrame(frame_number, image_path).
     Frames with no caption are not written (callers treat missing frames as blank).
@@ -65,7 +69,9 @@ def render_caption_frames(
             continue
 
         line_words, active_idx = cache_entry
-        cache_key = (tuple(w.word for w in line_words), active_idx)
+        t = frame_num / fps
+        y_bottom = next((b for s, e, b in lifts if s <= t < e), None)
+        cache_key = (tuple(w.word for w in line_words), active_idx, y_bottom)
 
         # Reuse previous frame image if nothing changed
         if cache_key == prev_key and prev_path:
@@ -80,6 +86,7 @@ def render_caption_frames(
             font_highlight=font_highlight,
             canvas_size=(w, h),
             y_pos=y_pos,
+            y_bottom=y_bottom,
         )
 
         path = str(output_dir / f"caption_{frame_num:06d}.png")
@@ -124,6 +131,7 @@ def _render_frame(
     font_highlight: ImageFont.FreeTypeFont,
     canvas_size: tuple[int, int],
     y_pos: int,
+    y_bottom: int | None = None,
 ) -> Image.Image:
     """Render a single transparent caption frame: soft blurred shadow, then crisp
     stroked text on top (the active word highlighted when style is word_highlight)."""
@@ -134,7 +142,7 @@ def _render_frame(
     highlight_idx = active_idx if config.style == "word_highlight" else None
     tokens = _build_display_tokens(line_words, highlight_idx)
     margin = int(w * config.margin_pct / 100)
-    placed = _layout_tokens(draw, tokens, font, font_highlight, config, w, y_pos, margin)
+    placed = _layout_tokens(draw, tokens, font, font_highlight, config, w, y_pos, margin, y_bottom)
 
     stroke_width = config.stroke_width if config.stroke else 0
 
@@ -185,8 +193,10 @@ def _layout_tokens(
     canvas_w: int,
     y: int,
     margin: int = _MARGIN,
+    y_bottom: int | None = None,
 ) -> list[tuple[str, bool, float, int, ImageFont.FreeTypeFont]]:
-    """Wrap tokens to the canvas width and return positioned tokens.
+    """Wrap tokens to the canvas width and return positioned tokens, centred on `y` (or with
+    the block's bottom at `y_bottom` when given).
 
     Returns a list of (text, is_active, x, y, font) so the caller can render both
     the shadow mask and the crisp text from identical positions. The active token
@@ -217,7 +227,7 @@ def _layout_tokens(
     h_ascent, _ = font_highlight.getmetrics()
     line_h = ascent + descent
     total_h = line_h * len(lines) + config.line_spacing * (len(lines) - 1)
-    start_y = y - total_h // 2
+    start_y = y - total_h // 2 if y_bottom is None else y_bottom - total_h
 
     placed: list[tuple[str, bool, float, int, ImageFont.FreeTypeFont]] = []
     for row, line_tokens in enumerate(lines):

@@ -1,5 +1,5 @@
-"""End-to-end check of video overlays: the clip plays in the centre only during its window,
-starts from `clip_start`, and sits under the caption layer.
+"""End-to-end check of video overlays: the clip plays in its box only during its window,
+starts from `clip_start`, sits under the caption layer, and dims the footage when full screen.
 
 Renders 2s of blue footage with a clip overlay at 0.5–1.5s and inspects decoded frames.
 """
@@ -13,6 +13,7 @@ from PIL import Image
 from reelcut.caption import CaptionFrame
 from reelcut.config import ReelCutConfig
 from reelcut.image_finder import ImageCue
+from reelcut.image_overlay import Placement
 from reelcut.renderer import _final_encode, _prepare_caption_sequence
 
 pytestmark = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg not installed")
@@ -31,8 +32,11 @@ def _cfg() -> ReelCutConfig:
     cfg.output.fps = FPS
     cfg.output.zoom.enabled = False
     cfg.output.encode_variation.enabled = False
-    cfg.images.position = "center"
     return cfg
+
+
+# The 160px clips drawn 1:1 in the middle of the frame.
+CENTRE = Placement(x=(W - 160) // 2, y=(H - 160) // 2, w=160, h=160, band="top")
 
 
 def _ffmpeg(*args: str) -> None:
@@ -66,12 +70,12 @@ def _close(actual, expected, tol=60) -> bool:
     return all(abs(a - e) <= tol for a, e in zip(actual, expected))
 
 
-def _render(tmp: Path, clip_start: float = 0.0, caption_seq=None) -> Path:
+def _render(tmp: Path, clip_start: float = 0.0, caption_seq=None, place=CENTRE) -> Path:
     cfg = _cfg()
     cue = ImageCue(keyword="clip", start=0.5, end=1.5, image_path=str(_clip(tmp)),
                    type="video", clip_start=clip_start)
     out = tmp / "out.mp4"
-    _final_encode(_footage(tmp), out, cfg, caption_seq, None, False, [cue])
+    _final_encode(_footage(tmp), out, cfg, caption_seq, None, False, [(cue, place)])
     return out
 
 
@@ -82,6 +86,13 @@ def test_clip_shows_only_inside_its_window(tmp_path):
     assert _close(_frame(out, tmp_path, 24).getpixel(centre), RED), "inside the window"
     assert _close(_frame(out, tmp_path, 54).getpixel(centre), BLUE), "after the window"
     assert _close(_frame(out, tmp_path, 24).getpixel((10, 10)), BLUE), "clip stays centred"
+
+
+def test_full_screen_clip_dims_the_footage_around_it(tmp_path):
+    out = _render(tmp_path, place=Placement(**{**CENTRE.__dict__, "band": "full"}))
+    corner = _frame(out, tmp_path, 24).getpixel((10, 10))
+    assert corner[2] < 140, "footage dimmed during the window"
+    assert _close(_frame(out, tmp_path, 54).getpixel((10, 10)), BLUE), "undimmed after it"
 
 
 def test_clip_start_skips_into_the_file(tmp_path):
@@ -114,7 +125,7 @@ def test_transparent_webm_shows_footage_through(tmp_path):
 
     cue = ImageCue(keyword="anim", start=0.5, end=1.5, image_path=str(clip), type="video")
     out = tmp_path / "out.mp4"
-    _final_encode(_footage(tmp_path), out, _cfg(), None, None, False, [cue])
+    _final_encode(_footage(tmp_path), out, _cfg(), None, None, False, [(cue, CENTRE)])
     px = _frame(out, tmp_path, 24)
     assert _close(px.getpixel((W // 2, H // 2)), RED), "opaque part of the animation"
     assert _close(px.getpixel((W // 2 - 60, H // 2 - 60)), BLUE), "transparent part shows footage"
@@ -129,7 +140,7 @@ def test_short_clip_holds_its_last_frame(tmp_path):
             "-filter_complex", "[0][1]concat=n=2:v=1", "-pix_fmt", "yuv420p", str(clip))
     cue = ImageCue(keyword="short", start=0.2, end=1.8, image_path=str(clip), type="video")
     out = tmp_path / "out.mp4"
-    _final_encode(_footage(tmp_path), out, cfg, None, None, False, [cue])
+    _final_encode(_footage(tmp_path), out, cfg, None, None, False, [(cue, CENTRE)])
     centre = (W // 2, H // 2)
     assert _close(_frame(out, tmp_path, 45).getpixel(centre), YELLOW), "held on the last frame"
     assert _close(_frame(out, tmp_path, 57).getpixel(centre), BLUE), "gone after the window"

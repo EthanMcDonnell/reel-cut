@@ -184,7 +184,6 @@ class ImagesConfig(BaseModel):
     require_capitalized: bool = True   # only auto-detect words Whisper capitalized (proper-noun signal)
     keywords: list[str] = []           # explicit logo slugs to always match regardless of capitalization
     exclude: list[str] = []            # logo slugs to never match
-    position: Literal["top", "center", "bottom"] = "top"
     logo_overlay_size_pct: float = 25.0  # logo width as % of video width
     overlay_size_pct: float = 50.0     # person/screenshot/concept width as % of video width
     figure_overlay_size_pct: float = 66.0  # figure (article chart/diagram) card width as % of video width
@@ -192,8 +191,16 @@ class ImagesConfig(BaseModel):
     display_duration_s: float = 2.0
     fade_duration_s: float = 0.25
     start_delay_s: float = 0.1         # image overlays won't appear before this time so they flash on rather than look frozen from frame 0
-    margin_pct: float = 5.0            # % of video height from edge to logo
-    corner_drop_pct: float = 6.0       # extra % of video height to lower displaced (corner) images
+    # Bands are (top, bottom) as % of video height. An inset overlay sits in the top band, or
+    # just under the title card while one is up; images.json "layout": "lower" moves it to the
+    # lower band (captions move up above it).
+    top_band_pct: tuple[float, float] = (8.0, 30.0)
+    under_title_band_pct: tuple[float, float] = (26.0, 38.0)
+    lower_band_pct: tuple[float, float] = (58.0, 80.0)
+    full_types: list[str] = ["screenshot", "figure", "video"]  # shown full screen unless images.json says otherwise
+    full_box_pct: tuple[float, float] = (8.0, 68.0)  # a full-screen overlay fits inside this (below the title while one is up)
+    full_width_pct: float = 92.0       # full-screen overlay max width as % of video width
+    full_dim: float = 0.6              # opacity of the black layer behind a full-screen overlay
 
 
 

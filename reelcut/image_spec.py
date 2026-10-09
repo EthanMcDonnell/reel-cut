@@ -36,6 +36,8 @@ class ImageSpec:
     kind: str = ""          # type=figure only: "chart" | "diagram"
     clip_start: float = 0.0 # type=video only: seconds into the video file to start playing
     beats: list[float] = field(default_factory=list)  # type=card only: source-clip seconds each data-beat enters
+    layout: str = ""        # "" = by type (images.full_types go full screen, the rest inset at the top)
+                            # | "top" | "lower" | "full" — see images.*_band_pct in config.yaml
 
 
 def load_images(path: Path) -> list[ImageSpec]:
@@ -57,6 +59,7 @@ def load_images(path: Path) -> list[ImageSpec]:
             kind=i.get("kind", ""),
             clip_start=float(i.get("clip_start", 0.0)),
             beats=[float(b) for b in i.get("beats", [])],
+            layout=i.get("layout", ""),
         )
         for i in raw
     ]

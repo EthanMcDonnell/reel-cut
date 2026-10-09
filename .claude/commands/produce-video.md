@@ -56,7 +56,7 @@ Image timings are stored in **source-clip time** (same as `words` and `edl`). Th
 
 **Every hook gets its own overlay**, so no variant opens on a bare talking head. An auto-detected logo counts. Otherwise place a hook-only overlay showing what the hook leads with: a `person` for a name, the proving screenshot or figure for a number, a `concept` for an object. Start it on the hook's first words and end it by the hook's last word (the renderer clips it there anyway).
 
-**Keep the centre filled.** Any stretch of 1s or more with no overlay is a gap. Hold screenshots and figures until the next overlay starts, fill what's left with `person` and `concept` overlays (Step 3b) and designed cards (Step 3e), and leave a gap rather than place an unrelated image.
+**Keep the screen filled.** Any stretch of 1s or more with no overlay is a gap. Hold screenshots and figures until the next overlay starts, fill what's left with `person` and `concept` overlays (Step 3b) and designed cards (Step 3e), and leave a gap rather than place an unrelated image.
 
 Work through every screenshot in the manifest (skip `body.png`). **Skip any screenshot whose `script_context` or `article_snippet` cannot be matched to words in the `words` array — do not invent a placement.**
 
@@ -163,7 +163,12 @@ Example `images.json`:
 ]
 ```
 
-A `video` entry plays a local clip, muted, in the centre from `clip_start` seconds into the file, and takes the centre over any still image. Only use clips published by the company being discussed, by the article the video is about, or by a news report on it, never one from a source that merely supports a point. A clip shorter than its window holds its last frame. A webm or ProRes 4444 file with alpha keeps its transparency, which is how animations are overlaid.
+A `video` entry plays a local clip, muted, from `clip_start` seconds into the file, and hides any still image while it plays. Only use clips published by the company being discussed, by the article the video is about, or by a news report on it, never one from a source that merely supports a point. A clip shorter than its window holds its last frame. A webm or ProRes 4444 file with alpha keeps its transparency, which is how animations are overlaid.
+
+**Layout.** One overlay shows at a time; a newer one hides the older until it ends (a logo never hides anything but a logo). Screenshots, figures, clips and animated cards go full screen over dimmed footage. Logos, people, concepts and still cards sit inset in a band at the top, or just under the title while the hook's title card is up (the hook plus `headings.hold_after_hook_s`). Override per entry with `"layout"`:
+- **`"lower"`** — for overlays shown while the title is up, look at one frame of each source clip (`ffmpeg -ss 5 -i <clip> -frames:v 1 <scratch>.png`, then Read it). In a wide or desk shot the band under the title covers the face, so set `"lower"` on those overlays. A close-up needs nothing.
+- **`"full"`** — a still card with more than one point, or any card too tall to read at about a quarter of the screen's height.
+- **`"top"`** — a screenshot or figure small enough to read inset.
 
 If `assets/<video-slug>/clips/` exists, place each clip in it where it shows what is being said: a hook it proves, or a gap the coverage check reports. Clips there have already been scoped to the sources above; one that fits nowhere is left out and named in the report.
 

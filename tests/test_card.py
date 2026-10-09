@@ -52,7 +52,7 @@ def test_card_is_drawn_at_card_overlay_width(tmp_path):
     html = tmp_path / "c.html"
     html.write_text("<p>Text</p>")
     cue = _resolve_image_spec(ImageSpec(type="card", start=0.0, end=0.2, path=str(html)), 1.0)
-    cfg = ImagesConfig(position="center", card_overlay_size_pct=80, start_delay_s=0)
+    cfg = ImagesConfig(card_overlay_size_pct=80, start_delay_s=0)
 
     frames = render_image_frames([cue], cfg, tmp_path / "frames", fps=10, resolution=(500, 900))
 

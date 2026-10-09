@@ -18,6 +18,7 @@ class ImageCue:
     kind: str = ""    # type=figure: "chart" | "diagram"; type=video: "card" for an animated card
     clip_start: float = 0.0  # type=video only: seconds into the video file
     beats: list[float] = field(default_factory=list)  # animated card: output-timeline beat times
+    layout: str = ""  # images.json layout: "" (by type) | "top" | "lower" | "full"
 
 
 def detect_image_cues(

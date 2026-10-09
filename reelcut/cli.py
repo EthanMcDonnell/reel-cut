@@ -18,6 +18,7 @@ os.environ.setdefault("OMP_NUM_THREADS", "1")
 import tempfile
 import time
 import traceback
+from dataclasses import replace
 from pathlib import Path
 from typing import Optional
 
@@ -919,6 +920,7 @@ def _phase2(cfg, doc, outputs: list[tuple[Path, bool]], verbose: bool,
                 kind=spec.kind,
                 clip_start=spec.clip_start,
                 beats=[remap(clip, b) for b in spec.beats],
+                layout=spec.layout,
             )
             # An overlay is anchored to source times, so a later EDL change can move a
             # cut over it. Once remapped it just gets shorter (or vanishes at zero
@@ -936,7 +938,7 @@ def _phase2(cfg, doc, outputs: list[tuple[Path, bool]], verbose: bool,
                     continue
             cue = _resolve_image_spec(remapped_spec, cfg.images.display_duration_s, cfg.output.fps)
             if cue:
-                all_image_cues.append(cue)
+                all_image_cues.append(replace(cue, layout=spec.layout))
 
         from .image_overlay import clamp_to_hook
         if hook_end_s is not None:
@@ -949,6 +951,15 @@ def _phase2(cfg, doc, outputs: list[tuple[Path, bool]], verbose: bool,
         _print_coverage(all_image_cues, total_output_s, caption_words)
     if check_only:
         return warnings
+
+    # Where each overlay sits: the title card's window pushes insets down, and an overlay in
+    # the lower band lifts the captions above it.
+    from .image_overlay import caption_lifts, place_cues
+    res = tuple(cfg.output.resolution)
+    title_windows = [(hs.start, total_output_s if hs.end < 0 else hs.end)
+                     for hs in heading_specs if hs.title]
+    placements = place_cues(all_image_cues, cfg.images, res, title_windows) if cfg.images.enabled else []
+    lifts = caption_lifts(all_image_cues, placements, res) if cfg.images.enabled else []
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
@@ -964,6 +975,7 @@ def _phase2(cfg, doc, outputs: list[tuple[Path, bool]], verbose: bool,
                 fps=cfg.output.fps,
                 resolution=tuple(cfg.output.resolution),
                 sentence_pause_s=cfg.cuts.sentence_pause_s,
+                lifts=lifts,
             )
             _tlog(time.perf_counter() - t, f"{len(caption_frames)} frames")
 
@@ -976,6 +988,7 @@ def _phase2(cfg, doc, outputs: list[tuple[Path, bool]], verbose: bool,
                 all_image_cues, cfg.images, img_dir,
                 fps=cfg.output.fps,
                 resolution=tuple(cfg.output.resolution),
+                title_windows=title_windows,
             )
             caption_frames = merge_with_caption_frames(
                 caption_frames, image_frames, tuple(cfg.output.resolution),
@@ -1019,7 +1032,7 @@ def _phase2(cfg, doc, outputs: list[tuple[Path, bool]], verbose: bool,
         n_out = f"{len(outputs)} videos" if len(outputs) > 1 else "final video"
         console.print(f"[bold]Step 6c/6[/bold] Rendering {n_out}… encoder: [cyan]{encoder}[/cyan]")
         t = time.perf_counter()
-        video_cues = [c for c in all_image_cues if c.type == "video"]
+        video_cues = [(c, p) for c, p in zip(all_image_cues, placements) if c.type == "video" and p]
         written = do_render(edl, caption_frames, cfg, outputs, audio_tracks=audio_tracks,
                             video_overlays=video_cues)
         console.print(f"\n[green bold]Done![/green bold] ({time.perf_counter() - t:.1f}s)")

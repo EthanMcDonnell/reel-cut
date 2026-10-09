@@ -1,7 +1,7 @@
 """Image overlay renderer — composites logo PNGs over video frames with fade in/out."""
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from PIL import Image, ImageDraw
@@ -10,73 +10,122 @@ from .caption import CaptionFrame
 from .config import ImagesConfig
 from .image_finder import ImageCue
 
-# Center is the prime slot. When images of *different* types overlap in time, the
-# highest-priority one keeps the center and the rest are displaced to the corners
-# in this order. Two logos are the exception: the later one replaces the earlier
-# one in the center rather than displacing it (see _resolve_logo_swaps).
-_SLOTS = ("center", "top_left", "top_right")
-
-# Lower number = higher priority for the center slot:
-# video > figure = card > screenshot > person > concept > logo.
-_TYPE_PRIORITY = {"video": -1, "figure": 0, "card": 0, "screenshot": 1, "person": 2, "concept": 3, "logo": 4}
+# Where an overlay sits. "top" is the default inset band; while the hook's title card is up
+# it moves to "under_title" (or "lower" when images.json asks). "full" covers the frame.
+TOP, UNDER_TITLE, LOWER, FULL = "top", "under_title", "lower", "full"
 
 
-def _assign_slots(cues: list[ImageCue]) -> list[str]:
-    """Assign each cue a display slot, avoiding center-stacking of overlapping images.
-
-    Higher-priority cues (screenshot > person > concept > logo) claim the center
-    first; any cue that overlaps an already-claimed slot in time is bumped to the
-    next free slot (center → top_left → top_right). Returns slots parallel to
-    `cues`. Callers pass the swap-adjusted ends from `_resolve_logo_swaps`, so a
-    replaced logo no longer overlaps its successor and both keep the center.
-    """
-    order = sorted(
-        range(len(cues)),
-        key=lambda i: (_TYPE_PRIORITY.get(cues[i].type, 99), cues[i].start),
-    )
-    occupied: dict[str, list[tuple[float, float]]] = {slot: [] for slot in _SLOTS}
-    slots = ["center"] * len(cues)
-    for i in order:
-        c = cues[i]
-        for slot in _SLOTS:
-            if not any(c.start < e and s < c.end for s, e in occupied[slot]):
-                occupied[slot].append((c.start, c.end))
-                slots[i] = slot
-                break
-        else:
-            slots[i] = _SLOTS[-1]  # >3 concurrent: stack on top_right
-    return slots
+@dataclass
+class Placement:
+    """An overlay's box on the frame, in output pixels, and the band it sits in."""
+    x: int
+    y: int
+    w: int
+    h: int
+    band: str
 
 
-def _resolve_logo_swaps(
+def _band(cue: ImageCue, config: ImagesConfig, title_windows) -> str:
+    """The band a cue sits in: its images.json `layout`, else full for config.full_types,
+    else the top inset — pushed under the title while a title card is on screen."""
+    layout = cue.layout or (FULL if cue.type in config.full_types else TOP)
+    if layout == TOP and any(s < cue.end and cue.start < e for s, e in title_windows):
+        return UNDER_TITLE
+    return layout
+
+
+def _aspect(cue: ImageCue) -> float | None:
+    """Height / width of the overlay as drawn, or None if its file can't be read."""
+    try:
+        if cue.type == "video":
+            import ffmpeg
+            st = next(s for s in ffmpeg.probe(cue.image_path)["streams"] if s["codec_type"] == "video")
+            return st["height"] / st["width"]
+        with Image.open(cue.image_path) as im:
+            ar = im.height / im.width
+    except Exception:
+        return None
+    # A figure is drawn on a padded card (see _figure_card): 4.5% padding each side.
+    return ar * 0.91 + 0.09 if cue.type == "figure" else ar
+
+
+def _inset_width_pct(cue: ImageCue, config: ImagesConfig) -> float:
+    if cue.type == "logo":
+        return config.logo_overlay_size_pct
+    if cue.type == "figure":
+        return config.figure_overlay_size_pct
+    if cue.type == "card" or cue.kind == "card":
+        return config.card_overlay_size_pct
+    return config.overlay_size_pct
+
+
+def place_cues(
     cues: list[ImageCue],
-) -> tuple[list[float], list[bool], list[bool]]:
-    """Make an overlapping logo *replace* the one before it in the center.
+    config: ImagesConfig,
+    resolution: tuple[int, int],
+    title_windows: list[tuple[float, float]] = (),
+) -> list[Placement | None]:
+    """Each cue's box, parallel to `cues` (None when its file can't be read).
 
-    When a logo fires while an earlier logo is still on screen, we clamp the
-    earlier logo's end down to the later logo's start — so it vanishes exactly as
-    the new one appears — instead of bumping it to a corner. The swap is a hard
-    cut: the outgoing logo doesn't fade out and the incoming one doesn't fade in
-    at the seam (their outer fade-in / fade-out edges are untouched).
-
-    Returns three lists parallel to `cues`: the (possibly clamped) end time, and
-    whether each cue should suppress its fade-in / fade-out because it sits at a
-    swap seam. Non-logo cues are never touched.
+    An inset keeps its configured width unless that would overflow its band's height, and
+    hugs the band's outer edge: the top of the top bands, the bottom of the lower band. A
+    full-screen overlay fills the full box (starting below the title while one is up).
     """
-    ends = [c.end for c in cues]
-    suppress_in = [False] * len(cues)
-    suppress_out = [False] * len(cues)
+    w, h = resolution
+    out: list[Placement | None] = []
+    for cue in cues:
+        aspect = _aspect(cue)
+        if not aspect:
+            out.append(None)
+            continue
+        band = _band(cue, config, title_windows)
+        if band == FULL:
+            top_pct = config.full_box_pct[0]
+            if any(s < cue.end and cue.start < e for s, e in title_windows):
+                top_pct = config.under_title_band_pct[0]
+            top, bottom = int(h * top_pct / 100), int(h * config.full_box_pct[1] / 100)
+            max_w = w * config.full_width_pct / 100
+        else:
+            pct = {TOP: config.top_band_pct, UNDER_TITLE: config.under_title_band_pct,
+                   LOWER: config.lower_band_pct}[band]
+            top, bottom = int(h * pct[0] / 100), int(h * pct[1] / 100)
+            max_w = w * _inset_width_pct(cue, config) / 100
+        bw = int(min(max_w, (bottom - top) / aspect)) // 2 * 2  # even, for ffmpeg's scaler
+        bh = int(bw * aspect)
+        if band == FULL:
+            y = top + (bottom - top - bh) // 2
+        elif band == LOWER:
+            y = bottom - bh
+        else:
+            y = top
+        out.append(Placement(x=(w - bw) // 2, y=y, w=bw, h=bh, band=band))
+    return out
 
-    logo_idx = sorted(
-        (i for i, c in enumerate(cues) if c.type == "logo"),
-        key=lambda i: cues[i].start,
-    )
-    for a, b in zip(logo_idx, logo_idx[1:]):
-        if cues[b].start < ends[a]:  # b lands while a is still showing
-            ends[a] = cues[b].start
-            suppress_out[a] = True   # a is cut off, not faded out
-            suppress_in[b] = True    # b cuts in, not faded in
-    return ends, suppress_in, suppress_out
+
+def _shown(cues: list[ImageCue], t: float) -> int | None:
+    """Index of the one overlay on screen at `t`: the newest active one. A video clip hides
+    the stills, and a logo never hides a non-logo — it only replaces another logo."""
+    active = [i for i, c in enumerate(cues) if c.start <= t < c.end]
+    if not active:
+        return None
+    rank = lambda i: (cues[i].type == "video", cues[i].type != "logo", cues[i].start)
+    return max(active, key=rank)
+
+
+def caption_lifts(
+    cues: list[ImageCue],
+    placements: list[Placement | None],
+    resolution: tuple[int, int],
+) -> list[tuple[float, float, int]]:
+    """(start, end, bottom_px) windows where captions must sit above a lower-band overlay."""
+    gap = int(resolution[1] * 0.015)
+    edges = sorted({t for c in cues for t in (c.start, c.end)})
+    lifts = []
+    for a, b in zip(edges, edges[1:]):
+        i = _shown(cues, (a + b) / 2)
+        if i is not None and placements[i] and placements[i].band == LOWER:
+            lifts.append((a, b, placements[i].y - gap))
+    return lifts
 
 
 # A stretch with no overlay at least this long is reported as a coverage gap.
@@ -125,134 +174,99 @@ def render_image_frames(
     output_dir: Path,
     fps: int,
     resolution: tuple[int, int],
+    title_windows: list[tuple[float, float]] = (),
 ) -> list[CaptionFrame]:
-    """Generate per-frame transparent PNG overlays compositing all active image cues.
-
-    Each output frame composites *every* cue active at that frame onto a single canvas
-    at its assigned slot — so overlapping images appear together rather than colliding
-    on a shared frame number downstream. Frames with an identical set of active cues and
-    fade levels share one file (steady-state frames dedup naturally).
+    """Generate per-frame transparent PNG overlays, one overlay per frame (see _shown) in
+    its band (see place_cues). A full-screen overlay dims the footage behind it.
+    `title_windows` are the output-timeline spans a title card is on screen.
+    Frames with the same cue, fade level and sweep step share one file.
     """
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     w, h = resolution
     fade_frames = int(config.fade_duration_s * fps)
-    margin_px = int(h * config.margin_pct / 100)
-    # Drop the corner (displaced) slots a little below the top edge.
-    corner_y = margin_px + int(h * config.corner_drop_pct / 100)
+    dim = int(255 * config.full_dim)
+    placements = place_cues(cues, config, resolution, title_windows)
 
-    ends, suppress_in, suppress_out = _resolve_logo_swaps(cues)
-    slots = _assign_slots([replace(c, end=e) for c, e in zip(cues, ends)])
-
-    prepared: list[dict] = []
-    for i, (cue, slot) in enumerate(zip(cues, slots)):
-        if cue.type == "video":
-            continue  # drawn by the renderer; here it only claims the center slot
+    prepared: dict[int, dict] = {}
+    for i, (cue, place) in enumerate(zip(cues, placements)):
+        if cue.type == "video" or place is None:
+            continue  # a video is drawn by the renderer; here it only hides the stills
         try:
             logo = Image.open(cue.image_path).convert("RGBA")
         except Exception:
             continue
 
-        if cue.type == "logo":
-            size_pct = config.logo_overlay_size_pct
-        elif cue.type == "figure":
-            size_pct = config.figure_overlay_size_pct
-        elif cue.type == "card":
-            size_pct = config.card_overlay_size_pct
-        else:
-            size_pct = config.overlay_size_pct
-        target_w = int(w * size_pct / 100)
-
         # Figures (article charts/diagrams) sit on an opaque padded card so transparent
-        # or wide images read against the footage; the card's total width is target_w.
+        # or wide images read against the footage; the card's total width is place.w.
         sweep = None
         if cue.type == "figure":
-            logo = _figure_card(logo, target_w)
-            logo_h = logo.height
+            logo = _figure_card(logo, place.w)
         else:
-            # Resize maintaining aspect ratio
-            logo_h = int(target_w * logo.height / logo.width)
-            logo = logo.resize((target_w, logo_h), Image.LANCZOS)
+            logo = logo.resize((place.w, place.h), Image.LANCZOS)
             if cue.type == "screenshot":
-                sweep = _load_sweep(cue.image_path, target_w, logo_h)
-
-        # Position. Displaced (overlapping) images sit in a top corner, dropped
-        # slightly below the edge; the center slot uses the configured base position.
-        if slot == "top_left":
-            x, y = margin_px, corner_y
-        elif slot == "top_right":
-            x, y = w - target_w - margin_px, corner_y
-        else:
-            if config.position == "top":
-                y = margin_px
-            elif config.position == "bottom":
-                y = h - logo_h - margin_px
-            else:
-                y = (h - logo_h) // 2
-            x = (w - target_w) // 2
+                sweep = _load_sweep(cue.image_path, place.w, place.h)
 
         delay_frames = int(config.start_delay_s * fps)
         start_frame = max(int(cue.start * fps), delay_frames)
-        end_frame = int(ends[i] * fps)
-        total = end_frame - start_frame
+        total = int(cue.end * fps) - start_frame
         if total <= 0:
             continue
 
-        # Clamp fade so it doesn't exceed half the display window. A logo at a
-        # swap seam suppresses that edge's fade for a hard cut.
+        # Clamp fade so it doesn't exceed half the display window. An edge another overlay
+        # takes over at is a hard cut.
         effective_fade = min(fade_frames, total // 2)
         sweep_frames = 0
         if sweep:
             sweep_frames = min(total, max(int(SWEEP_MIN_S * fps),
                                           min(int(SWEEP_MAX_S * fps), int(total * SWEEP_SHARE))))
-        prepared.append(
-            {"logo": logo, "x": x, "y": y, "start": start_frame, "total": total,
-             "fade_in": 0 if suppress_in[i] else effective_fade,
-             "fade_out": 0 if suppress_out[i] else effective_fade,
-             "sweep": sweep, "sweep_frames": sweep_frames}
-        )
+        prepared[i] = {
+            "logo": logo, "x": place.x, "y": place.y, "full": place.band == FULL,
+            "start": start_frame, "total": total,
+            "fade_in": 0 if any(c.end == cue.start for c in cues) else effective_fade,
+            "fade_out": 0 if any(c.start == cue.end for c in cues) else effective_fade,
+            "sweep": sweep, "sweep_frames": sweep_frames,
+        }
 
     if not prepared:
         return []
 
-    min_frame = min(p["start"] for p in prepared)
-    max_frame = max(p["start"] + p["total"] for p in prepared)
+    min_frame = min(p["start"] for p in prepared.values())
+    max_frame = max(p["start"] + p["total"] for p in prepared.values())
 
     frames: list[CaptionFrame] = []
-    cache: dict[tuple, str] = {}  # active-layer signature → composited file path
+    cache: dict[tuple, str] = {}  # (cue, alpha, sweep step) → composited file path
 
     for frame_num in range(min_frame, max_frame):
-        layers: list[tuple[int, float, int]] = []  # (prepared index, alpha, sweep step)
-        for idx, p in enumerate(prepared):
-            i = frame_num - p["start"]
-            if i < 0 or i >= p["total"]:
-                continue
-            fin, fout, total = p["fade_in"], p["fade_out"], p["total"]
-            if fin > 0 and i < fin:
-                alpha = i / fin
-            elif fout > 0 and i >= total - fout:
-                alpha = (total - i) / fout
-            else:
-                alpha = 1.0
-            if alpha > 0:
-                # Frames still sweeping are each distinct; -1 marks the settled highlight.
-                step = i if i < p["sweep_frames"] else -1
-                layers.append((idx, round(alpha, 3), step))
-
-        if not layers:
+        idx = _shown(cues, (frame_num + 0.5) / fps)
+        p = prepared.get(idx)
+        if p is None:
             continue
-
-        sig = tuple(layers)
+        i = frame_num - p["start"]
+        if i < 0 or i >= p["total"]:
+            continue
+        fin, fout, total = p["fade_in"], p["fade_out"], p["total"]
+        if fin > 0 and i < fin:
+            alpha = i / fin
+        elif fout > 0 and i >= total - fout:
+            alpha = (total - i) / fout
+        else:
+            alpha = 1.0
+        if alpha <= 0:
+            continue
+        # Frames still sweeping are each distinct; -1 marks the settled highlight.
+        step = i if i < p["sweep_frames"] else -1
+        sig = (idx, round(alpha, 3), step)
         path = cache.get(sig)
         if path is None:
             canvas = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-            for idx, alpha, step in layers:
-                p = prepared[idx]
-                img = p["logo"]
-                if step >= 0:
-                    img = _sweep_frame(img, *p["sweep"], (step + 1) / p["sweep_frames"])
-                _composite_logo(canvas, img, alpha, p["x"], p["y"])
+            if p["full"]:
+                canvas.paste((0, 0, 0, int(dim * alpha)), (0, 0, w, h))
+            img = p["logo"]
+            if step >= 0:
+                img = _sweep_frame(img, *p["sweep"], (step + 1) / p["sweep_frames"])
+            _composite_logo(canvas, img, alpha, p["x"], p["y"])
             path = str(output_dir / f"img_{frame_num:06d}.png")
             canvas.save(path, format="PNG")
             cache[sig] = path
