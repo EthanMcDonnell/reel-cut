@@ -1,14 +1,14 @@
 ---
 name: schedule-video
-description: Schedule a slug's rendered hook reels to Instagram via social-cockpit's scheduler — books each output/<slug>/*.mp4 into its own slot recommended by the MCP, never inside the next 15 minutes, as a trial reel captioned from videos.json, then books a YouTube Short a day after the last hook that cross-posts whichever hook earned the most views.
-argument-hint: "<video-slug> [--start <when>] [--time <HH:MM>] [--no-youtube]"
+description: Schedule a slug's rendered hook reels to Instagram via social-cockpit's scheduler — books each output/<slug>/*.mp4 into its own slot recommended by the MCP, never inside the next 15 minutes, as a trial reel captioned from videos.json, then books a YouTube Short a day after the last hook that cross-posts whichever hook earned the most views, and a main-feed promotion two days after the last hook that reposts that winner to followers.
+argument-hint: "<video-slug> [--start <when>] [--time <HH:MM>] [--no-youtube] [--no-feed]"
 ---
 
 Books every unposted hook variant for a slug into social-cockpit's **scheduler**, rather than posting one now. The cockpit stores each job with the mp4's local path, leaves the file on disk, and its worker publishes at the appointed time — uploading to R2 only at that moment.
 
 This is the scheduled counterpart to `/post-video`. Use it to lay out a slug's whole run of hooks in one go; use `/post-video` when you want one hook to go out right now.
 
-Arguments: `$ARGUMENTS` — expected format: `<video-slug> [--start <when>] [--time <HH:MM>] [--no-youtube]`
+Arguments: `$ARGUMENTS` — expected format: `<video-slug> [--start <when>] [--time <HH:MM>] [--no-youtube] [--no-feed]`
 
 Slugs with rendered output: !`ls -1 output/ 2>/dev/null | grep -vE '\.(mp4|md)$'`
 
@@ -37,6 +37,15 @@ Why it works out that way:
 - **`--no-youtube` skips it.** The cross-post is on by default; leave it off only when the user asks.
 
 `/post-video` enrols too, so a hook posted immediately is still a candidate later.
+
+## The feed promotion
+
+Trial reels reach non-followers only. One more Instagram job is booked against the pool, **two days after the last hook**, with `is_promote`: when it fires, the cockpit takes the hook with the most views across its trial runs and publishes it again as an ordinary reel, to the main feed.
+
+- **One feed post per slug.** The cockpit enforces it: a second feed booking for the slug, or one made after a feed post went out, is refused with `409 feed_taken`.
+- **Trial-vs-trial duplicates are what get throttled; a feed repost of the winner is not.** That is why the spacing rule above applies between hooks but not to this slot.
+- **No caption is sent.** The winner keeps the caption it ran with. The automation block is the hooks' own, so comments on the feed post join the same flow.
+- **`--no-feed` skips it.** On by default.
 
 ## Prerequisites
 
@@ -159,6 +168,16 @@ mcp__social-cockpit__get_slug_pool   slug: <slug>   platform: "yt"
 
 For a brand-new slug this reads `0 video(s)` and that is **correct** — the pool fills as each hook publishes, all of which is still in the future. What you are checking for is the opposite case: a slug whose hooks have already gone out, where `eligible` for `yt` being 0 means every one has been cross-posted already and this job would fail with `no_candidate`. Say which of the two you are looking at in Step 4.
 
+### And one for the feed
+
+Unless `--no-feed` was passed, ask for one more slot **two days after the last hook**:
+
+```
+suggest_slots  count: 1  earliest: <last hook's slot + 2 days>
+```
+
+Two days gives the last hook's trial run enough time to be ranked fairly against the others. If the call returns nothing, say the promotion could not be slotted and carry on.
+
 ### Before moving on
 
 Each hook is its own post at its own time. Pair hooks to slots in the `--order` order from Step 2, then check the collected slots as a set: no two on the same **day**, and every consecutive pair at least `min_same_video_days` apart. If that doesn't hold, the loop above was short-circuited — redo it rather than nudging a time by hand.
@@ -189,11 +208,14 @@ Slot                            Hook file                          Caption
 Sat 16 Aug 2026, 09:30 GMT+10   waited-longest-dropped-first.mp4   "…"
 Mon 18 Aug 2026, 09:30 GMT+10   figma-fixed-outages.mp4            "…"
 Tue 19 Aug 2026, 09:30 GMT+10   YouTube — picked from the pool     "Figma's Fix For Outages"
+Wed 20 Aug 2026, 09:30 GMT+10   Main feed — best trial reel        (winner's own caption)
 ```
 
-State alongside it: that every time came from `suggest_slots` and what it reported fitting the plan around, the `min_same_video_days` gap in force and whether it came from the cockpit or the fallback, the first `earliest` you passed and why (the 15-minute floor, or `--start`), whether an automation will attach — with its key and trigger keywords, or that there is no `automation.json` so these post without one — and that each Instagram post goes out as a **trial reel**.
+State alongside it: that every time came from `suggest_slots` and what it reported fitting the plan around, the `min_same_video_days` gap in force and whether it came from the cockpit or the fallback, the first `earliest` you passed and why (the 15-minute floor, or `--start`), whether an automation will attach — with its key and trigger keywords, or that there is no `automation.json` so these post without one — and that each hook goes out as a **trial reel**, with only the feed row reaching followers.
 
 For the YouTube row, say plainly that **no file is being chosen now**: it books the slug's pool, and the cockpit picks whichever hook has the most views at that moment. Give the title it will carry (from `videos.json`) and what `get_slug_pool` reported — an empty pool that is about to fill, or an exhausted one that will fail.
+
+The feed row works the same way: nothing is chosen now. The cockpit promotes whichever hook has the most views when the slot fires.
 
 If any hook went unslotted because `suggest_slots` returned fewer slots than hooks, name it here. It stays unscheduled and unclaimed, and the next run picks it up.
 
@@ -205,12 +227,14 @@ On confirmation, book every hook in **one** run of `scrape/schedule_video.py` �
 .venv/bin/python scrape/schedule_video.py <slug> \
   "<hook1>.mp4=<scheduled-at-iso-1>" \
   "<hook2>.mp4=<scheduled-at-iso-2>" \
-  --youtube "<youtube-scheduled-at-iso>"
+  --youtube "<youtube-scheduled-at-iso>" \
+  --feed "<feed-scheduled-at-iso>"
 ```
 
 Notes:
 - One `<hook>.mp4=<scheduled-at-iso>` pair per hook, in the order agreed in Step 4. `<hook>.mp4` is the filename only (the script resolves it under `output/<slug>/`); `<scheduled-at-iso>` is the string `suggest_slots` returned, **verbatim** — without an offset it's read in the cockpit's timezone, the zone the suggestion was made in.
 - `--youtube` takes the extra slot from Step 3, the same way and just as verbatim. Omit the flag entirely for `--no-youtube`, or when Step 3 could not slot it.
+- `--feed` takes the feed slot the same way. Omit it for `--no-feed`, or when Step 3 could not slot it. A `409 feed_taken` means the slug already has its feed post or one booked. Report it; it isn't something to retry.
 - Entries are independent: one failing (e.g. a `day_full` conflict) doesn't roll back the others. The script prints `✓`/`✗` per hook and a `Booked N, failed N` summary — report both, and retry only the failures. The YouTube job is booked last and still goes ahead when some hooks failed: the pool only needs one candidate.
 - The `video` field marking these as one video's hooks, the `slug` that enrols each published hook in the pool, the `automation.key` shared across them, the YouTube title, `selection_method`, and every `output/.published` ledger line are all written by the script — nothing left for you to compose or append by hand.
 
@@ -218,7 +242,7 @@ Notes:
 
 `output/.published` is already updated for every hook the script booked — that's what claims it; nothing more to write. Report the final schedule, with job ids, in the cockpit's timezone. For any hook the script reported `failed`, no ledger line was written, so it stays eligible for the next run once you've addressed why it failed.
 
-The cross-post gets a ledger line too, keyed **`<slug>/@youtube`** rather than an mp4 — a slug job claims the pool, not a file, but without a claim a second run of this command would book a second YouTube post for the same slug. Removing that line is what allows another one.
+The cross-post gets a ledger line too, keyed **`<slug>/@youtube`** rather than an mp4 — a slug job claims the pool, not a file, but without a claim a second run of this command would book a second YouTube post for the same slug. Removing that line is what allows another one. The feed promotion is claimed the same way, as **`<slug>/@feed`**.
 
 ### What this means for `/post-video`
 
@@ -253,3 +277,8 @@ A YouTube slug job has one failure the hooks don't: **`error_kind: "no_candidate
 - **Exhausted** — every candidate has already been cross-posted to YouTube. Working as intended; delete the `@youtube` ledger line only if you have added new hooks.
 - **Missing from disk** — a rendered mp4 was moved or deleted after it published. The pool holds a reference, never a copy.
 - **All spoken for** — another slot on the same slug is publishing right now. Rare, and it clears itself.
+
+### When the feed promotion fails
+
+It fails with `no_candidate` like the cross-post. `get_scheduled_post` gives the reason: no hook has run as a trial yet, every hook is missing from disk, or the slug **already has its feed post**. That last one is the one-per-slug rule working, so leave it.
+

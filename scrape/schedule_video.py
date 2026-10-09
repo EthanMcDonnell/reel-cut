@@ -32,6 +32,12 @@ slot arrives, hours after the last hook went out and earned its numbers. A
 candidate already posted to a platform is never picked for that platform again,
 so the cross-post can only ever draw a clip YouTube has not seen.
 
+``--feed`` books the promotion. Every hook goes out as a trial reel, which only
+non-followers see; this slot, like the YouTube one, carries no file. When it
+fires, the cockpit publishes the hook with the most views to the main feed as an
+ordinary reel, so followers see the winner. The cockpit allows one feed post per
+slug and refuses a second booking with ``feed_taken``.
+
 Env (read from the repo-root ``.env``):
   COCKPIT_URL   optional, default http://localhost:3000
 
@@ -41,7 +47,7 @@ skill pairs them to slots without two flipped copies landing back to back.
 Usage:
   .venv/bin/python scrape/schedule_video.py <slug> --order
   .venv/bin/python scrape/schedule_video.py <slug> <hook.mp4>=<scheduled-at-iso> [...]
-      [--youtube <scheduled-at-iso>] [--dry-run]
+      [--youtube <scheduled-at-iso>] [--feed <scheduled-at-iso>] [--dry-run]
 """
 
 import argparse
@@ -73,6 +79,9 @@ YT_SELECTION = "most_views"
 # for the same slug. `read_published` matches on the key alone, and no rendered
 # file can ever collide with this one.
 YT_LEDGER_KEY = "@youtube"
+
+# The ledger key that claims the feed promotion, for the same reason.
+FEED_LEDGER_KEY = "@feed"
 
 
 def parse_pair(raw):
@@ -212,6 +221,26 @@ def schedule_youtube(scheduled_at, slug, title, method=YT_SELECTION):
     return r
 
 
+def schedule_feed(scheduled_at, slug, automation=None, method=YT_SELECTION):
+    """Book the main-feed promotion against the pool, with no file of its own.
+
+    By the time it fires every hook has run as a trial reel and has real view
+    counts, so ``most_views`` picks the one that earned it. No caption is sent:
+    the winner keeps the caption it went out with as a trial. The automation
+    block is the hooks' own, so a comment on the feed post joins the same flow.
+    """
+    payload = {
+        "scheduled_at": scheduled_at,
+        "video": slug,
+        "slug": slug,
+        "is_promote": True,
+        "selection_method": method,
+    }
+    if automation:
+        payload["automation"] = automation
+    return requests.post(f"{COCKPIT}/api/schedule", json=payload, timeout=REQUEST_TIMEOUT_S)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -224,6 +253,9 @@ def main():
     ap.add_argument("--youtube", metavar="scheduled-at-iso",
                     help="also book a YouTube cross-post at this time, drawing from the slug's "
                          f"pool by {YT_SELECTION} (normally the last hook's slot + 1 day)")
+    ap.add_argument("--feed", metavar="scheduled-at-iso",
+                    help="also book the main-feed promotion at this time: the hook with the most "
+                         "views goes out as an ordinary reel (normally the last hook's slot + 2 days)")
     ap.add_argument("--dry-run", action="store_true",
                     help="show what would be booked without booking")
     args = ap.parse_args()
@@ -287,6 +319,8 @@ def main():
 
     if args.youtube:
         book_youtube(args, log, done, booked, failed)
+    if args.feed:
+        book_feed(args, log, done, booked, failed, automation)
 
     if args.dry_run:
         return
@@ -327,6 +361,32 @@ def book_youtube(args, log, done, booked, failed):
           f"— {title!r}, picks by {YT_SELECTION} at fire time")
     with log.open("a") as f:
         f.write(f"{key}\t{args.youtube}\n")
+    booked.append(key)
+
+
+def book_feed(args, log, done, booked, failed, automation):
+    """Book the feed promotion, after the hooks, and claim it in the ledger."""
+    key = f"{args.slug}/{FEED_LEDGER_KEY}"
+    if key in done:
+        print(f"  ✗ {key}: already in output/.published — skipping")
+        failed.append(key)
+        return
+
+    if args.dry_run:
+        print(f"  (dry run) would book {key} at {args.feed} -> best trial reel by {YT_SELECTION}")
+        return
+
+    resp = schedule_feed(args.feed, args.slug, automation)
+    if resp.status_code >= 400:
+        print(f"  ✗ {key} at {args.feed}: {resp.status_code} {resp.text[:200]}")
+        failed.append(key)
+        return
+
+    job = resp.json().get("job", {})
+    print(f"  ✓ {key} at {args.feed} -> job {job.get('id')} ({job.get('status')}) "
+          f"— main feed, picks the best trial reel by {YT_SELECTION} at fire time")
+    with log.open("a") as f:
+        f.write(f"{key}\t{args.feed}\n")
     booked.append(key)
 
 

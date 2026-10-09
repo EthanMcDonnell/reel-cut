@@ -126,3 +126,45 @@ def test_cross_post_is_claimed_in_the_ledger(tmp_path, monkeypatch):
     schedule_video.book_youtube(args, log, {"demo/@youtube"}, booked, failed)
     assert failed == ["demo/@youtube"] and not booked
     assert len(post.payloads) == 1
+
+
+def test_feed_promotion_books_the_pool_not_a_file(tmp_path, monkeypatch):
+    """The promotion picks the best trial reel at fire time, so it carries no
+    file, no trial_params, and no caption (the winner keeps its own)."""
+    post = _Recorder()
+    monkeypatch.setattr(schedule_video.requests, "post", post)
+    automation = {"key": "demo", "trigger_keywords": ["LINK"]}
+
+    schedule_video.schedule_feed("2026-09-04T09:30", "demo", automation)
+
+    payload = post.payloads[0]
+    assert payload["is_promote"] is True
+    assert payload["slug"] == "demo"
+    assert payload["selection_method"] == "most_views"
+    assert payload["automation"] == automation
+    for absent in ("video_path", "trial_params", "caption", "platform"):
+        assert absent not in payload
+
+
+def test_feed_promotion_is_claimed_in_the_ledger(tmp_path, monkeypatch):
+    """A second run must not try to book a second feed post for the slug."""
+    post = _Recorder()
+    monkeypatch.setattr(schedule_video.requests, "post", post)
+    slug = _slug(tmp_path, monkeypatch)
+    log = tmp_path / ".published"
+
+    class _Args:
+        pass
+
+    args = _Args()
+    args.slug, args.feed, args.dry_run = slug, "2026-09-04T09:30", False
+
+    booked, failed = [], []
+    schedule_video.book_feed(args, log, set(), booked, failed, None)
+    assert booked == ["demo/@feed"] and not failed
+    assert log.read_text().startswith("demo/@feed\t2026-09-04T09:30")
+
+    booked, failed = [], []
+    schedule_video.book_feed(args, log, {"demo/@feed"}, booked, failed, None)
+    assert failed == ["demo/@feed"] and not booked
+    assert len(post.payloads) == 1
