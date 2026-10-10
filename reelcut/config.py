@@ -193,14 +193,10 @@ class ImagesConfig(BaseModel):
     start_delay_s: float = 0.1         # image overlays won't appear before this time so they flash on rather than look frozen from frame 0
     # Bands are (top, bottom) as % of video height. An inset overlay sits in the top band, or
     # just under the title card while one is up; images.json "layout": "lower" moves it to the
-    # lower band (captions move up above it).
+    # lower band (captions move up above it). A card with "layout": "full" covers the frame.
     top_band_pct: tuple[float, float] = (8.0, 30.0)
     under_title_band_pct: tuple[float, float] = (26.0, 38.0)
     lower_band_pct: tuple[float, float] = (58.0, 80.0)
-    full_types: list[str] = ["screenshot", "figure", "video"]  # shown full screen unless images.json says otherwise
-    full_box_pct: tuple[float, float] = (8.0, 68.0)  # a full-screen overlay fits inside this (below the title while one is up)
-    full_width_pct: float = 92.0       # full-screen overlay max width as % of video width
-    full_dim: float = 0.6              # opacity of the black layer behind a full-screen overlay
 
 
 

@@ -1,5 +1,5 @@
 """Tests for image-overlay placement — the band each overlay sits in (top inset, under
-the title while it's up, lower, or full screen) and which single overlay shows when
+the title while it's up, lower, or a full-screen card) and which single overlay shows when
 several overlap (the newest; a video hides stills; a logo never hides a non-logo)."""
 from PIL import Image
 
@@ -52,24 +52,29 @@ class TestPlaceCues:
                         ImagesConfig(), RES)
         assert (p.band, p.y + p.h) == ("lower", int(400 * 0.80))
 
-    def test_full_types_go_full_screen_unless_layout_says_otherwise(self, tmp_path):
+    def test_screenshots_and_figures_are_inset_by_default(self, tmp_path):
         img = _solid(tmp_path, "a", "red")
-        full, inset = place_cues([_cue("a", 0, 2, "screenshot", img),
-                                  _cue("b", 0, 2, "screenshot", img, layout="top")],
-                                 ImagesConfig(), RES)
-        assert (full.band, inset.band) == ("full", "top")
+        places = place_cues([_cue("a", 0, 2, "screenshot", img), _cue("b", 0, 2, "figure", img)],
+                            ImagesConfig(), RES)
+        assert [p.band for p in places] == ["top", "top"]
+
+    def test_full_layout_covers_the_frame_for_cards_only(self, tmp_path):
+        img = _solid(tmp_path, "a", "red")
+        card, shot = place_cues([_cue("a", 0, 2, "card", img, layout="full"),
+                                 _cue("b", 0, 2, "screenshot", img, layout="full")],
+                                ImagesConfig(), RES)
+        assert (card.x, card.y, card.w, card.h, card.band) == (0, 0, 200, 400, "full")
+        assert shot.band == "top"
+
+    def test_animated_card_can_go_full(self, tmp_path):
+        cue = ImageCue(keyword="a", start=0, end=2, image_path=_solid(tmp_path, "a", "red"),
+                       type="video", kind="card", layout="full")
+        assert place_cues([cue], ImagesConfig(), RES)[0].band == "full"
 
     def test_tall_inset_shrinks_to_fit_its_band(self, tmp_path):
         tall = _solid(tmp_path, "tall", "red", size=(40, 400))
         p, = place_cues([_cue("a", 0, 2, "person", tall)], ImagesConfig(), RES)
         assert p.h <= int(400 * 0.30) - int(400 * 0.08)
-
-    def test_full_screen_starts_below_the_title_while_it_is_up(self, tmp_path):
-        tall = _solid(tmp_path, "tall", "red", size=(40, 400))
-        p, = place_cues([_cue("a", 0, 2, "screenshot", tall)], ImagesConfig(), RES,
-                        title_windows=[(0.0, 1.0)])
-        assert p.y >= int(400 * 0.26)
-        assert p.y + p.h <= int(400 * 0.68)
 
 
 class TestShown:
@@ -103,13 +108,13 @@ class TestRenderImageFrames:
         assert _colors(frames[30]) == {(0, 0, 255)}
         assert _colors(frames[5]) == {(255, 0, 0)}
 
-    def test_full_screen_dims_the_whole_frame(self, tmp_path):
-        red = _solid(tmp_path, "red", (255, 0, 0, 255))
-        cfg = ImagesConfig(enabled=True, fade_duration_s=0.0, start_delay_s=0, full_dim=0.5)
-        frames = render_image_frames([_cue("a", 0.0, 1.0, "screenshot", red)], cfg,
+    def test_full_card_fills_the_frame(self, tmp_path):
+        red = _solid(tmp_path, "red", (255, 0, 0, 255), size=(100, 200))
+        cfg = ImagesConfig(enabled=True, fade_duration_s=0.0, start_delay_s=0)
+        frames = render_image_frames([_cue("a", 0.0, 1.0, "card", red, layout="full")], cfg,
                                      tmp_path / "out", fps=10, resolution=RES)
         img = Image.open(frames[0].image_path)
-        assert img.getpixel((0, 0)) == (0, 0, 0, 127)
+        assert img.getpixel((0, 0)) == img.getpixel((199, 399)) == (255, 0, 0, 255)
 
 
 class TestCaptionLifts:

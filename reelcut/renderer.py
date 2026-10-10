@@ -405,16 +405,12 @@ def _final_encode(
 
 def _overlay_video_clip(video, cue, place, config: ReelCutConfig):
     """Play `cue`'s video file, muted, in its `place` box (see image_overlay.place_cues)
-    from cue.start to cue.end, dimming the footage behind it when it is full screen.
+    from cue.start to cue.end.
 
     The clip is shifted to start at cue.start. A clip shorter than its window holds its last
     frame, so an animation ends on its final state rather than leaving a gap.
     """
     enable = f"between(t,{cue.start},{cue.end})"
-    if place.band == "full":
-        video = video.filter("drawbox", x=0, y=0, w="iw", h="ih", t="fill",
-                             color=f"black@{config.images.full_dim}", enable=enable)
-
     duration = max(0.0, cue.end - cue.start)
     # webm alpha only decodes through libvpx; the native vp9 decoder drops it.
     in_kwargs = {"vcodec": "libvpx-vp9"} if cue.image_path.lower().endswith(".webm") else {}

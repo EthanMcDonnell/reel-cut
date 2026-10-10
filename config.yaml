@@ -218,11 +218,7 @@ images:
   top_band_pct: [8, 30]          # small (inset) overlays: above the face, below Instagram's top bar
   under_title_band_pct: [26, 38] # ...moved here while the hook's title card is up (stops above the eyes)
   lower_band_pct: [58, 80]       # images.json "layout": "lower" — for desk shots; captions move up above it
-  full_types: [screenshot, figure, video]  # shown full screen unless images.json sets "layout"
-  full_box_pct: [8, 68]          # a full-screen overlay fits inside this, above the captions
-                                 # (starting under the title while one is up)
-  full_width_pct: 92             # full-screen overlay max width as % of video width
-  full_dim: 0.6                  # opacity of the black layer behind a full-screen overlay (0-1)
+                                 # a card with images.json "layout": "full" is a slide covering the frame
 
 
 # ---------------------------------------------------------------------------

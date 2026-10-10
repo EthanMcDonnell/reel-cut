@@ -105,6 +105,7 @@ A card is a visual you design for a line no source can show: how something works
 - Render and look at every card before placing it: `.venv/bin/reelcut card assets/<video-slug>/cards/*.html`. Fix overflow, clipping or crowding and re-render.
 - Span the line or lines it explains: `start` = the first anchor word's `start`, `end` = the last word's `end`, holding until the next overlay.
 - Add `{ "type": "card", "start": ..., "end": ..., "source_clip": "...", "name": "", "path": "{PROJECT_ROOT}/assets/<video-slug>/cards/<name>.html" }`. The PNG beside it is re-rendered whenever the fragment changes.
+- **Full screen for a diagram.** A card that builds a flow, a comparison or several points is too tall to read inset. Add `"layout": "full"` and it becomes a solid slide covering the frame, its content centred above the captions. Preview it with `reelcut card --full`. Keep it out of the hook's title window, since the title draws over it.
 - **Build it as it's said.** When the parts of a card are spoken one after another (points, flow steps, the second side of a comparison), mark each with `data-beat="1"`, `"2"`… and add `"beats": [...]` to the entry: the `start` of the word each part lands on, in order. Unmarked elements show with the card. A flow step's arrow draws in as the step enters. To walk the viewer through parts already on screen, mark them `data-hot="1"`, `"2"`… instead: each lights up on its beat and dims when the next lights (both attributes can share an element and its beat). A whole number written as `<span class="count">193</span>` counts up when its marked parent enters; units go outside the span. For a different entrance, give the marked elements your own `@keyframes` with `animation-delay: var(--at)`, animating opacity and transform only. A card said in one breath stays still.
 
 ## Step 3d — Assign figure timings (from figures.json)
@@ -165,10 +166,9 @@ Example `images.json`:
 
 A `video` entry plays a local clip, muted, from `clip_start` seconds into the file, and hides any still image while it plays. Only use clips published by the company being discussed, by the article the video is about, or by a news report on it, never one from a source that merely supports a point. A clip shorter than its window holds its last frame. A webm or ProRes 4444 file with alpha keeps its transparency, which is how animations are overlaid.
 
-**Layout.** One overlay shows at a time; a newer one hides the older until it ends (a logo never hides anything but a logo). Screenshots, figures, clips and animated cards go full screen over dimmed footage. Logos, people, concepts and still cards sit inset in a band at the top, or just under the title while the hook's title card is up (the hook plus `headings.hold_after_hook_s`). Override per entry with `"layout"`:
+**Layout.** One overlay shows at a time; a newer one hides the older until it ends (a logo never hides anything but a logo). Every overlay sits inset in a band at the top, or just under the title while the hook's title card is up (the hook plus `headings.hold_after_hook_s`). Override per entry with `"layout"`:
 - **`"lower"`** — for overlays shown while the title is up, look at one frame of each source clip (`ffmpeg -ss 5 -i <clip> -frames:v 1 <scratch>.png`, then Read it). In a wide or desk shot the band under the title covers the face, so set `"lower"` on those overlays. A close-up needs nothing.
-- **`"full"`** — a still card with more than one point, or any card too tall to read at about a quarter of the screen's height.
-- **`"top"`** — a screenshot or figure small enough to read inset.
+- **`"full"`** — cards only (Step 3e).
 
 If `assets/<video-slug>/clips/` exists, place each clip in it where it shows what is being said: a hook it proves, or a gap the coverage check reports. Clips there have already been scoped to the sources above; one that fits nowhere is left out and named in the report.
 

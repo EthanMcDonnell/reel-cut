@@ -26,6 +26,16 @@ html, body { margin: 0; padding: 0; background: transparent; }
   line-height: 1.25;
 }
 .card > :first-child { margin-top: 0; }
+
+/* A full-screen card (images.json "layout": "full") is a solid 9:16 slide covering the frame.
+   Its content is centred above the captions and Instagram's bottom bar. */
+.card.full {
+  width: 1000px; height: 1778px;
+  padding: 160px 60px 640px;
+  border-radius: 0;
+  background: rgb(14, 14, 16);
+  display: flex; flex-direction: column; justify-content: center;
+}
 .card > :last-child { margin-bottom: 0; }
 
 /* Heading over the card's content. */
@@ -100,7 +110,9 @@ pre {
    move between frames. */
 @keyframes card-in { from { opacity: 0; transform: scale(0.96); } }
 @keyframes beat-in { from { opacity: 0; transform: translateY(24px); } }
+@keyframes full-in { from { opacity: 0; } }
 :where(.card.animated) { animation: card-in 0.25s ease-out both; }
+:where(.card.full.animated) { animation-name: full-in; }
 :where(.card.animated [data-beat]) { animation: beat-in 0.35s ease-out both; animation-delay: var(--at, 0s); }
 
 /* A flow step's arrow draws toward it as the step enters. */

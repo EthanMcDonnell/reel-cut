@@ -60,6 +60,16 @@ def test_card_is_drawn_at_card_overlay_width(tmp_path):
     assert bbox[2] - bbox[0] == 400
 
 
+def test_full_card_renders_as_a_9_16_slide(tmp_path):
+    html = tmp_path / "c.html"
+    html.write_text("<p>Text</p>")
+    png = card_png(html, full=True)
+    assert png.name == "c.full.png"
+    im = Image.open(png).convert("RGBA")
+    assert im.size == (1000, 1778)
+    assert im.getpixel((0, 0))[3] == 255                      # opaque: no footage shows through
+
+
 def _bright_rows(png) -> int:
     """Rows of the frame holding opaque white text pixels."""
     im = Image.open(png).convert("RGBA")

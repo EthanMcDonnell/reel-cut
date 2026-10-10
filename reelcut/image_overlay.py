@@ -11,7 +11,7 @@ from .config import ImagesConfig
 from .image_finder import ImageCue
 
 # Where an overlay sits. "top" is the default inset band; while the hook's title card is up
-# it moves to "under_title" (or "lower" when images.json asks). "full" covers the frame.
+# it moves to "under_title" (or "lower" when images.json asks). "full" is a card covering the frame.
 TOP, UNDER_TITLE, LOWER, FULL = "top", "under_title", "lower", "full"
 
 
@@ -25,13 +25,14 @@ class Placement:
     band: str
 
 
-def _band(cue: ImageCue, config: ImagesConfig, title_windows) -> str:
-    """The band a cue sits in: its images.json `layout`, else full for config.full_types,
-    else the top inset — pushed under the title while a title card is on screen."""
-    layout = cue.layout or (FULL if cue.type in config.full_types else TOP)
-    if layout == TOP and any(s < cue.end and cue.start < e for s, e in title_windows):
+def _band(cue: ImageCue, title_windows) -> str:
+    """The band a cue sits in: its images.json `layout` (full only for a card), else the top
+    inset — pushed under the title while a title card is on screen."""
+    if cue.layout in (LOWER, FULL) and (cue.layout == LOWER or cue.type == "card" or cue.kind == "card"):
+        return cue.layout
+    if any(s < cue.end and cue.start < e for s, e in title_windows):
         return UNDER_TITLE
-    return layout
+    return TOP
 
 
 def _aspect(cue: ImageCue) -> float | None:
@@ -69,7 +70,7 @@ def place_cues(
 
     An inset keeps its configured width unless that would overflow its band's height, and
     hugs the band's outer edge: the top of the top bands, the bottom of the lower band. A
-    full-screen overlay fills the full box (starting below the title while one is up).
+    full-screen card covers the frame.
     """
     w, h = resolution
     out: list[Placement | None] = []
@@ -78,23 +79,17 @@ def place_cues(
         if not aspect:
             out.append(None)
             continue
-        band = _band(cue, config, title_windows)
+        band = _band(cue, title_windows)
         if band == FULL:
-            top_pct = config.full_box_pct[0]
-            if any(s < cue.end and cue.start < e for s, e in title_windows):
-                top_pct = config.under_title_band_pct[0]
-            top, bottom = int(h * top_pct / 100), int(h * config.full_box_pct[1] / 100)
-            max_w = w * config.full_width_pct / 100
-        else:
-            pct = {TOP: config.top_band_pct, UNDER_TITLE: config.under_title_band_pct,
-                   LOWER: config.lower_band_pct}[band]
-            top, bottom = int(h * pct[0] / 100), int(h * pct[1] / 100)
-            max_w = w * _inset_width_pct(cue, config) / 100
+            out.append(Placement(x=0, y=0, w=w, h=h, band=FULL))
+            continue
+        pct = {TOP: config.top_band_pct, UNDER_TITLE: config.under_title_band_pct,
+               LOWER: config.lower_band_pct}[band]
+        top, bottom = int(h * pct[0] / 100), int(h * pct[1] / 100)
+        max_w = w * _inset_width_pct(cue, config) / 100
         bw = int(min(max_w, (bottom - top) / aspect)) // 2 * 2  # even, for ffmpeg's scaler
         bh = int(bw * aspect)
-        if band == FULL:
-            y = top + (bottom - top - bh) // 2
-        elif band == LOWER:
+        if band == LOWER:
             y = bottom - bh
         else:
             y = top
@@ -177,7 +172,7 @@ def render_image_frames(
     title_windows: list[tuple[float, float]] = (),
 ) -> list[CaptionFrame]:
     """Generate per-frame transparent PNG overlays, one overlay per frame (see _shown) in
-    its band (see place_cues). A full-screen overlay dims the footage behind it.
+    its band (see place_cues).
     `title_windows` are the output-timeline spans a title card is on screen.
     Frames with the same cue, fade level and sweep step share one file.
     """
@@ -186,7 +181,6 @@ def render_image_frames(
 
     w, h = resolution
     fade_frames = int(config.fade_duration_s * fps)
-    dim = int(255 * config.full_dim)
     placements = place_cues(cues, config, resolution, title_windows)
 
     prepared: dict[int, dict] = {}
@@ -222,7 +216,7 @@ def render_image_frames(
             sweep_frames = min(total, max(int(SWEEP_MIN_S * fps),
                                           min(int(SWEEP_MAX_S * fps), int(total * SWEEP_SHARE))))
         prepared[i] = {
-            "logo": logo, "x": place.x, "y": place.y, "full": place.band == FULL,
+            "logo": logo, "x": place.x, "y": place.y,
             "start": start_frame, "total": total,
             "fade_in": 0 if any(c.end == cue.start for c in cues) else effective_fade,
             "fade_out": 0 if any(c.start == cue.end for c in cues) else effective_fade,
@@ -261,8 +255,6 @@ def render_image_frames(
         path = cache.get(sig)
         if path is None:
             canvas = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-            if p["full"]:
-                canvas.paste((0, 0, 0, int(dim * alpha)), (0, 0, w, h))
             img = p["logo"]
             if step >= 0:
                 img = _sweep_frame(img, *p["sweep"], (step + 1) / p["sweep_frames"])

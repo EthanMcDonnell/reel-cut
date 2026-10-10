@@ -4,6 +4,9 @@ A card is `assets/<slug>/cards/<name>.html`: a fragment Claude writes for a line
 to show from a source (numbered points, a side-by-side, a flow, code). It is wrapped in
 `<div class="card">` with `card.css` and the bundled fonts, and rendered by headless Chromium.
 
+A full-screen card (`full=True`) is a solid 9:16 slide covering the frame instead; its renders
+are named `<name>.full.png` / `<name>.full.<key>.webm`.
+
 A still card renders to `<name>.png` beside it, re-rendered whenever the fragment or the
 stylesheet is newer, so images.json can point at the .html and always show its current text.
 
@@ -83,30 +86,34 @@ _JS_SEEK = "ms => document.getAnimations().forEach(a => { a.currentTime = ms; })
 _JS_FINISH = "() => document.getAnimations().forEach(a => { try { a.finish(); } catch (e) {} })"
 
 
-def card_png(html_path: Path) -> Path:
+def card_png(html_path: Path, full: bool = False) -> Path:
     """The rendered PNG for a card fragment, rendering it first if it is missing or stale."""
     html_path = Path(html_path)
-    png = html_path.with_suffix(".png")
+    png = _png_path(html_path, full)
     src_mtime = max(html_path.stat().st_mtime, _CSS.stat().st_mtime)
     if not png.exists() or png.stat().st_mtime < src_mtime:
-        render_cards([html_path])
+        render_cards([html_path], full)
     return png
 
 
-def render_cards(html_paths: list[Path]) -> list[Path]:
-    """Render each fragment to `<stem>.png` beside it, in one browser session."""
+def render_cards(html_paths: list[Path], full: bool = False) -> list[Path]:
+    """Render each fragment to `<stem>.png` (or `<stem>.full.png`) beside it, in one browser session."""
     out = []
-    with _card_page() as load:
+    with _card_page(full) as load:
         for html_path in map(Path, html_paths):
             page = load(html_path)
             page.evaluate(_JS_FINISH)
-            png = html_path.with_suffix(".png")
+            png = _png_path(html_path, full)
             page.locator(".card").screenshot(path=str(png), omit_background=True)
             out.append(png)
     return out
 
 
-def card_webm(html_path: Path, beats: list[float], fps: int) -> tuple[Path, int]:
+def _png_path(html_path: Path, full: bool) -> Path:
+    return html_path.with_suffix(".full.png" if full else ".png")
+
+
+def card_webm(html_path: Path, beats: list[float], fps: int, full: bool = False) -> tuple[Path, int]:
     """The animated render of a card whose Nth `data-beat` enters `beats[N-1]` seconds in.
 
     Named by a hash of the fragment, stylesheet, frame-rounded beats and fps, so each hook's
@@ -118,12 +125,12 @@ def card_webm(html_path: Path, beats: list[float], fps: int) -> tuple[Path, int]
     key = hashlib.sha1(
         json.dumps([html_path.read_text(), _CSS.read_text(), beats, fps]).encode()
     ).hexdigest()[:10]
-    webm = html_path.with_name(f"{html_path.stem}.{key}.webm")
+    webm = html_path.with_name(f"{html_path.stem}.{'full.' if full else ''}{key}.webm")
     meta = webm.with_suffix(".json")
     if webm.exists() and meta.exists():
         return webm, json.loads(meta.read_text())["top_beat"]
 
-    with _card_page() as load, tempfile.TemporaryDirectory() as frames:
+    with _card_page(full) as load, tempfile.TemporaryDirectory() as frames:
         page = load(html_path)
         top_beat = page.evaluate(_JS_SET_BEATS, beats)
         box, end_s = page.evaluate(_JS_PAUSE)
@@ -141,7 +148,7 @@ def card_webm(html_path: Path, beats: list[float], fps: int) -> tuple[Path, int]
 
 
 @contextmanager
-def _card_page():
+def _card_page(full: bool = False):
     """A browser page and a `load(html_path)` that opens a fragment in it, fonts ready."""
     from playwright.sync_api import sync_playwright
 
@@ -151,7 +158,7 @@ def _card_page():
         page_file = Path(tmp) / "card.html"
 
         def load(html_path: Path):
-            page_file.write_text(_page(html_path))
+            page_file.write_text(_page(html_path, full))
             page.goto(page_file.as_uri())
             page.evaluate("document.fonts.ready")
             return page
@@ -162,7 +169,7 @@ def _card_page():
             browser.close()
 
 
-def _page(html_path: Path) -> str:
+def _page(html_path: Path, full: bool = False) -> str:
     """The full document for one fragment. `<base>` lets it reference images beside it."""
     faces = "".join(
         f'@font-face {{ font-family: "{family}"; font-weight: {weight}; font-style: {style}; '
@@ -173,7 +180,7 @@ def _page(html_path: Path) -> str:
         "<!doctype html><html><head><meta charset='utf-8'>"
         f"<base href='{html_path.resolve().parent.as_uri()}/'>"
         f"<style>{faces}{_CSS.read_text()}</style></head>"
-        f"<body><div class='card'>{html_path.read_text()}</div></body></html>"
+        f"<body><div class='card{' full' if full else ''}'>{html_path.read_text()}</div></body></html>"
     )
 
 

@@ -1,5 +1,5 @@
 """End-to-end check of video overlays: the clip plays in its box only during its window,
-starts from `clip_start`, sits under the caption layer, and dims the footage when full screen.
+starts from `clip_start`, and sits under the caption layer.
 
 Renders 2s of blue footage with a clip overlay at 0.5–1.5s and inspects decoded frames.
 """
@@ -88,11 +88,9 @@ def test_clip_shows_only_inside_its_window(tmp_path):
     assert _close(_frame(out, tmp_path, 24).getpixel((10, 10)), BLUE), "clip stays centred"
 
 
-def test_full_screen_clip_dims_the_footage_around_it(tmp_path):
-    out = _render(tmp_path, place=Placement(**{**CENTRE.__dict__, "band": "full"}))
-    corner = _frame(out, tmp_path, 24).getpixel((10, 10))
-    assert corner[2] < 140, "footage dimmed during the window"
-    assert _close(_frame(out, tmp_path, 54).getpixel((10, 10)), BLUE), "undimmed after it"
+def test_full_screen_card_covers_the_frame(tmp_path):
+    out = _render(tmp_path, place=Placement(x=0, y=0, w=W, h=H, band="full"))
+    assert _close(_frame(out, tmp_path, 24).getpixel((10, 10)), RED)
 
 
 def test_clip_start_skips_into_the_file(tmp_path):

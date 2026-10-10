@@ -530,6 +530,7 @@ def preview_edl(
 @app.command()
 def card(
     html_paths: list[str] = typer.Argument(..., help="Card fragments (assets/<slug>/cards/*.html)."),
+    full: bool = typer.Option(False, "--full", help='Render as full-screen slides ("layout": "full").'),
 ) -> None:
     """Render designed cards to PNG beside each fragment, to look at before placing them."""
     from .card import render_cards
@@ -538,7 +539,7 @@ def card(
     if missing:
         err_console.print(f"[red]Error:[/red] not found: {', '.join(missing)}")
         raise typer.Exit(1)
-    for png in render_cards([Path(p) for p in html_paths]):
+    for png in render_cards([Path(p) for p in html_paths], full):
         console.print(f"  → {png}")
 
 
@@ -936,9 +937,13 @@ def _phase2(cfg, doc, outputs: list[tuple[Path, bool]], verbose: bool,
                 )
                 if actual <= 0.01:
                     continue
+            if spec.layout == "full" and spec.type != "card":
+                console.print(f"  [yellow]\"layout\": \"full\" is for cards only — "
+                              f"{spec.type} shown inset[/yellow]")
+                remapped_spec.layout = ""
             cue = _resolve_image_spec(remapped_spec, cfg.images.display_duration_s, cfg.output.fps)
             if cue:
-                all_image_cues.append(replace(cue, layout=spec.layout))
+                all_image_cues.append(replace(cue, layout=remapped_spec.layout))
 
         from .image_overlay import clamp_to_hook
         if hook_end_s is not None:
@@ -1230,7 +1235,8 @@ def _resolve_image_spec(spec, display_duration_s: float, fps: int = 30):
             return None
         if spec.beats:
             from .card import card_webm
-            webm, top_beat = card_webm(p, [b - spec.start for b in spec.beats], fps)
+            webm, top_beat = card_webm(p, [b - spec.start for b in spec.beats], fps,
+                                       full=spec.layout == "full")
             if top_beat != len(spec.beats):
                 console.print(
                     f"  [yellow]Card {p.name}: {top_beat} data-beat(s) but "
@@ -1250,7 +1256,7 @@ def _resolve_image_spec(spec, display_duration_s: float, fps: int = 30):
             keyword=p.stem,
             start=spec.start,
             end=spec.end,
-            image_path=str(card_png(p)),
+            image_path=str(card_png(p, full=spec.layout == "full")),
             type="card",
         )
 
