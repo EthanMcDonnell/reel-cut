@@ -191,6 +191,7 @@ captions:
   words_per_line: 5                 # max words shown on screen at once (default: 7)
   line_spacing: 10                 # px between wrapped rows
   grace_s: 0.6                     # seconds a caption line stays visible after its last word ends
+  censor: [fuck, shit, bitch, cunt]  # swear stems drawn with a starred vowel ("f*cking"); audio is untouched
 
 images:
   enabled: true

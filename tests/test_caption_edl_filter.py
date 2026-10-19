@@ -81,3 +81,12 @@ def test_word_on_a_seam_between_two_touching_cuts_is_still_dropped():
     out = _remap_kept_words(words, edl)
 
     assert [w.word for w in out] == ["kept", "kept-too"]
+
+
+def test_censored_swear_gets_a_starred_vowel_and_keeps_its_case_and_punctuation():
+    from reelcut.caption import censor_word
+    stems = ["fuck", "shit"]
+    assert censor_word("fucking", stems) == "f*cking"
+    assert censor_word("Fucking,", stems) == "F*cking,"
+    assert censor_word("shit.", stems) == "sh*t."
+    assert censor_word("Safari", stems) == "Safari"

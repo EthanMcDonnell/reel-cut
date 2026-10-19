@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+import re
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal
 
@@ -15,6 +16,16 @@ CaptionStyle = Literal["word_highlight", "full_line", "none"]
 
 _MARGIN = 40        # fallback; overridden at render time by config.margin_pct
 
+
+
+def censor_word(word: str, stems: list[str]) -> str:
+    """Star the first vowel after the first letter of a word starting with a censored stem
+    ("Fucking," → "F*cking,"). Burned-in text is read as on-screen text, so a swear there
+    can cost reach even when the audio carries it anyway."""
+    core = re.sub(r"[^a-z]", "", word.lower())
+    if not any(core.startswith(stem) for stem in stems):
+        return word
+    return re.sub(r"(?<=[A-Za-z])[aeiouAEIOU]", "*", word, count=1)
 
 
 @dataclass
@@ -46,6 +57,8 @@ def render_caption_frames(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    if config.censor:
+        words = [replace(w, word=censor_word(w.word, config.censor)) for w in words]
     font, font_highlight = _load_fonts(config)
     lines = _group_into_lines(words, config.words_per_line, config.grace_s, sentence_pause_s)
     total_duration = words[-1].end

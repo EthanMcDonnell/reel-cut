@@ -176,6 +176,7 @@ class CaptionsConfig(BaseModel):
     shadow_blur: int = 8             # gaussian blur radius of the soft shadow (px)
     shadow_opacity: float = 0.5      # 0-1 opacity of the soft shadow
     grace_s: float = 0.3             # seconds a caption line stays visible after its last word ends
+    censor: list[str] = Field(default_factory=list)  # word stems drawn with a starred vowel ("f*cking")
 
 
 class ImagesConfig(BaseModel):
