@@ -224,7 +224,7 @@ One **base entry per hook** (same order as `hook_windows` from Step 3c), plus �
 Field reference:
 - `id` — stable handle for the entry, and the last-resort filename. Convention: the hook's short name, and `<base-id><flip-suffix>` for its mirror (the suffix is `output.flip.suffix`, default `-flipped`)
 - `of` — **mirror entries only**: the `id` of the hook this one mirrors. It inherits that hook's window, so it needs no `start`/`end`
-- `title` — burned-in card; use `\n` for line breaks. `{n:<series>}` is auto-replaced with this video's episode number at render time (series slug = a `series/<slug>.md` filename)
+- `title` — burned-in card; use `\n` for line breaks. No swear words, even censored (`F*cking`) or when the speaker swears: say the take without one. `{n:<series>}` is auto-replaced with this video's episode number at render time (series slug = a `series/<slug>.md` filename)
 - `subtitle` — smaller italic line under the title; also supports `{n:<series>}`. A mirror inherits its hook's subtitle if it omits this
 - `start`/`end` — **output-timeline seconds** from `hook_windows` (Step 3c), not source-clip time
 - `scrim` — `true` darkens footage behind the text; omit to use the config default
