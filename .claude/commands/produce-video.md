@@ -182,8 +182,9 @@ Overlays play no sound of their own; the title card's thud and animated-card bea
 [{ "sound": "impact-3-336495", "at": 18.758, "source_clip": "assets/slug/clip.MOV", "gain_db": 0 }]
 ```
 
-- `sound` is a file stem under `assets/sfx/` (`find assets/sfx -name '*.mp3' -o -name '*.wav'`). The stem's prefix names the kind: whoosh, swipe, impact, thud, pop, click, paper, tick.
-- `at` is the source-clip `start` of the word it lands on; the sound's peak is aligned to it.
+- `sound` is a file stem under `assets/sfx/` (`find assets/sfx -name '*.mp3' -o -name '*.wav'`); the stem's prefix names the kind. `scripts/sfx_catalog.yaml` says what each catalog kind is for, and `assets/sfx/catalog/SOURCES.md` gives each file's title.
+- `at` is the source-clip `start` of the word it lands on; the sound's peak is aligned to it, so a riser builds up to that word.
+- Meme stings (vine boom, bruh, sad trombone…) are for comedic or opinion takes, not explainers.
 - Place one where a moment earns it — a punchline, a reveal, a turn in the take, a full-screen card entering — not on every overlay. A few per video at most; `[]` is fine. Don't repeat a file back to back.
 - List each placed sound with its word in the report.
 
