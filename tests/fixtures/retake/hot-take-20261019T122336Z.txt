@@ -19,11 +19,11 @@
      8.971s → 9.072s     'the'                           conf=0.85
      9.092s → 9.453s     'password'                      conf=0.64
      9.493s → 9.754s     'manager'                       conf=0.70
-     9.794s → 9.935s     'being'                         conf=0.68  [OUTTAKE]
-     9.955s → 10.176s    'synced'                        conf=0.30  [OUTTAKE]
-    10.256s → 10.618s    'across'                        conf=0.80  [OUTTAKE]
-    10.658s → 10.778s    'all'                           conf=0.93  [OUTTAKE]
-    10.798s → 11.200s    'devices.'                      conf=0.67  [OUTTAKE]
+     9.794s → 9.935s     'being'                         conf=0.68
+     9.955s → 10.176s    'synced'                        conf=0.30
+    10.256s → 10.618s    'across'                        conf=0.80
+    10.658s → 10.778s    'all'                           conf=0.93
+    10.798s → 11.200s    'devices.'                      conf=0.67
     13.240s → 13.785s    'Bookmarks'                     conf=0.91
     13.826s → 14.028s    'being'                         conf=0.99
     14.068s → 14.250s    'synced'                        conf=0.65
