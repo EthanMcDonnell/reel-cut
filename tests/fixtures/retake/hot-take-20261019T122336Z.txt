@@ -36,9 +36,10 @@
     15.966s → 16.129s    'my'                            conf=0.74
     16.169s → 16.393s    'Apple'                         conf=0.91
     16.413s → 16.779s    'devices.'                      conf=0.81
-    18.758s → 18.881s    'Oh'                            conf=0.65
-    18.901s → 19.024s    'my'                            conf=0.95
-    19.065s → 19.269s    'god.'                          conf=0.56
+    17.480s → 17.802s    'but'                           conf=0.80
+    18.767s → 18.888s    'Oh'                            conf=0.74
+    18.908s → 19.028s    'my'                            conf=0.91
+    19.069s → 19.209s    'god.'                          conf=0.52
     20.461s → 20.623s    'so'                            conf=0.83
     20.663s → 20.804s    'many'                          conf=0.99
     20.824s → 21.469s    'webpages'                      conf=0.75
