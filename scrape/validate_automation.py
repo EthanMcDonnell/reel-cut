@@ -37,6 +37,7 @@ from dotenv import load_dotenv
 
 sys.path.insert(0, str(Path(__file__).parent))
 import automation_spec as spec_mod  # noqa: E402
+from cockpit_session import session  # noqa: E402
 
 ROOT = Path(__file__).parent.parent
 load_dotenv(ROOT / ".env")
@@ -47,7 +48,7 @@ URL_RE = re.compile(r"https?://\S+")
 
 def fetch_names(path):
     """The ``name`` of everything the cockpit lists at ``path``."""
-    resp = requests.get(f"{COCKPIT}{path}", timeout=10)
+    resp = session.get(f"{COCKPIT}{path}", timeout=10)
     resp.raise_for_status()
     return [entry["name"] for entry in resp.json()]
 

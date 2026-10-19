@@ -25,6 +25,9 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent.parent / ".env")
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from cockpit_session import session  # noqa: E402
+
 BASE = os.environ.get("COCKPIT_URL", "http://localhost:3000").rstrip("/")
 METRICS = [
     "likes", "comments", "reach", "views", "saved", "shares",
@@ -40,7 +43,7 @@ def fetch_top(metric, limit, media_type):
     params = {"metric": metric, "limit": limit, "fullText": "1"}
     if media_type:
         params["mediaType"] = media_type
-    r = requests.get(f"{BASE}/api/scripts/top", params=params, timeout=30)
+    r = session.get(f"{BASE}/api/scripts/top", params=params, timeout=30)
     r.raise_for_status()
     return r.json().get("data", [])
 
@@ -55,7 +58,7 @@ def transcript_text(item):
     if not href:
         return ""
     try:
-        r = requests.get(f"{BASE}{href}", timeout=30)
+        r = session.get(f"{BASE}{href}", timeout=30)
         r.raise_for_status()
     except requests.RequestException:
         return ""

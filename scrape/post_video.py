@@ -48,6 +48,7 @@ from dotenv import load_dotenv
 
 sys.path.insert(0, str(Path(__file__).parent))
 import automation_spec  # noqa: E402
+from cockpit_session import session  # noqa: E402
 
 ROOT = Path(__file__).parent.parent
 load_dotenv(ROOT / ".env")
@@ -138,7 +139,7 @@ def min_gap_days():
     ``FALLBACK_MIN_GAP_DAYS`` today.
     """
     try:
-        settings = requests.get(f"{COCKPIT}/api/schedule/settings", timeout=15).json()
+        settings = session.get(f"{COCKPIT}/api/schedule/settings", timeout=15).json()
     except requests.RequestException:
         return FALLBACK_MIN_GAP_DAYS
     value = settings.get("min_same_video_days")
@@ -164,17 +165,21 @@ def calendar_conflict(gap_days):
     }
 
     found = []
-    published = requests.get(f"{COCKPIT}/api/schedule/history", params=params,
-                             timeout=30).json()
+    published = session.get(f"{COCKPIT}/api/schedule/history", params=params,
+                            timeout=30)
+    published.raise_for_status()
+    published = published.json()
     for post in published.get("posts", []):
         found.append((datetime.fromtimestamp(post["published_at"] / 1000),
                       post.get("title", "(untitled)"), "published"))
 
-    booked = requests.get(
+    booked = session.get(
         f"{COCKPIT}/api/schedule",
         params={**params, "status": "pending,paused,publishing,finalizing", "limit": 1000},
         timeout=30,
-    ).json()
+    )
+    booked.raise_for_status()
+    booked = booked.json()
     for job in booked.get("jobs", []):
         caption = (job.get("payload") or {}).get("caption") or "(no caption)"
         found.append((datetime.fromtimestamp(job["scheduled_at"] / 1000),
@@ -218,7 +223,7 @@ def publish(video_path, caption, slug, automation=None):
     }
     if automation:
         payload["automation"] = automation
-    r = requests.post(
+    r = session.post(
         f"{COCKPIT}/api/publish/local",
         json=payload,
         timeout=REQUEST_TIMEOUT_S,

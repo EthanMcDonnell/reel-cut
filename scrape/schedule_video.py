@@ -56,7 +56,6 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-import requests
 from dotenv import load_dotenv
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -64,6 +63,8 @@ from post_video import automation_for, caption_for, read_published  # noqa: E402
 
 ROOT = Path(__file__).parent.parent
 load_dotenv(ROOT / ".env")
+
+from cockpit_session import session  # noqa: E402
 
 COCKPIT = os.environ.get("COCKPIT_URL", "http://localhost:3000").rstrip("/")
 REQUEST_TIMEOUT_S = 30
@@ -193,7 +194,7 @@ def schedule(video_path, caption, scheduled_at, slug, automation=None):
     }
     if automation:
         payload["automation"] = automation
-    r = requests.post(f"{COCKPIT}/api/schedule", json=payload, timeout=REQUEST_TIMEOUT_S)
+    r = session.post(f"{COCKPIT}/api/schedule", json=payload, timeout=REQUEST_TIMEOUT_S)
     return r
 
 
@@ -217,7 +218,7 @@ def schedule_youtube(scheduled_at, slug, title, method=YT_SELECTION):
         "selection_method": method,
         "title": title,
     }
-    r = requests.post(f"{COCKPIT}/api/schedule", json=payload, timeout=REQUEST_TIMEOUT_S)
+    r = session.post(f"{COCKPIT}/api/schedule", json=payload, timeout=REQUEST_TIMEOUT_S)
     return r
 
 
@@ -238,7 +239,7 @@ def schedule_feed(scheduled_at, slug, automation=None, method=YT_SELECTION):
     }
     if automation:
         payload["automation"] = automation
-    return requests.post(f"{COCKPIT}/api/schedule", json=payload, timeout=REQUEST_TIMEOUT_S)
+    return session.post(f"{COCKPIT}/api/schedule", json=payload, timeout=REQUEST_TIMEOUT_S)
 
 
 def main():
