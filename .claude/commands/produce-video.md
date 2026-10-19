@@ -183,10 +183,10 @@ Overlays play no sound of their own; the title card's thud and animated-card bea
 ```
 
 - `sound` is a file stem under `assets/sfx/` (`find assets/sfx -name '*.mp3' -o -name '*.wav'`); the stem's prefix names the kind. `scripts/sfx_catalog.yaml` says what each catalog kind is for, and `assets/sfx/catalog/SOURCES.md` gives each file's title.
-- `at` is the source-clip `start` of the word it lands on; the sound's peak is aligned to it, so a riser builds up to that word.
+- A sound marks something changing on screen, never a spoken word alone. `at` is one of: an `images.json` entry's `start` or beat, the hook's first word (the title card), or a kept `edl` span's `start` (a cut). The render drops any other with a warning, which `--check-overlays` prints. The sound's peak is aligned to `at`, so a riser builds up to it.
 - Meme stings (vine boom, bruh, sad trombone…) are for comedic or opinion takes, not explainers.
-- Place one where a moment earns it — a punchline, a reveal, a turn in the take, a full-screen card entering — not on every overlay. A few per video at most; `[]` is fine. Don't repeat a file back to back.
-- List each placed sound with its word in the report.
+- Place one where the change earns it — a reveal, a full-screen card entering, a jump between sections — not on every overlay. A few per video at most; `[]` is fine. Don't repeat a file back to back.
+- List each placed sound with what it lands on in the report.
 
 ## Step 4b — videos.json (one entry per rendered video)
 

@@ -73,9 +73,15 @@ def plan_sfx(
     total_s: float,
     warnings: list[str],
     placed: list[tuple[str, float, float]] = (),
+    cuts: list[float] = (),
+    tol_s: float = 0.05,
 ) -> list[dict]:
     """Renderer-ready track dicts for `events` and `placed` (sound, output second, gain_db),
     peak-aligned and rate-limited. A placed sound wins a tie with an automatic one.
+
+    A sound marks something changing on screen, so a placed one must land on an event (an
+    overlay, card beat or title card) or a cut (`cuts`, output seconds); one on a bare word
+    is dropped with a warning.
 
     Each dict carries `peak_db` and `level_db`, which the renderer's leveling uses to set the
     effect's peak relative to the voice instead of measuring its integrated loudness.
@@ -87,6 +93,11 @@ def plan_sfx(
     missing: set[str] = set()
     last = float("-inf")
     items = [(t, order.index(kind), kind, idx, "", 0.0) for kind, t, idx in wanted]
+    moments = [t for _, t, _ in events] + list(cuts)
+    for name, t, gain in placed:
+        if not any(abs(t - m) <= tol_s for m in moments):
+            warnings.append(f"Sound '{name}' at {t:.2f}s is on no overlay, title or cut — dropped")
+    placed = [p for p in placed if any(abs(p[1] - m) <= tol_s for m in moments)]
     items += [(t, -1, "placed", 0, name, gain) for name, t, gain in placed if t < total_s]
     for t, _, kind, idx, name, gain_db in sorted(items, key=lambda e: e[:2]):
         if t - last < config.min_gap_s:

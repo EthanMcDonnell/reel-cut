@@ -76,3 +76,16 @@ def test_library_includes_sounds_in_subfolders(tmp_path):
         (tmp_path / f).touch()
 
     assert set(sfx.sfx_library(tmp_path)) == {"pop", "swipe-2-123"}
+
+
+def test_placed_sound_must_land_on_an_overlay_title_or_cut(monkeypatch):
+    monkeypatch.setattr(sfx, "analyze", lambda p: (0.0, -6.0, 0.3))
+    lib = {"honk": Path("honk.mp3"), "oof": Path("oof.mp3"), "whoosh": Path("whoosh.mp3")}
+    warnings: list[str] = []
+
+    tracks = plan_sfx([("concept", 26.9, 0)], _cfg(), lib, 40.0, warnings,
+                      placed=[("honk", 15.7, 0.0), ("oof", 26.9, 0.0), ("whoosh", 12.13, 0.0)],
+                      cuts=[12.13])
+
+    assert [Path(t["path"]).stem for t in tracks] == ["whoosh", "oof"]
+    assert len(warnings) == 1 and "honk" in warnings[0]
