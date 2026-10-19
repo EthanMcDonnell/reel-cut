@@ -212,6 +212,24 @@ def detect_retakes(
                                f"< {no_pause_min_ratio:.2f} with no trail-off — reads as "
                                f"deliberate repetition, not a retake")
 
+                # A retake re-says the line, so whatever the keeper's take says before the
+                # shared phrase overlaps the failed take. When that head is entirely new
+                # content ("…password manager being synced across all devices. Bookmarks
+                # being synced across all…"), it is the next item of a list sharing a
+                # predicate, and cutting the first strands its subject.
+                if kept:
+                    kb = cj
+                    while kb > ci and not boundary[kb]:
+                        kb -= 1
+                    fb = ci
+                    while fb > 0 and not boundary[fb]:
+                        fb -= 1
+                    head = _content_words(words[kb:cj])
+                    if kb > ci and head and not head & _content_words(words[fb:kb]):
+                        kept = False
+                        why = (f"keeper opens with new subject \"{' '.join(head)}\" — "
+                               f"reads as a parallel list item, not a retake")
+
                 candidates.append(RetakeCandidate(
                     ngram=ngram,
                     cut_len=cut_len,

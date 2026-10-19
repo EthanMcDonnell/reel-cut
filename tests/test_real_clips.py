@@ -224,3 +224,23 @@ def test_billion_laughs_parallel_phrasing_is_not_a_retake():
     assert len(sentence) > 15, "fixture no longer covers the nesting sentence"
     cut = [w.word for w in sentence if any(s <= w.start < e for s, e in ranges)]
     assert not cut, f"parallel phrasing cut as a retake: {cut}"
+
+
+def test_safari_parallel_list_item_is_not_a_retake():
+    """Regression (hot-take-20261019T122336Z, ~9.8s): a list's first item was cut.
+
+        "…the password manager being synced across all devices. Bookmarks being synced
+         across all Apple devices."
+
+    "being synced across all" repeats because the speaker listed two things that share a
+    predicate. The keeper sentence opens with a new subject ("Bookmarks") that the first
+    sentence never said, so it is the next item, not a re-recording. Cutting the first
+    stranded "the password manager" with no predicate.
+    """
+    fixture = _FIXTURE_DIR / "hot-take-20261019T122336Z.txt"
+    words = load_clip_words(fixture)
+    ranges, _ = detect_retakes(words, **_retake_kwargs())
+    item = [w for w in words if 9.7 <= w.start <= 11.3]
+    assert len(item) == 5, "fixture no longer covers the password-manager item"
+    cut = [w.word for w in item if any(s <= w.start < e for s, e in ranges)]
+    assert not cut, f"parallel list item cut as a retake: {cut}"
