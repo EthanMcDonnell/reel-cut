@@ -277,6 +277,7 @@ def _reconcile_retranscribed(
     conf_threshold: float,
     rescue_floor: float = 0.05,
     regression_margin: float = 0.20,
+    restore_floor: float = 0.85,
 ) -> tuple[list["WordTimestamp"], list["WordTimestamp"]]:
     """Filter retranscribed words, rescuing below-floor words that both passes agreed on.
 
@@ -295,6 +296,12 @@ def _reconcile_retranscribed(
     rescue does. Improvements are never touched, and words the retranscription legitimately
     added or dropped (a recovered false start, a shed filler) align to nothing and are left
     alone — which is why this aligns rather than comparing by index.
+
+    Dropped-word guard: the retranscription replaces the whole window, so a word it simply
+    never returned is lost ("devices, but oh my god" → "devices. Oh my god." with "but"@0.90
+    gone, and the gap detector then cuts its audio as noise). An original word at
+    >= restore_floor whose time no kept retranscribed word overlaps is put back. A shed
+    filler is a low-confidence original, so it stays dropped.
     """
     original_words = {
         w.word.lower(): w for w in words_replaced if w.confidence >= rescue_floor
@@ -318,6 +325,15 @@ def _reconcile_retranscribed(
             w.word = orig.word
             w.confidence = orig.confidence
             rescued.append(w)
+
+    restored = [
+        o for o in words_replaced
+        if o.confidence >= restore_floor and o.start < win_end
+        and not any(w.start < o.end and o.start < w.end for w in kept)
+    ]
+    if restored:
+        kept = sorted(kept + restored, key=lambda w: w.start)
+        rescued.extend(restored)
     return kept, rescued
 
 

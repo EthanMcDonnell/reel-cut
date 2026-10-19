@@ -413,6 +413,23 @@ def test_reconcile_regression_guard_ignores_inserted_words():
     assert kept[0].confidence == 0.30   # untouched — no original to compare against
 
 
+def test_reconcile_restores_a_confident_word_the_retranscription_never_returned():
+    """Regression (hot-take-20261019T122336Z, ~17.5s): "devices, but oh my god" came back
+    as "devices. Oh my god." The original's "but"@0.90 sat in a slot no retranscribed word
+    covers, so it was lost and its audio cut as noise. It goes back in, in time order."""
+    original = [
+        _wt("devices,", 16.34, 16.94, 0.91),
+        _wt("but", 17.48, 17.76, 0.90),
+        _wt("oh", 17.76, 18.86, 0.51),
+    ]
+    retrans = [_wt("devices.", 16.36, 16.84, 0.90), _wt("Oh", 18.35, 18.87, 0.49)]
+
+    kept, rescued = _reconcile_retranscribed(retrans, original, win_end=20.0, conf_threshold=0.10)
+
+    assert [w.word for w in kept] == ["devices.", "but", "Oh"]
+    assert [w.word for w in rescued] == ["but"]
+
+
 # ---------------------------------------------------------------------------
 # _merge_retranscribe_windows
 # ---------------------------------------------------------------------------
