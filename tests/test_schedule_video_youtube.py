@@ -17,7 +17,7 @@ _SPEC.loader.exec_module(schedule_video)
 
 
 class _Recorder:
-    """Stands in for requests.post, keeping the payload it was handed."""
+    """Stands in for session.post, keeping the payload it was handed."""
 
     def __init__(self):
         self.payloads = []
@@ -56,7 +56,7 @@ def test_hook_enrols_itself_in_the_pool(tmp_path, monkeypatch):
     """Without `slug` on the Instagram job the pool never fills, and the
     cross-post has nothing to pick at fire time."""
     post = _Recorder()
-    monkeypatch.setattr(schedule_video.requests, "post", post)
+    monkeypatch.setattr(schedule_video.session, "post", post)
     mp4 = tmp_path / "hook.mp4"
     mp4.write_bytes(b"")
 
@@ -70,7 +70,7 @@ def test_hook_enrols_itself_in_the_pool(tmp_path, monkeypatch):
 
 def test_youtube_job_books_the_pool_not_a_file(tmp_path, monkeypatch):
     post = _Recorder()
-    monkeypatch.setattr(schedule_video.requests, "post", post)
+    monkeypatch.setattr(schedule_video.session, "post", post)
 
     schedule_video.schedule_youtube("2026-09-03T09:30", "demo", "Some Title")
 
@@ -106,7 +106,7 @@ def test_title_falls_back_to_the_slug(tmp_path, monkeypatch):
 def test_cross_post_is_claimed_in_the_ledger(tmp_path, monkeypatch):
     """Without a claim, a second run books a second YouTube post for the slug."""
     post = _Recorder()
-    monkeypatch.setattr(schedule_video.requests, "post", post)
+    monkeypatch.setattr(schedule_video.session, "post", post)
     slug = _slug(tmp_path, monkeypatch)
     log = tmp_path / ".published"
 
@@ -132,7 +132,7 @@ def test_feed_promotion_books_the_pool_not_a_file(tmp_path, monkeypatch):
     """The promotion picks the best trial reel at fire time, so it carries no
     file, no trial_params, and no caption (the winner keeps its own)."""
     post = _Recorder()
-    monkeypatch.setattr(schedule_video.requests, "post", post)
+    monkeypatch.setattr(schedule_video.session, "post", post)
     automation = {"key": "demo", "trigger_keywords": ["LINK"]}
 
     schedule_video.schedule_feed("2026-09-04T09:30", "demo", automation)
@@ -149,7 +149,7 @@ def test_feed_promotion_books_the_pool_not_a_file(tmp_path, monkeypatch):
 def test_feed_promotion_is_claimed_in_the_ledger(tmp_path, monkeypatch):
     """A second run must not try to book a second feed post for the slug."""
     post = _Recorder()
-    monkeypatch.setattr(schedule_video.requests, "post", post)
+    monkeypatch.setattr(schedule_video.session, "post", post)
     slug = _slug(tmp_path, monkeypatch)
     log = tmp_path / ".published"
 
