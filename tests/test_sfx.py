@@ -58,3 +58,21 @@ def test_effect_peak_is_leveled_relative_to_voice_loudness(monkeypatch):
     _level_audio_tracks(Path("voice.mkv"), [track], ducking_lufs=14)
 
     assert track["_gain_db"] == -2.0 + (-16.0 + 6.0) - (-1.0)
+
+
+def test_placed_sound_plays_its_own_name_and_gain_and_wins_a_tie(monkeypatch):
+    monkeypatch.setattr(sfx, "analyze", lambda p: (0.0, -6.0, 0.3))
+    lib = {"thud": Path("thud.wav"), "impact-3": Path("impact-3.mp3")}
+
+    tracks = plan_sfx([("heading", 0.0, 0)], _cfg(heading=["thud"]), lib, 30.0, [],
+                      placed=[("impact-3", 0.0, -4.0), ("impact-3", 40.0, 0.0)])
+
+    assert [(Path(t["path"]).stem, t["gain_db"]) for t in tracks] == [("impact-3", -4.0)]
+
+
+def test_library_includes_sounds_in_subfolders(tmp_path):
+    (tmp_path / "_candidates").mkdir()
+    for f in ("pop.wav", "_candidates/swipe-2-123.mp3", "SOURCES.md"):
+        (tmp_path / f).touch()
+
+    assert set(sfx.sfx_library(tmp_path)) == {"pop", "swipe-2-123"}

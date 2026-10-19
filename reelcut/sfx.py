@@ -1,9 +1,10 @@
-"""Sound effects — one short sound on each overlay's first frame.
+"""Sound effects — automatic ones on the render's own events, plus sounds placed in sfx.json.
 
-Events come from the render's own cues (overlay starts, animated-card beats, heading cards),
-so nothing is authored per video. Each effect is shifted so its loudest moment lands on the
-event's frame — a whoosh builds before its peak, a click peaks at once — and an effect closer
-than `sfx.min_gap_s` to the one before is dropped, so a burst of overlays gets one sound.
+Automatic events come from the render's cues (overlay starts, animated-card beats, heading
+cards); `sfx.events` in config.yaml picks which fire. Placed sounds are listed per video in
+`assets/<slug>/sfx.json`. Each effect is shifted so its loudest moment lands on its frame — a
+whoosh builds before its peak, a click peaks at once — and an effect closer than
+`sfx.min_gap_s` to the one before is dropped, so a burst of events gets one sound.
 """
 from __future__ import annotations
 
@@ -33,10 +34,19 @@ def sfx_events(cues: list, headings: list) -> list[tuple[str, float, int]]:
 
 
 def sfx_library(sfx_dir: Path) -> dict[str, Path]:
-    """Sound files in `sfx_dir`, keyed by file stem."""
+    """Sound files anywhere under `sfx_dir`, keyed by file stem."""
     if not sfx_dir.is_dir():
         return {}
-    return {p.stem: p for p in sorted(sfx_dir.iterdir()) if p.suffix.lower() in _AUDIO_EXTS}
+    return {p.stem: p for p in sorted(sfx_dir.rglob("*")) if p.suffix.lower() in _AUDIO_EXTS}
+
+
+def load_sfx_cues(path: Path) -> list[dict]:
+    """sfx.json — a JSON list of placed sounds: {"sound": <stem>, "at": <source-clip seconds>,
+    "source_clip": <path>, "gain_db": <trim>}. Missing file → []."""
+    if not path.exists():
+        return []
+    import json
+    return json.loads(path.read_text())
 
 
 @lru_cache(maxsize=None)
@@ -62,8 +72,10 @@ def plan_sfx(
     library: dict[str, Path],
     total_s: float,
     warnings: list[str],
+    placed: list[tuple[str, float, float]] = (),
 ) -> list[dict]:
-    """Renderer-ready track dicts for `events`, peak-aligned and rate-limited.
+    """Renderer-ready track dicts for `events` and `placed` (sound, output second, gain_db),
+    peak-aligned and rate-limited. A placed sound wins a tie with an automatic one.
 
     Each dict carries `peak_db` and `level_db`, which the renderer's leveling uses to set the
     effect's peak relative to the voice instead of measuring its integrated loudness.
@@ -74,12 +86,16 @@ def plan_sfx(
     counts: Counter = Counter()
     missing: set[str] = set()
     last = float("-inf")
-    for kind, t, idx in sorted(wanted, key=lambda e: (e[1], order.index(e[0]))):
+    items = [(t, order.index(kind), kind, idx, "", 0.0) for kind, t, idx in wanted]
+    items += [(t, -1, "placed", 0, name, gain) for name, t, gain in placed if t < total_s]
+    for t, _, kind, idx, name, gain_db in sorted(items, key=lambda e: e[:2]):
         if t - last < config.min_gap_s:
             continue
-        ev = config.events[kind]
-        n = counts[kind]
-        name = ev.sounds[min(idx, len(ev.sounds) - 1)] if kind == "beat" else ev.sounds[n % len(ev.sounds)]
+        if kind != "placed":
+            ev = config.events[kind]
+            n = counts[kind]
+            name = ev.sounds[min(idx, len(ev.sounds) - 1)] if kind == "beat" else ev.sounds[n % len(ev.sounds)]
+            gain_db = ev.gain_db
         path = library.get(name)
         if path is None:
             missing.add(name)
@@ -93,7 +109,7 @@ def plan_sfx(
             "source_start": source_start,
             "start": start,
             "end": min(total_s, start + dur - source_start),
-            "gain_db": ev.gain_db,
+            "gain_db": gain_db,
             "slow_pct": 0.0,
             "peak_db": peak_db,
             "level_db": config.level_db,

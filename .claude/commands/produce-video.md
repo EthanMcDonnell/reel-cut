@@ -56,7 +56,7 @@ Image timings are stored in **source-clip time** (same as `words` and `edl`). Th
 
 **Every hook gets its own overlay**, so no variant opens on a bare talking head. An auto-detected logo counts. Otherwise place a hook-only overlay showing what the hook leads with: a `person` for a name, the proving screenshot or figure for a number, a `concept` for an object. Start it on the hook's first words and end it by the hook's last word (the renderer clips it there anyway).
 
-**Keep the screen filled.** Any stretch of 1s or more with no overlay is a gap. Hold screenshots and figures until the next overlay starts, fill what's left with `person` and `concept` overlays (Step 3b) and designed cards (Step 3e), and leave a gap rather than place an unrelated image.
+**Never before its word.** An overlay starts on the word that names or means what it shows, never earlier in the sentence: no keychain before "password manager" is said. Gaps are fine — place an overlay only where one fits, and hold screenshots and figures until the next overlay starts.
 
 Work through every screenshot in the manifest (skip `body.png`). **Skip any screenshot whose `script_context` or `article_snippet` cannot be matched to words in the `words` array — do not invent a placement.**
 
@@ -78,13 +78,13 @@ Then scan the `words` array for person names (consecutive capitalised words that
 - Use the source-clip timestamps from those words
 - Add a `type: "person"` entry with `name: "<Full Name>"`, `source_clip` from the anchor word, and `path: ""` — the renderer resolves Wikipedia headshots automatically
 
-Build the complete images list: one entry per screenshot, any person entries, the hook overlays, and the concept images and cards that fill the remaining gaps (Steps 3b, 3e).
+Build the complete images list: one entry per screenshot, any person entries, the hook overlays, and the concept images and cards that fit (Steps 3b, 3e).
 
-## Step 3b — Concept images (fill the gaps)
+## Step 3b — Concept images
 
 A few quirky Wikipedia image can add a fun extra dimension — drop a literal photo of an unexpected *thing* onto a punchline. The gag lands when an abstract phrase is rendered as the real object behind it: "spaghetti code" → a bowl of spaghetti, "rubber-duck debugging" → a rubber duck, "the cops showed up" → a police car. Resolved exactly like a `person`, but the **name** is any Wikipedia subject, not a person.
 
-- **Work through the remaining gaps** (Step 3), looking in each for a concrete, photographable thing hiding inside an abstract phrase or a brand name. No cap on count; skip a gap with no noun that genuinely fits.
+- **Look through the remaining gaps** (Step 3) for a concrete, photographable thing hiding inside an abstract phrase or a brand name. Skip a gap with no noun that genuinely fits.
 - The **name** must be the Wikipedia title of a **concrete, photographable object** whose page shows a **real photo** of that thing. This is the whole trick — and it's also where it breaks:
   - ✅ `Spaghetti code` (its page literally shows a bowl of spaghetti), `Rubber duck debugging`, `Police car`, `Trojan Horse` — concrete nouns with a real photo.
   - ❌ Abstract terms with **no photo**: `Technical debt`, `Scalability`, `Latency` — these resolve to nothing and silently vanish.
@@ -174,6 +174,19 @@ If `assets/<video-slug>/clips/` exists, place each clip in it where it shows wha
 
 All `start`/`end` values are **source-clip seconds** taken from the `words` array in captions.json (the renderer remaps them to the output timeline).
 
+## Step 4c — Sound effects (sfx.json)
+
+Overlays play no sound of their own; the title card's thud and animated-card beats are automatic. Any other sound is placed in `assets/<video-slug>/sfx.json`, a JSON list rewritten each run:
+
+```json
+[{ "sound": "impact-3-336495", "at": 18.758, "source_clip": "assets/slug/clip.MOV", "gain_db": 0 }]
+```
+
+- `sound` is a file stem under `assets/sfx/` (`find assets/sfx -name '*.mp3' -o -name '*.wav'`). The stem's prefix names the kind: whoosh, swipe, impact, thud, pop, click, paper, tick.
+- `at` is the source-clip `start` of the word it lands on; the sound's peak is aligned to it.
+- Place one where a moment earns it — a punchline, a reveal, a turn in the take, a full-screen card entering — not on every overlay. A few per video at most; `[]` is fine. Don't repeat a file back to back.
+- List each placed sound with its word in the report.
+
 ## Step 4b — videos.json (one entry per rendered video)
 
 `assets/<video-slug>/videos.json` describes **every video this render produces**: its burned-in title card, its Instagram/Telegram caption, and its filename. One entry per output `.mp4`.
@@ -260,7 +273,7 @@ Examples of the register: `the cloud? never heard of it` · `dropbox unsubscribe
 .venv/bin/reelcut render-hooks config.yaml "assets/<video-slug>/<actual-captions-filename>.captions.json" --check-overlays
 ```
 
-It prints each video's coverage, every 1s+ gap with its words, and a warning for any hook with nothing on screen. Fix the warnings, fill what gaps you can, re-check, then render. List the remaining gaps in the final report.
+It prints each video's coverage, every 1s+ gap with its words, and a warning for any hook with nothing on screen. Fix the warnings and any overlay that starts before its word, re-check, then render. Gaps nothing fits stay empty.
 
 ```bash
 .venv/bin/reelcut render-hooks config.yaml "assets/<video-slug>/<actual-captions-filename>.captions.json"

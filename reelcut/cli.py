@@ -1022,10 +1022,19 @@ def _phase2(cfg, doc, outputs: list[tuple[Path, bool]], verbose: bool,
         # Background audio (audio.json) — music/SFX mixed under the voice
         audio_tracks = _resolve_audio_tracks(cfg, edl, audio_path, warnings)
         if cfg.sfx.enabled:
-            from .sfx import plan_sfx, sfx_events, sfx_library
+            from .sfx import load_sfx_cues, plan_sfx, sfx_events, sfx_library
+            # Placed sounds are anchored in source time; one inside a cut (a dropped take,
+            # or another hook in a per-hook render) has nothing to play over.
+            placed = []
+            if audio_path:
+                remap, clip_order = _build_edl_remap(edl)
+                for cue in load_sfx_cues(audio_path.parent / "sfx.json"):
+                    clip = cue.get("source_clip") or (clip_order[0] if clip_order else "")
+                    if any(e.keep and e.source_clip == clip and e.start <= cue["at"] < e.end for e in edl):
+                        placed.append((cue["sound"], remap(clip, cue["at"]), cue.get("gain_db", 0.0)))
             sfx_tracks = plan_sfx(
                 sfx_events(all_image_cues, heading_specs), cfg.sfx,
-                sfx_library(Path(cfg.assets.location) / "sfx"), total_output_s, warnings,
+                sfx_library(Path(cfg.assets.location) / "sfx"), total_output_s, warnings, placed,
             )
             if sfx_tracks:
                 console.print(f"  Sound effects: {len(sfx_tracks)}")
