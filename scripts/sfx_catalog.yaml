@@ -1,7 +1,7 @@
 # Sound-effect catalog: what each kind is for, and the Freesound search that fills it.
 # scripts/fetch_sfx.py downloads CC0 matches to assets/sfx/catalog/<name>-<n>-<id>.mp3;
 # /produce-video picks from them by `use`. Meme entries are CC0 soundalikes, not the originals.
-# max_s: longest file accepted (default 6).
+# max_s: longest file accepted (default 6). skip: Freesound IDs rejected by ear, never re-fetched.
 
 - {name: vine-boom, query: vine boom, use: mock-dramatic reveal; a statement left hanging}
 - {name: bruh, query: bruh, use: deadpan disbelief at something dumb}
@@ -19,7 +19,7 @@
 - {name: villager-huh, query: villager huh, use: a confused "huh"}
 - {name: few-moments-later, query: a few moments later, use: time skip}
 - {name: boo-womp, query: sad trombone, use: letdown; anticlimax}
-- {name: dun-dun-duun, query: dun dun dun dramatic, use: dramatic reveal}
+- {name: dun-dun-duun, query: dun dun dun dramatic, use: dramatic reveal, skip: [411232]}
 - {name: rimshot, query: rimshot, use: right after a joke}
 - {name: needs-milk, query: he needs some milk, use: someone flexing}
 - {name: sheesh, query: sheesh, use: impressed}

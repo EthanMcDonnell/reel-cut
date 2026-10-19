@@ -65,7 +65,9 @@ def main() -> int:
     missing = []
     with httpx.Client(headers=HEADERS, follow_redirects=True, timeout=30) as client:
         for e in entries:
-            found = search(client, e["query"], e.get("max_s", 6))[:args.per]
+            skip = {str(i) for i in e.get("skip", [])}
+            found = [s for s in search(client, e["query"], e.get("max_s", 6))
+                     if s["id"] not in skip][:args.per]
             if not found:
                 missing.append(e["name"])
             for n, s in enumerate(found):
