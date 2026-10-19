@@ -229,7 +229,7 @@ Field reference:
 - `start`/`end` — **output-timeline seconds** from `hook_windows` (Step 3c), not source-clip time
 - `scrim` — `true` darkens footage behind the text; omit to use the config default
 - `caption` — the pretty post text (emoji + lowercase), used verbatim in the Telegram/Instagram post
-- `filename` — filesystem-safe stem for the `.mp4`: lowercase, hyphen-separated, no emoji. Leave empty and it's derived from `caption`; if nothing usable survives, the file is named after `id`
+- `filename` — filesystem-safe stem for the `.mp4`: lowercase, hyphen-separated, no emoji, no swear words (even when the title card has one). Leave empty and it's derived from `caption`; if nothing usable survives, the file is named after `id`
 
 **Inputs to draw from:**
 - `hook_windows` from Step 3c — one window per hook, each with its output-timeline `(start, end)` — **plus that hook's spoken text** (from the Step 1 timeline). Every entry for hook N is derived from hook N's angle.
