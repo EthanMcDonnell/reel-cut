@@ -11,8 +11,8 @@ marker swept under them. A named style (`headings.styles`) lays its font, colour
 the base settings, so each series can look its own.
 
 With motion (reelcut.motion HEADINGS) the lines enter — rising out of a slot, inked on left to
-right, stamped down from big, or split in from both sides — then push in slowly while held,
-and leave. The reel's first frame
+right, stamped down from big, split in from both sides, or typed out a letter at a time behind
+a cursor — then push in slowly while held, and leave. The reel's first frame
 then has no title on it, so the render writes a cover from a frame after `settled_s`.
 """
 from __future__ import annotations
@@ -133,16 +133,40 @@ _SUB_DELAY_S = 0.45  # the subtitle follows the landed title by this much, so th
 _SUB_S = 0.35
 
 
-def settled_s(spring_name: str) -> float:
+_KEY_S = 0.045  # a typed title's average time per character
+
+
+def settled_s(spring_name: str, motion: str = "", title: str = "") -> float:
     """Seconds after its start by which a moving title card has fully entered — up to three
-    title lines once it wraps, then its subtitle and accent marker."""
-    return 2 * _LINE_STAGGER_S + settle_s(spring_name) + _SUB_DELAY_S + max(_SUB_S, _MARK_S) + 0.1
+    title lines once it wraps (or the whole title typed), then its subtitle and accent marker."""
+    landed = landing_s(motion, spring_name, title, lines=3) if motion == "type" else \
+        2 * _LINE_STAGGER_S + settle_s(spring_name)
+    return landed + _SUB_DELAY_S + max(_SUB_S, _MARK_S) + 0.1
 
 
-def landing_s(motion: str, spring_name: str, lines: int) -> float:
-    """Seconds after its start that a title card's last line lands — where its sound goes."""
+def type_times(title: str) -> list[tuple[str, float]]:
+    """(character, seconds after the card's start it appears) for a typed title, in reading
+    order with runs of spaces collapsed. The pace wavers like a person typing; a space is
+    quicker and an explicit line break pauses."""
+    out, t = [], 0.0
+    for p, para in enumerate(plain_title(title).split("\n")):
+        if p:
+            t += 0.15
+        for ch in " ".join(para.split()):
+            t += _KEY_S * (0.6 if ch == " " else 0.7 + 0.6 * (len(out) * 37 % 11) / 10)
+            out.append((ch, t))
+    return out
+
+
+def landing_s(motion: str, spring_name: str, title: str = "", lines: int | None = None) -> float:
+    """Seconds after its start that a title card's last line lands (or last letter is typed) —
+    where its sound goes. `lines` overrides the title's own count once it has wrapped."""
     if motion == "none":
         return 0.0
+    if motion == "type":
+        typed = type_times(title)
+        return typed[-1][1] if typed else 0.0
+    lines = lines or plain_title(title).count("\n") + 1
     first = settle_s(spring_name)  # an overdamped spring only arrives as it settles
     for i in range(1, 600):
         if spring(i / 240, spring_name) >= 0.995:
@@ -159,7 +183,7 @@ def _moving_frames(h, config, resolution, out_dir: Path, fps, first, last, exits
     w, hgt = resolution
     use_scrim = config.scrim if h.scrim is None else h.scrim
     scrim = _scrim(w, hgt, config.scrim_strength) if use_scrim else None
-    lines, marks = _line_sprites(h, config, resolution)
+    lines, marks, glyphs = _line_sprites(h, config, resolution)
     x0 = min(x for _, x, _ in lines)
     x1 = max(x + sp.width for sp, x, _ in lines)
     y0 = min(y for _, _, y in lines)
@@ -167,7 +191,12 @@ def _moving_frames(h, config, resolution, out_dir: Path, fps, first, last, exits
     gcx, gcy = (x0 + x1) / 2, (y0 + y1) / 2
     n_out = round(_HEADING_EXIT_S * fps) if exits else 0
     n_title = len(lines) - bool(h.subtitle)
-    landed = landing_s(motion, spring_name, n_title)
+    landed = landing_s(motion, spring_name, h.title, lines=n_title)
+    typed = _row_times(glyphs[:n_title], type_times(h.title)) if motion == "type" else []
+    caret = None
+    if typed:
+        _, _, top, height, _ = glyphs[0]
+        caret = Image.new("RGBA", (max(3, round(height * 0.09)), round(height * 0.9)), config.color)
 
     def line_pose(i: int, t: float, out_q: float) -> Pose:
         """Line i's entrance (and exit) pose, before the push-in. The subtitle comes in on its
@@ -175,6 +204,11 @@ def _moving_frames(h, config, resolution, out_dir: Path, fps, first, last, exits
         if i >= n_title:
             q = ease_in_out(clamp((t - landed - _SUB_DELAY_S) / _SUB_S))
             return Pose(dy=(1 - q) * 0.008 * hgt, alpha=q * (1 - ease_in(out_q)))
+        if motion == "type":  # each row shows up to the last letter typed
+            bounds, n = glyphs[i][1], sum(1 for tt in typed[i] if tt <= t)
+            sprite_w = lines[i][0].width
+            amount = 1.0 if n == len(bounds) else bounds[n - 1] / sprite_w if n else 0.0
+            return Pose(reveal="wipe", amount=amount, alpha=1 - ease_in(out_q))
         if motion == "stamp":  # the whole title lands at once, from big
             p = spring(t, spring_name)
             pose = Pose(scale=1.25 - 0.25 * p, alpha=clamp(p * 3))
@@ -205,7 +239,19 @@ def _moving_frames(h, config, resolution, out_dir: Path, fps, first, last, exits
             poses.append(pose + Pose(scale=push, dx=(sc - 1) * (cx - gcx), dy=(sc - 1) * (cy - gcy)))
         mark = clamp((t - landed) / _MARK_S)
         mark = min(ease_in_out(mark), 1 - ease_in(out_q)) if out_q else ease_in_out(mark)
-        key = (round(a, 3), push, round(mark, 3), tuple(ps.key() for ps in poses))
+        # The cursor rides after the last letter typed, then blinks twice and goes.
+        cursor = None
+        if caret is not None and (t < landed or (t - landed < 0.9 and int((t - landed) / 0.22) % 2)):
+            row = next((r for r, ts in enumerate(typed) if any(tt > t for tt in ts)), len(typed) - 1)
+            n = sum(1 for tt in typed[row] if tt <= t)
+            text, bounds, top, height, start = glyphs[row]
+            sx, sy = lines[row][1], lines[row][2]
+            cx = sx + (bounds[n - 1] if n else start) + caret.width * 0.6
+            cy = sy + top + height * 0.12
+            sc = push
+            cursor = (cx, cy, Pose(scale=sc, dx=(sc - 1) * (cx - gcx), dy=(sc - 1) * (cy - gcy)))
+        key = (round(a, 3), push, round(mark, 3), tuple(ps.key() for ps in poses),
+               cursor and (round(cursor[0], 1), round(cursor[1], 1)))
         if key not in cache:
             canvas = Image.new("RGBA", (w, hgt), (0, 0, 0, 0))
             if scrim is not None:
@@ -217,6 +263,8 @@ def _moving_frames(h, config, resolution, out_dir: Path, fps, first, last, exits
                                                     reveal="ink", amount=mark))
             for (sprite, x, y), pose in zip(lines, poses):
                 draw(canvas, sprite, x, y, pose)
+            if cursor:
+                draw(canvas, caret, cursor[0], cursor[1], cursor[2])
             cache[key] = str(out_dir / f"{fn:06d}.png")
             writer.save(canvas, cache[key])
         frames.append(CaptionFrame(frame_number=fn, image_path=cache[key]))
@@ -227,7 +275,9 @@ def _moving_frames(h, config, resolution, out_dir: Path, fps, first, last, exits
 def _line_sprites(h: HeadingSpec, config: HeadingsConfig, resolution: tuple[int, int]):
     """Each title line and the subtitle as (sprite with its shadow, x, y) at output size,
     placed exactly where _render_heading_png draws them — and, parallel to them, each line's
-    accent marker as (sprite, x, y), or (None, 0, 0) when it has none."""
+    accent marker as (sprite, x, y), or (None, 0, 0) when it has none, and each title line's
+    glyphs as (plain text, x where each character ends, text top, text height, text start), all
+    in its sprite's pixels (None for the subtitle)."""
     w, hgt = resolution
     probe = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
     max_w = w * _SS * (1 - 2 * config.margin_pct / 100)
@@ -242,9 +292,9 @@ def _line_sprites(h: HeadingSpec, config: HeadingsConfig, resolution: tuple[int,
         sub_font = _load_font(config.subtitle_font, config.subtitle_size, ("Italic", "Medium Italic", "Regular"))
         rows.append((h.subtitle, sub_font, config.subtitle_color, y + int(18 * _SS)))
 
-    out, marks = [], []
+    out, marks, glyphs = [], [], []
     accent = False  # an accent can carry over a line break
-    for text, font, fill, top in rows:
+    for r, (text, font, fill, top) in enumerate(rows):
         txt = Image.new("RGBA", (w * _SS, hgt * _SS), (0, 0, 0, 0))
         rects: list = []
         accent = _draw_centered(ImageDraw.Draw(txt), txt.width, [text], font, fill, top,
@@ -260,7 +310,27 @@ def _line_sprites(h: HeadingSpec, config: HeadingsConfig, resolution: tuple[int,
         marker = _marks(rects, config, w, hgt) if rects else None
         mbox = marker.getbbox() if marker else None
         marks.append((marker.crop(mbox), mbox[0], mbox[1]) if mbox else (None, 0, 0))
-    return out, marks
+        if r >= len(title_lines):
+            glyphs.append(None)
+            continue
+        plain = plain_title(text)
+        bbox = probe.textbbox((0, 0), plain, font=font)
+        x0 = (w * _SS - (bbox[2] - bbox[0])) / 2 - bbox[0]
+        ends = [(x0 + probe.textlength(plain[:k], font=font)) / _SS - box[0] for k in range(1, len(plain) + 1)]
+        glyphs.append((plain, ends, top / _SS - box[1], ascent / _SS, x0 / _SS - box[0]))
+    return out, marks, glyphs
+
+
+def _row_times(glyphs: list, typed: list[tuple[str, float]]) -> list[list[float]]:
+    """Each title row's character times, taken in order from the whole title's typing. A row
+    the title wrapped onto skips the space it broke at."""
+    rows, k = [], 0
+    for text, *_ in glyphs:
+        rows.append([tt for _, tt in typed[k:k + len(text)]])
+        k += len(text)
+        if k < len(typed) and typed[k][0] == " ":
+            k += 1
+    return rows
 
 
 # ---------------------------------------------------------------------------

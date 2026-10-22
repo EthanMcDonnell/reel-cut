@@ -24,6 +24,8 @@
 - {name: notification-ding, query: notification ding, use: a notification or message}
 - {name: ping, query: notification ping, use: chat or app ping}
 - {name: keyboard-typing, query: keyboard typing, use: coding; writing}
+- {name: typing-key, query: keyboard key press, use: one keystroke; the typed title's letters, max_s: 0.4}
+- {name: typewriter-key, query: typewriter key, use: one typewriter keystroke; a typed title, max_s: 0.5}
 - {name: correct-ding, query: correct answer, use: right answer; it works}
 - {name: wrong-buzzer, query: wrong answer buzzer, use: wrong; it fails}
 - {name: cash-register, query: cash register, use: money; a price}

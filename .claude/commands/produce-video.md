@@ -233,7 +233,7 @@ Field reference:
 - `start`/`end` — **output-timeline seconds** from `hook_windows` (Step 3c), not source-clip time
 - `scrim` — `true` darkens footage behind the text; omit to use the config default
 - `style` — the series' `**Style kit:**` from its `## Title Card` section (a `headings.styles` name in `config.yaml`); the same on every entry. Cards in the video take its font and accent too
-- `motion` — the title's entrance: `slot`, `ink`, `stamp` or `split`. Give each hook a different one where the style allows (the `motion` skill says which suit which style); a mirror inherits its hook's
+- `motion` — the title's entrance: `slot`, `ink`, `stamp`, `split` or `type`. Give each hook a different one where the style allows (the `motion` skill says which suit which style); a mirror inherits its hook's
 - `caption` — the pretty post text (emoji + lowercase), used verbatim in the Telegram/Instagram post
 - `filename` — filesystem-safe stem for the `.mp4`: lowercase, hyphen-separated, no emoji, no swear words (even when the title card has one). Leave empty and it's derived from `caption`; if nothing usable survives, the file is named after `id`
 

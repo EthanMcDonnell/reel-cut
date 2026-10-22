@@ -173,6 +173,7 @@ sfx:                                # automatic sounds on the events below, plus
     heading_slot: {sounds: [whoosh-1], gain_db: 10}
     heading_split: {sounds: [swipe-1], gain_db: 12}
     heading_ink: {sounds: [pen-writing-1], gain_db: 4}
+    heading_type: {sounds: [click-1, click-2, click-3], gain_db: 6, rapid: true}  # one per typed letter
     beat: {sounds: [tick-1, tick-2, tick-3, tick-4], gain_db: -6}  # animated-card beats, rising
 
 captions:
@@ -303,7 +304,7 @@ motion:
   # transition: stack            # overlay → overlay: cut swap push stack dissolve
   # tilt: 1.5                    # resting angle (degrees) of inset overlays, alternating sign
   # captions: pop                # none | pop (each line springs in) | words (each word springs in as said)
-  # heading: slot                # none | slot | ink | stamp | split — the title card's entrance/exit; the render then
+  # heading: slot                # none | slot | ink | stamp | split | type — the title card's entrance/exit; the render then
                                  # writes <name>.cover.jpg from after it settles, used as the reel cover
   # zoom: {scale: 1.05, in: 2, hold: [2, 3], out: 2, every: [3, 5], eyes: [0.5, 0.4]}
                                  # slow camera zooms on the footage, anchored on the eyes (fractions of the

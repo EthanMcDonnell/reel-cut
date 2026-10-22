@@ -1199,9 +1199,10 @@ def _phase2(cfg, doc, outputs: list[tuple[Path, bool]], verbose: bool,
         # A moving title isn't on the first frame, which Instagram would take as the cover,
         # so write one from the moment the first title has settled: <name>.cover.jpg.
         titled = [hs for hs in heading_specs if hs.title]
-        if motion.heading != "none" and titled:
+        entrance = titled[0].motion or motion.heading if titled else "none"
+        if entrance != "none":
             from .heading import settled_s
-            at = titled[0].start + settled_s(motion.spring)
+            at = titled[0].start + settled_s(motion.spring, entrance, titled[0].title)
             for p in written:
                 cover = Path(p).with_suffix(".cover.jpg")
                 subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-ss", f"{at:.3f}", "-i", str(p),
@@ -1212,9 +1213,10 @@ def _phase2(cfg, doc, outputs: list[tuple[Path, bool]], verbose: bool,
 
 def _heading_sounds(headings: list, motion, sfx_cfg) -> list[tuple[str, float]]:
     """Each title card's sound event: `heading_<entrance>` when sfx.events has one, else
-    `heading`, at the moment the title lands. The card's first frame stays a moment a placed
+    `heading`, at the moment the title lands — or, for a typed title with `heading_type` set,
+    one keystroke per letter as it appears. The card's first frame stays a moment a placed
     sound may sit on (`heading_start`, which plays nothing by itself)."""
-    from .heading import landing_s, plain_title
+    from .heading import landing_s, type_times
 
     out = []
     for h in headings:
@@ -1224,8 +1226,11 @@ def _heading_sounds(headings: list, motion, sfx_cfg) -> list[tuple[str, float]]:
         kind = f"heading_{entrance}"
         if not (kind in sfx_cfg.events and sfx_cfg.events[kind].sounds):
             kind = "heading"
-        lines = plain_title(h.title).count("\n") + 1
-        out += [(kind, h.start + landing_s(entrance, motion.spring, lines)), ("heading_start", h.start)]
+        if kind == "heading_type":
+            out += [(kind, h.start + t) for ch, t in type_times(h.title) if ch != " "]
+        else:
+            out.append((kind, h.start + landing_s(entrance, motion.spring, h.title)))
+        out.append(("heading_start", h.start))
     return out
 
 

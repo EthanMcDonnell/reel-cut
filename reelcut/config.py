@@ -364,6 +364,8 @@ class SfxEvent(BaseModel):
     sounds: list[str] = Field(default_factory=list)  # names (file stems) in assets/sfx/. Several
                               # rotate per occurrence; for card beats the Nth beat plays the Nth.
     gain_db: float = 0.0      # trim on top of sfx.level_db
+    rapid: bool = False       # play every occurrence, however close (keystrokes), and never
+                              # hold back the next sound for sfx.min_gap_s
 
 
 class SfxConfig(BaseModel):

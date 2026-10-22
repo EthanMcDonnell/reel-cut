@@ -34,7 +34,7 @@ EXITS = {"snap": "snap", "fade": "fade", "lift": "drop", "sink": "rise", "shrink
 HOLDS = ("still", "drift", "push")
 TRANSITIONS = ("cut", "swap", "push", "stack", "dissolve")
 CAPTIONS = ("none", "pop", "words")
-HEADINGS = ("none", "slot", "ink", "stamp", "split")
+HEADINGS = ("none", "slot", "ink", "stamp", "split", "type")
 
 # Camera zooms on the footage: ease in to `scale` over `in` seconds, hold a random `hold`,
 # ease back out over `out`, then rest a random `every` before the next. `eyes` is the point

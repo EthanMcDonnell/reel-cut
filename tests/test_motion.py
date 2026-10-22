@@ -168,7 +168,7 @@ class TestHeadingMotion:
                                        HeadingsConfig(scrim=False), tmp_path / f"s{bool(sub)}", 30,
                                        (216, 384), total_output_s=10, motion="slot")
             at = lambda t: ImageStat.Stat(Image.open(fr[int(t * 30)].image_path).getchannel("A")).sum[0]
-            return at(landing_s("slot", "snappy", 1)), at(2.0)
+            return at(landing_s("slot", "snappy", lines=1)), at(2.0)
         (title_landed, title_held), (both_landed, both_held) = ink(""), ink("Series #1")
         assert both_landed == pytest.approx(title_landed, rel=0.02)   # subtitle not in yet
         assert both_held > title_held * 1.05                           # ...and in by 2s
@@ -183,9 +183,35 @@ class TestHeadingMotion:
         heads = [HeadingSpec(title="A\nB", start=1.0, end=3.0),
                  HeadingSpec(title="C", start=5.0, end=7.0, motion="stamp")]
         events = dict(_heading_sounds(heads[:1], m, sfx))
-        assert events["heading_slot"] == pytest.approx(1.0 + landing_s("slot", "snappy", 2))
+        assert events["heading_slot"] == pytest.approx(1.0 + landing_s("slot", "snappy", "A\nB"))
         assert dict(_heading_sounds(heads[1:], m, sfx))["heading"] > 5.0  # no stamp sound set: falls back
-        assert landing_s("stamp", "snappy", 2) < landing_s("slot", "snappy", 2)
+        assert landing_s("stamp", "snappy", "A\nB") < landing_s("slot", "snappy", "A\nB")
+
+    def test_typed_title_shows_only_what_has_been_typed(self, tmp_path):
+        from PIL import ImageStat
+        from reelcut.heading import type_times
+        moving = self._render(tmp_path, 0.0, "type")
+        still = self._render(tmp_path, 0.0, "none")
+        half = type_times("Hello There")[5][1]  # "Hello" typed, " There" not yet
+        ink = lambda p: ImageStat.Stat(Image.open(p).getchannel("A")).sum[0]
+        assert 0.2 < ink(moving[int(half * 30)]) / ink(still[int(half * 30)]) < 0.8
+
+    def test_every_typed_letter_gets_a_keystroke(self):
+        from reelcut.cli import _heading_sounds
+        from reelcut.config import SfxConfig
+        from reelcut.sfx import plan_sfx, sfx_events
+        sfx = SfxConfig(events={"heading_type": {"sounds": ["key"], "rapid": True}})
+        events = _heading_sounds([HeadingSpec(title="Hi you", start=0, end=3, motion="type")],
+                                 resolve({}), sfx)
+        assert [k for k, _ in events].count("heading_type") == 5  # no key for the space
+        import reelcut.sfx as sfxmod
+        orig = sfxmod.analyze
+        sfxmod.analyze = lambda p: (0.0, -6.0, 0.1)
+        try:
+            tracks = plan_sfx(sfx_events([], events), sfx, {"key": Path("key.wav")}, 10.0, [])
+        finally:
+            sfxmod.analyze = orig
+        assert len(tracks) == 5  # none dropped for being close together
 
     def test_later_card_enters(self, tmp_path):
         moving = self._render(tmp_path, 1.0, "slot")

@@ -101,7 +101,8 @@ def plan_sfx(
     placed = [p for p in placed if any(abs(p[1] - m) <= tol_s for m in moments)]
     items += [(t, -1, "placed", 0, name, gain) for name, t, gain in placed if t < total_s]
     for t, _, kind, idx, name, gain_db in sorted(items, key=lambda e: e[:2]):
-        if t - last < config.min_gap_s:
+        rapid = kind != "placed" and config.events[kind].rapid
+        if t - last < config.min_gap_s and not rapid:
             continue
         if kind != "placed":
             ev = config.events[kind]
@@ -127,7 +128,8 @@ def plan_sfx(
             "level_db": config.level_db,
         })
         counts[kind] += 1
-        last = t
+        if not rapid:  # a burst of keystrokes never crowds out the next sound
+            last = t
     for name in sorted(missing):
         warnings.append(f"Unknown sound effect: '{name}' (no such file in assets/sfx/)")
     return tracks
