@@ -47,12 +47,13 @@ Use a pattern only if it fits the topic and the content of the video. Don't forc
 
 ## Hook Quality Test
 
-Before finalizing, run these four checks:
+Before finalizing, run these five checks:
 
 1. **Scroll test** — Would someone scrolling fast pause here? (If it sounds like a blog post title, the answer is no.)
 2. **HOW test** — Does the hook withhold something the viewer now needs to know?
 3. **Promise test** — Does the video actually deliver what the hook implies?
 4. **Statement test** — Could this sentence sit unchanged inside the source article without anyone noticing? Then it's a fact, not a hook. Rewrite until it couldn't.
+5. **Reason test** — Name the viewer's reason to keep watching: money, time or safety at stake for them, being misled, a mystery they've hit themselves, or something they'll use. Curiosity about a fact alone is not a reason. Across a set, at least one hook leads with the stakes.
 
 If any check fails, rewrite. Where a series file sets its own bar for one of these, that bar replaces the check — a series whose hooks are required to state the claim outright is not failing the HOW test, it is running a different one.
 
