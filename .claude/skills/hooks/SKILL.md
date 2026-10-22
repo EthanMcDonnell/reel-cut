@@ -27,12 +27,13 @@ A surprising fact stops the scroll. An unresolved implication or personal threat
 4. **Promise exactly what you deliver.** The video must give the viewer what the hook implied — no bait-and-switch.
 5. **Cut every unnecessary word.** Shorter = more confident = more scroll-stopping.
 6. **Trigger one emotion or open one loop.** Curiosity, threat, awe, identity challenge. If a hook does none of these, rewrite it.
-7. **Lead with the most compelling raw element.** Before writing, identify the strongest hook element in the topic: a name, a number, a stat, a reversal. Make sure it survives into the final hook. Do not abstract it away.
+7. **Lead with the most compelling raw element.** Before writing, identify the strongest hook element in the topic: a name, a number, a stat, a reversal, a belief the viewer holds that the video overturns, or something they've seen themselves and never questioned. Make sure it survives into the final hook. Do not abstract it away.
 8. **Make the threat personal when it applies to the viewer.** "Your data" beats a statistic about companies. Use "you/your" when the viewer is the one at risk.
 9. **Make bold declarative claims when the facts support it.** "X just killed Y" beats "X may be changing Y." If the claim is true, say it directly. Keep it short.
 10. **Compression shortens the sentence, never the claim.** Rule 5 cuts unnecessary words; a word carrying the claim's scope is not one of them. If the source credits a whole system, the hook may not credit one feature of it. If the behaviour only happens under overload, the hook may not imply always. Counts are scope too: if the source says N objects, the hook may not say one. Restore the scope with the two or three words that do it ("one of the reasons", "under load", "among other things") and cut elsewhere, or pick an angle that's true at hook length. A hook that only lands because the scope is wrong is not tight, it's inaccurate, and rule 4 is what it breaks.
     - **Watch for the compression that lands on the design the source rejected.** This is the worst version of the failure, because the wrong hook sounds *more* striking than the right one. If a post explains how a sliding window gets chunked into many objects, "one file" isn't a rounding error — it's the naive approach the engineering exists to avoid. Before shipping a compressed claim, ask what the source ruled out, and check you haven't just described it.
 11. **A fact is not a hook, and neither is a big number on its own.** "Company X handles N sessions with Y" is information: the name and the number only qualify the viewer, they don't stop the scroll. The number needs something riding on it — an absurd action ("by downloading a file"), a reversal ("and the fix was the opposite"), a cost ("and it took down their own database"), or the viewer's own stake ("when *you* log out"). State the tension, not the spec.
+12. **Write for the ear.** The hook is heard once, at speed. A contrast between words that sound alike (megabits and megabytes) or one that only shows in spelling blurs when spoken, so carry it with words that sound different or leave it to the on-screen text.
 
 ## Where Patterns Come From
 
@@ -53,7 +54,7 @@ Before finalizing, run these five checks:
 2. **HOW test** — Does the hook withhold something the viewer now needs to know?
 3. **Promise test** — Does the video actually deliver what the hook implies?
 4. **Statement test** — Could this sentence sit unchanged inside the source article without anyone noticing? Then it's a fact, not a hook. Rewrite until it couldn't.
-5. **Reason test** — Name the viewer's reason to keep watching: money, time or safety at stake for them, being misled, a mystery they've hit themselves, or something they'll use. Curiosity about a fact alone is not a reason. Across a set, at least one hook leads with the stakes.
+5. **Reason test** — Name the viewer's reason to keep watching: money, time or safety at stake for them, being misled, a belief of theirs that's wrong, a mystery they've hit themselves, or something they'll use. Curiosity about a fact alone is not a reason. Across a set, at least one hook leads with the stakes.
 
 If any check fails, rewrite. Where a series file sets its own bar for one of these, that bar replaces the check — a series whose hooks are required to state the claim outright is not failing the HOW test, it is running a different one.
 
