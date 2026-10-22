@@ -21,8 +21,9 @@ from pathlib import Path
 BODY_SECTIONS = {"**SCRIPT**", "**CONCLUSION**"}
 
 # A sentence boundary: terminal punctuation, then whitespace. The lookbehind
-# keeps initialisms ("U.S. government") from being cut after the final letter.
-SENTENCE_END = re.compile(r"(?<=[.!?])(?<!\b[A-Z]\.)\s+")
+# keeps initialisms ("U.S. government") from being cut after the final letter,
+# while a lone capital still ends a sentence ("with a capital B. A bit is").
+SENTENCE_END = re.compile(r"(?<=[.!?])(?<![A-Z]\.[A-Z]\.)\s+")
 
 
 def format_script(text: str) -> str:
