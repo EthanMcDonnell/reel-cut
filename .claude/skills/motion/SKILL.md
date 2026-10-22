@@ -82,17 +82,15 @@ Exits: `lift` (up and out), `sink`, `shrink`, `wipe`, `slot`, `iris`, `shutter`,
 
 ## Title cards
 
-Each videos.json entry's `"motion"` is its title's entrance; vary it between hooks. What suits each style:
+Each videos.json entry's `"motion"` is its title's entrance. Follow the series file's `**Titles:**` line under `## Motion`, and vary the entrance between hooks where it allows:
 
-| style | entrances |
-|---|---|
-| `classic` | `slot`, `ink` |
-| `casual` | `slot`, `split`, `type` (its accent marker sweeps in after the lines land) |
-| `bold` | `stamp`, `split` |
-| `mono` | `type`, `split`, `ink` |
-| `soft` | `ink`, `slot` |
+- `slot` raises each line out of its slot.
+- `ink` writes it on, left to right.
+- `stamp` lands the whole title at once — a verdict.
+- `split` brings the lines in from both sides — a contrast.
+- `type` types it a letter at a time behind a cursor, a keystroke per letter — a command, a search, something being written.
 
-`stamp` lands the whole title at once (a verdict); `split` brings lines in from both sides (a contrast); `slot` raises each line out of its slot; `ink` writes it on; `type` types it a letter at a time behind a cursor, with a keystroke per letter (a command, a search, something being written). Each has its own landing sound.
+Each has its own landing sound.
 
 ## 3. Place the camera zooms
 
