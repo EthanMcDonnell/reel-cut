@@ -81,3 +81,4 @@ State what still needs a source when the usual article isn't there.
 ## Motion
 *(Optional — omit it and the house look in `config.yaml` applies.)*
 **Look:** the `motion` skill look this series starts from (`editorial`, `punchy`, `calm`), and any standing direction — e.g. "captions spring in word by word", "no tilt". Per-video direction given to `/produce-video` overrides it.
+**Zooms:** which lines the camera zooms on — the moments that land for this series (the take, the result, the fault line). Omit to let Claude choose.
