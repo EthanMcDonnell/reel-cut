@@ -19,6 +19,7 @@ class ImageCue:
     clip_start: float = 0.0  # type=video only: seconds into the video file
     beats: list[float] = field(default_factory=list)  # animated card: output-timeline beat times
     layout: str = ""  # images.json layout: "" / "top" | "lower" | "full" (cards only)
+    motion: dict = field(default_factory=dict)  # images.json entry's motion overrides
 
 
 def detect_image_cues(

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import re
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal
@@ -10,6 +11,7 @@ from typing import Literal
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 from .config import CaptionsConfig
+from .motion import STILL, Pose, clamp, draw, spring
 from .transcriber import WordTimestamp, is_sentence_boundary, SENTENCE_PAUSE_S
 
 CaptionStyle = Literal["word_highlight", "full_line", "none"]
@@ -34,6 +36,24 @@ class CaptionFrame:
     image_path: str
 
 
+class FrameWriter:
+    """Writes frame PNGs on worker threads — Pillow releases the GIL while encoding, so this
+    is several times faster than saving inline. `wait()` returns once every write is done,
+    re-raising the first that failed. A saved image must not be changed afterwards."""
+
+    def __init__(self, workers: int = 8):
+        self._pool = ThreadPoolExecutor(max_workers=workers)
+        self._futures = []
+
+    def save(self, img: Image.Image, path: str | Path) -> None:
+        self._futures.append(self._pool.submit(img.save, str(path), format="PNG"))
+
+    def wait(self) -> None:
+        self._pool.shutdown(wait=True)
+        for f in self._futures:
+            f.result()
+
+
 def render_caption_frames(
     words: list[WordTimestamp],
     config: CaptionsConfig,
@@ -42,11 +62,16 @@ def render_caption_frames(
     resolution: tuple[int, int] = (1080, 1920),
     sentence_pause_s: float = SENTENCE_PAUSE_S,
     lifts: list[tuple[float, float, int]] = (),
+    motion: str = "none",
+    spring_name: str = "snappy",
 ) -> list[CaptionFrame]:
     """Generate per-frame PNG caption overlays.
 
     `lifts` are (start, end, bottom_px) output-timeline windows where the caption block sits
     with its bottom at bottom_px instead of at config.position (above a lower-band overlay).
+
+    `motion` (reelcut.motion CAPTIONS): "pop" springs each new line in, "words" springs each
+    word in as it is spoken. Either way a highlighted word grows into its highlight size.
 
     Returns a list of CaptionFrame(frame_number, image_path).
     Frames with no caption are not written (callers treat missing frames as blank).
@@ -76,6 +101,7 @@ def render_caption_frames(
 
     prev_key: tuple | None = None
     prev_path: str | None = None
+    writer = FrameWriter()
 
     for frame_num, cache_entry in frame_cache.items():
         if cache_entry is None:
@@ -84,7 +110,9 @@ def render_caption_frames(
         line_words, active_idx = cache_entry
         t = frame_num / fps
         y_bottom = next((b for s, e, b in lifts if s <= t < e), None)
-        cache_key = (tuple(w.word for w in line_words), active_idx, y_bottom)
+        poses = _token_poses(line_words, active_idx, t, config, motion, spring_name, h)
+        cache_key = (tuple(w.word for w in line_words), active_idx, y_bottom,
+                     poses and (poses[0].key(), tuple(p.key() for p in poses[1])))
 
         # Reuse previous frame image if nothing changed
         if cache_key == prev_key and prev_path:
@@ -100,14 +128,16 @@ def render_caption_frames(
             canvas_size=(w, h),
             y_pos=y_pos,
             y_bottom=y_bottom,
+            poses=poses,
         )
 
         path = str(output_dir / f"caption_{frame_num:06d}.png")
-        img.save(path, format="PNG")
+        writer.save(img, path)
         frames.append(CaptionFrame(frame_number=frame_num, image_path=path))
         prev_key = cache_key
         prev_path = path
 
+    writer.wait()
     return frames
 
 
@@ -136,6 +166,47 @@ def _build_display_tokens(
     return tokens
 
 
+def _token_poses(
+    line_words: list[WordTimestamp],
+    active_idx: int | None,
+    t: float,
+    config: CaptionsConfig,
+    motion: str,
+    spring_name: str,
+    canvas_h: int,
+) -> tuple[Pose, list[Pose]] | None:
+    """(the whole line's pose, each display token's pose) at `t`, or None once everything has
+    settled — the frame then draws exactly as a still one."""
+    if motion == "none":
+        return None
+    starts: list[float] = []
+    for w in line_words:  # same merge as _build_display_tokens
+        if starts and w.word.startswith(("-", "'", "’")):
+            continue
+        starts.append(w.start)
+    tokens = _build_display_tokens(line_words, active_idx if config.style == "word_highlight" else None)
+    poses = []
+    for start, (_, is_active) in zip(starts, tokens):
+        pose = STILL
+        if motion == "words":
+            if t < start:
+                pose = Pose(alpha=0.0)
+            else:
+                q = spring(t - start, spring_name)
+                pose = Pose(scale=0.7 + 0.3 * q, dy=(1 - q) * 0.008 * canvas_h, alpha=clamp(q * 3))
+        if is_active:
+            word_start = line_words[active_idx].start
+            pose = pose + Pose(scale=1 / 1.1 + (1 - 1 / 1.1) * spring(t - word_start, spring_name))
+        poses.append(pose)
+    block = STILL
+    if motion == "pop":
+        p = spring(t - line_words[0].start, spring_name)
+        block = Pose(scale=0.9 + 0.1 * p, dy=(1 - p) * 0.008 * canvas_h, alpha=clamp(p * 2.5))
+    if all(ps.key() == STILL.key() for ps in [block, *poses]):
+        return None
+    return block, poses
+
+
 def _render_frame(
     line_words: list[WordTimestamp],
     active_idx: int | None,
@@ -145,9 +216,11 @@ def _render_frame(
     canvas_size: tuple[int, int],
     y_pos: int,
     y_bottom: int | None = None,
+    poses: tuple[Pose, list[Pose]] | None = None,
 ) -> Image.Image:
     """Render a single transparent caption frame: soft blurred shadow, then crisp
-    stroked text on top (the active word highlighted when style is word_highlight)."""
+    stroked text on top (the active word highlighted when style is word_highlight).
+    `poses` (see _token_poses) draws the tokens mid-animation."""
     w, h = canvas_size
     img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
@@ -158,6 +231,8 @@ def _render_frame(
     placed = _layout_tokens(draw, tokens, font, font_highlight, config, w, y_pos, margin, y_bottom)
 
     stroke_width = config.stroke_width if config.stroke else 0
+    if poses is not None:
+        return _render_posed(img, placed, *poses, config, stroke_width)
 
     # Soft drop shadow: render the (outlined) text silhouette to a mask, blur it,
     # tint it, and composite under the crisp text — far less "basic" than a hard offset.
@@ -178,8 +253,57 @@ def _render_frame(
     return img
 
 
+_SPRITES: dict[tuple, Image.Image] = {}  # a drawn token, reused across frames
+
+
+def _render_posed(img, placed, block: Pose, poses: list[Pose], config: CaptionsConfig,
+                  stroke_width: int) -> Image.Image:
+    """Draw each token as a sprite in its pose, inside the line's `block` pose — scaled about
+    the line's centre, so the line grows as one piece."""
+    boxes = []
+    for text, _is_active, x, ty, f in placed:
+        l, t, r, b = f.getbbox(text, stroke_width=stroke_width)
+        boxes.append((x + l, ty + t, r - l, b - t, l, t))
+    bx0 = min(b[0] for b in boxes)
+    bx1 = max(b[0] + b[2] for b in boxes)
+    by0 = min(b[1] for b in boxes)
+    by1 = max(b[1] + b[3] for b in boxes)
+    bcx, bcy = (bx0 + bx1) / 2, (by0 + by1) / 2
+
+    layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    for (text, is_active, _x, _ty, f), (sx, sy, sw, sh, l, t), pose in zip(placed, boxes, poses):
+        if pose.alpha <= 0 or sw <= 0 or sh <= 0:
+            continue
+        fill = config.highlight_color if is_active else config.color
+        key = (text, getattr(f, "path", None), getattr(f, "size", None), fill, stroke_width,
+               config.stroke_color)
+        sprite = _SPRITES.get(key)
+        if sprite is None:
+            sprite = Image.new("RGBA", (sw, sh), (0, 0, 0, 0))
+            kw = dict(stroke_width=stroke_width, stroke_fill=config.stroke_color) if stroke_width else {}
+            ImageDraw.Draw(sprite).text((-l, -t), text, font=f, fill=fill, **kw)
+            if len(_SPRITES) > 512:
+                _SPRITES.clear()
+            _SPRITES[key] = sprite
+        cx, cy = sx + sw / 2, sy + sh / 2
+        shift = Pose(dx=(block.scale - 1) * (cx - bcx), dy=(block.scale - 1) * (cy - bcy))
+        draw(layer, sprite, sx, sy, block + shift + pose)
+    if config.shadow:
+        img.alpha_composite(_soft_shadow(layer.getchannel("A"), config))
+    img.alpha_composite(layer)
+    return img
+
+
 def _soft_shadow(mask: Image.Image, config: CaptionsConfig) -> Image.Image:
-    """Blurred, tinted, semi-transparent copy of the text mask, offset downward."""
+    """Blurred, tinted, semi-transparent copy of the text mask, offset downward. Only the
+    text's region (plus the blur's reach) is blurred — the rest of the frame stays clear."""
+    out = Image.new("RGBA", mask.size, (0, 0, 0, 0))
+    box = mask.getbbox()
+    if box is None:
+        return out
+    pad = 4 * config.shadow_blur + 4
+    left, top = max(0, box[0] - pad), max(0, box[1] - pad)
+    mask = mask.crop((left, top, min(mask.width, box[2] + pad), min(mask.height, box[3] + pad)))
     rgb = _hex_to_rgb(config.shadow_color)
     base = Image.new("RGBA", mask.size, (0, 0, 0, 0))
     base.paste(rgb + (255,), (0, 0), mask)
@@ -187,8 +311,7 @@ def _soft_shadow(mask: Image.Image, config: CaptionsConfig) -> Image.Image:
     r, g, b, a = base.split()
     a = a.point(lambda v: int(v * config.shadow_opacity))
     shadow = Image.merge("RGBA", (r, g, b, a))
-    out = Image.new("RGBA", mask.size, (0, 0, 0, 0))
-    out.alpha_composite(shadow, (0, config.shadow_offset))
+    out.alpha_composite(shadow, (left, top + config.shadow_offset))
     return out
 
 

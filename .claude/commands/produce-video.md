@@ -1,14 +1,14 @@
 ---
 name: produce-video
 description: Assign screenshot and person image timings to images.json, then render one video per hook via reelcut.
-argument-hint: "<video-slug>"
+argument-hint: "<video-slug> [motion direction]"
 ---
 
 Populates image overlays in images.json and renders one video per hook (each hook + the shared body).
 
 **Paths:** `{TOKEN}` references below are machine-specific absolute paths/endpoints defined in [glossary.md](glossary.md) — resolve each to its value before running. Repo-relative paths (`assets/…`, `output/…`, `config.yaml`, `tests/…`) are written inline as-is.
 
-Arguments: `$ARGUMENTS` — expected format: `<video-slug>`
+Arguments: `$ARGUMENTS` — expected format: `<video-slug>`, optionally followed by free-text motion direction (e.g. `make it feel frantic`) for Step 4d.
 
 Available slugs in `assets/`: !`ls -1 assets/ | grep -vE '^audio$|\.json$'`
 
@@ -106,7 +106,7 @@ A card is a visual you design for a line no source can show: how something works
 - Span the line or lines it explains: `start` = the first anchor word's `start`, `end` = the last word's `end`, holding until the next overlay.
 - Add `{ "type": "card", "start": ..., "end": ..., "source_clip": "...", "name": "", "path": "{PROJECT_ROOT}/assets/<video-slug>/cards/<name>.html" }`. The PNG beside it is re-rendered whenever the fragment changes.
 - **Full screen only when it fills the slide.** A card that builds a flow of 3+ steps, or 3+ points or rows, is too tall to read inset. Add `"layout": "full"` and it becomes a solid slide covering the frame, its content centred above the captions. Preview it with `reelcut card --full`: if the content sits small in an empty frame (a two-line comparison, a single point), keep it inset. Keep it out of the hook's title window, since the title draws over it.
-- **Build it as it's said.** When the parts of a card are spoken one after another (points, flow steps, the second side of a comparison), mark each with `data-beat="1"`, `"2"`… and add `"beats": [...]` to the entry: the `start` of the word each part lands on, in order. Unmarked elements show with the card. A flow step's arrow draws in as the step enters. To walk the viewer through parts already on screen, mark them `data-hot="1"`, `"2"`… instead: each lights up on its beat and dims when the next lights (both attributes can share an element and its beat). A whole number written as `<span class="count">193</span>` counts up when its marked parent enters; units go outside the span. For a different entrance, give the marked elements your own `@keyframes` with `animation-delay: var(--at)`, animating opacity and transform only. A card said in one breath stays still.
+- **Build it as it's said.** When the parts of a card are spoken one after another (points, flow steps, the second side of a comparison), mark each with `data-beat="1"`, `"2"`… and add `"beats": [...]` to the entry: the `start` of the word each part lands on, in order. Unmarked elements show with the card. A flow step's arrow draws in as the step enters. To walk the viewer through parts already on screen, mark them `data-hot="1"`, `"2"`… instead: each lights up on its beat and dims when the next lights (both attributes can share an element and its beat). A whole number written as `<span class="count">193</span>` counts up when its marked parent enters; units go outside the span. For a different entrance, give the marked elements your own `@keyframes` with `animation-delay: var(--at)`, animating opacity and transform only. A card said in one breath stays still. The `motion` skill lists the further moves a card can make (per-beat entrances, staggered lists, marker, strike-through, rings, SVG strokes that draw themselves).
 
 ## Step 3d — Assign figure timings (from figures.json)
 
@@ -187,6 +187,10 @@ Overlays play no sound of their own; the title card's thud and animated-card bea
 - Meme stings (vine boom, bruh, sad trombone…) are for comedic or opinion takes, not explainers.
 - Place one where the change earns it — a reveal, a full-screen card entering, a jump between sections — not on every overlay. A few per video at most; `[]` is fine. Don't repeat a file back to back.
 - List each placed sound with what it lands on in the report.
+
+## Step 4d — Motion (motion.json)
+
+Invoke the `motion` skill and direct how this video moves: its look in `assets/<video-slug>/motion.json`, and `"motion"` overrides on the `images.json` entries whose moment earns one. Give it any direction from `$ARGUMENTS` (it wins) and the series file's `## Motion` section if there is one. Be creative inside the skill's vocabulary, preview each override, and list the look and overrides in the report.
 
 ## Step 4b — videos.json (one entry per rendered video)
 

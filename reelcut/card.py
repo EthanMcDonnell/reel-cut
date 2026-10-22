@@ -13,7 +13,10 @@ stylesheet is newer, so images.json can point at the .html and always show its c
 An animated card renders to `<name>.<key>.webm` (VP9 with alpha). Elements marked
 `data-beat="N"` enter at the Nth offset, so a list or flow builds in time with the words;
 `data-hot="N"` lights an element at the Nth offset until the next one lights, and a `.count`
-number counts up.
+number counts up. Entrances run on the video's spring (reelcut.motion), injected as the CSS
+`--spring` easing and `--spring-s` duration. A fragment's own script can animate too: it
+defines `window.reelcutSeek(seconds)` and `window.reelcutDuration`, and reads its beat times
+from `window.reelcutBeats`.
 The card's CSS animations are paused and stepped frame by frame, so the capture is exact
 whatever the machine's speed. Capture stops once every animation has finished; the overlay
 holds the last frame for the rest of its window.
@@ -29,6 +32,8 @@ import tempfile
 from contextlib import contextmanager
 from pathlib import Path
 
+from .motion import css_vars
+
 _HERE = Path(__file__).parent
 _CSS = _HERE / "card.css"
 _FONTS = {  # @font-face family → (bundled file, weight range, style)
@@ -42,6 +47,7 @@ _FONTS = {  # @font-face family → (bundled file, weight range, style)
 # Returns the highest beat number used, so a fragment with more beats than times is caught.
 _JS_SET_BEATS = """offs => {
   document.querySelector('.card').classList.add('animated');
+  window.reelcutBeats = offs;
   let top = 0;
   const at = n => (offs[n - 1] ?? 0) + 's';
   document.querySelectorAll('[data-beat]').forEach(el => {
@@ -64,6 +70,13 @@ _JS_SET_BEATS = """offs => {
     el.textContent = '';
     el.classList.add('counting');
   });
+  // An SVG stroke marked .draw is measured as length 1, so CSS can draw it on with a dash.
+  document.querySelectorAll('svg .draw').forEach(el => el.setAttribute('pathLength', '1'));
+  // A .stagger's children enter one after another from the stagger's own entrance time.
+  document.querySelectorAll('.stagger').forEach(el => {
+    const base = parseFloat(getComputedStyle(el).getPropertyValue('--at')) || 0;
+    [...el.children].forEach((c, i) => c.style.setProperty('--at', (base + i * 0.09) + 's'));
+  });
   return top;
 }"""
 
@@ -72,7 +85,7 @@ _JS_SET_BEATS = """offs => {
 _JS_PAUSE = """() => {
   const anims = document.getAnimations();
   anims.forEach(a => a.pause());
-  const end = Math.max(0, ...anims.map(a => {
+  const end = Math.max((window.reelcutDuration || 0) * 1000, ...anims.map(a => {
     const t = a.effect.getComputedTiming().endTime;
     return Number.isFinite(t) ? t : 0;
   }));
@@ -80,10 +93,16 @@ _JS_PAUSE = """() => {
   return [{x: c.offsetLeft, y: c.offsetTop, width: c.offsetWidth, height: c.offsetHeight}, end / 1000];
 }"""
 
-_JS_SEEK = "ms => document.getAnimations().forEach(a => { a.currentTime = ms; })"
+_JS_SEEK = """ms => {
+  document.getAnimations().forEach(a => { a.currentTime = ms; });
+  if (window.reelcutSeek) window.reelcutSeek(ms / 1000);
+}"""
 
 # A still shows the card's finished state, even when its fragment carries its own animations.
-_JS_FINISH = "() => document.getAnimations().forEach(a => { try { a.finish(); } catch (e) {} })"
+_JS_FINISH = """() => {
+  document.getAnimations().forEach(a => { try { a.finish(); } catch (e) {} });
+  if (window.reelcutSeek) window.reelcutSeek(window.reelcutDuration || 0);
+}"""
 
 
 def card_png(html_path: Path, full: bool = False) -> Path:
@@ -113,24 +132,25 @@ def _png_path(html_path: Path, full: bool) -> Path:
     return html_path.with_suffix(".full.png" if full else ".png")
 
 
-def card_webm(html_path: Path, beats: list[float], fps: int, full: bool = False) -> tuple[Path, int]:
+def card_webm(html_path: Path, beats: list[float], fps: int, full: bool = False,
+              spring: str = "snappy") -> tuple[Path, int]:
     """The animated render of a card whose Nth `data-beat` enters `beats[N-1]` seconds in.
 
-    Named by a hash of the fragment, stylesheet, frame-rounded beats and fps, so each hook's
-    render reuses it and any edit renders a fresh one. Also returns the highest `data-beat`
-    in the fragment, for the caller to check against len(beats).
+    Named by a hash of the fragment, stylesheet, frame-rounded beats, fps and spring, so each
+    hook's render reuses it and any edit renders a fresh one. Also returns the highest
+    `data-beat` in the fragment, for the caller to check against len(beats).
     """
     html_path = Path(html_path)
     beats = [round(max(0.0, b) * fps) / fps for b in beats]
     key = hashlib.sha1(
-        json.dumps([html_path.read_text(), _CSS.read_text(), beats, fps]).encode()
+        json.dumps([html_path.read_text(), _CSS.read_text(), beats, fps, spring]).encode()
     ).hexdigest()[:10]
     webm = html_path.with_name(f"{html_path.stem}.{'full.' if full else ''}{key}.webm")
     meta = webm.with_suffix(".json")
     if webm.exists() and meta.exists():
         return webm, json.loads(meta.read_text())["top_beat"]
 
-    with _card_page(full) as load, tempfile.TemporaryDirectory() as frames:
+    with _card_page(full, spring) as load, tempfile.TemporaryDirectory() as frames:
         page = load(html_path)
         top_beat = page.evaluate(_JS_SET_BEATS, beats)
         box, end_s = page.evaluate(_JS_PAUSE)
@@ -147,8 +167,24 @@ def card_webm(html_path: Path, beats: list[float], fps: int, full: bool = False)
     return webm, top_beat
 
 
+def card_strip(webm: Path, out: Path, fps: int, n: int = 12) -> Path:
+    """A filmstrip of `n` frames spread over an animated card's render, to check it by eye."""
+    from PIL import Image
+
+    from .motion import contact_sheet
+
+    with tempfile.TemporaryDirectory() as tmp:
+        subprocess.run(["ffmpeg", "-loglevel", "error", "-c:v", "libvpx-vp9", "-i", str(webm),
+                        f"{tmp}/f%05d.png"], check=True)
+        files = sorted(Path(tmp).glob("f*.png"))
+        picks = sorted({round(i * (len(files) - 1) / max(1, n - 1)) for i in range(n)})
+        contact_sheet([(f"{i / fps:.2f}s", Image.open(files[i]))
+                       for i in picks], cols=4, cell_w=360).save(out)
+    return out
+
+
 @contextmanager
-def _card_page(full: bool = False):
+def _card_page(full: bool = False, spring: str = "snappy"):
     """A browser page and a `load(html_path)` that opens a fragment in it, fonts ready."""
     from playwright.sync_api import sync_playwright
 
@@ -158,7 +194,7 @@ def _card_page(full: bool = False):
         page_file = Path(tmp) / "card.html"
 
         def load(html_path: Path):
-            page_file.write_text(_page(html_path, full))
+            page_file.write_text(_page(html_path, full, spring))
             page.goto(page_file.as_uri())
             page.evaluate("document.fonts.ready")
             return page
@@ -169,7 +205,7 @@ def _card_page(full: bool = False):
             browser.close()
 
 
-def _page(html_path: Path, full: bool = False) -> str:
+def _page(html_path: Path, full: bool = False, spring: str = "snappy") -> str:
     """The full document for one fragment. `<base>` lets it reference images beside it."""
     faces = "".join(
         f'@font-face {{ font-family: "{family}"; font-weight: {weight}; font-style: {style}; '
@@ -179,7 +215,7 @@ def _page(html_path: Path, full: bool = False) -> str:
     return (
         "<!doctype html><html><head><meta charset='utf-8'>"
         f"<base href='{html_path.resolve().parent.as_uri()}/'>"
-        f"<style>{faces}{_CSS.read_text()}</style></head>"
+        f"<style>{faces}{_CSS.read_text()}\n{css_vars(spring)}</style></head>"
         f"<body><div class='card{' full' if full else ''}'>{html_path.read_text()}</div></body></html>"
     )
 

@@ -105,15 +105,34 @@ pre {
 
 /* Animated cards. An element marked data-beat="N" enters at the Nth time in its images.json
    entry's `beats`; reelcut sets that offset on it as --at. Elements without data-beat show with
-   the card. These defaults have zero specificity, so a fragment's own animation (using
-   animation-delay: var(--at)) replaces them. Animate opacity/transform only: layout must not
-   move between frames. */
+   the card. Entrances run on the video's spring: reelcut appends --spring (a linear() easing)
+   and --spring-s after this sheet. These defaults have zero specificity, so a fragment's own
+   animation (using animation-delay: var(--at)) replaces them. Animate opacity/transform only:
+   layout must not move between frames.
+   data-enter picks a beat's entrance: rise (default) | pop | drop | slide | swing | stamp | wipe. */
+:root { --spring: ease-out; --spring-s: 0.35s; }
 @keyframes card-in { from { opacity: 0; transform: scale(0.96); } }
 @keyframes beat-in { from { opacity: 0; transform: translateY(24px); } }
 @keyframes full-in { from { opacity: 0; } }
-:where(.card.animated) { animation: card-in 0.25s ease-out both; }
+@keyframes enter-pop { from { opacity: 0; transform: scale(0.6); } }
+@keyframes enter-drop { from { opacity: 0; transform: translateY(-28px); } }
+@keyframes enter-slide { from { opacity: 0; transform: translateX(80px); } }
+@keyframes enter-swing { from { opacity: 0; transform: rotate(-7deg); } }
+@keyframes enter-stamp { from { opacity: 0; transform: scale(1.5); } }
+@keyframes enter-wipe { from { clip-path: inset(0 100% 0 0); } }
+:where(.card [data-beat], .card .stagger > *) { --enter: beat-in; }
+[data-enter="pop"] { --enter: enter-pop; }
+[data-enter="drop"] { --enter: enter-drop; }
+[data-enter="slide"] { --enter: enter-slide; }
+[data-enter="swing"] { --enter: enter-swing; transform-origin: 0 0; }
+[data-enter="stamp"] { --enter: enter-stamp; }
+[data-enter="wipe"] { --enter: enter-wipe; }
+:where(.card.animated) { animation: card-in var(--spring-s) var(--spring) both; }
 :where(.card.full.animated) { animation-name: full-in; }
-:where(.card.animated [data-beat]) { animation: beat-in 0.35s ease-out both; animation-delay: var(--at, 0s); }
+:where(.card.animated [data-beat], .card.animated .stagger > *) {
+  animation: var(--enter) var(--spring-s) var(--spring) var(--at, 0s) both;
+}
+:where(.card.animated .stagger[data-beat]) { animation: none; }
 
 /* A flow step's arrow draws toward it as the step enters. */
 @keyframes draw-down { from { clip-path: inset(0 0 100% 0); } }
@@ -136,11 +155,11 @@ pre {
   animation: hot-on 0.3s ease-out var(--hot-at) both, hot-off 0.3s ease-in var(--hot-off) forwards;
 }
 :where(.card.animated [data-beat][data-hot]) {
-  animation: beat-in 0.35s ease-out var(--at) both, hot-on 0.3s ease-out var(--hot-at) both;
+  animation: var(--enter) var(--spring-s) var(--spring) var(--at) both, hot-on 0.3s ease-out var(--hot-at) both;
 }
 :where(.card.animated [data-beat][data-hot][data-cools]) {
-  animation: beat-in 0.35s ease-out var(--at) both, hot-on 0.3s ease-out var(--hot-at) both,
-             hot-off 0.3s ease-in var(--hot-off) forwards;
+  animation: var(--enter) var(--spring-s) var(--spring) var(--at) both,
+             hot-on 0.3s ease-out var(--hot-at) both, hot-off 0.3s ease-in var(--hot-off) forwards;
 }
 
 /* Count-up: <span class="count">193</span> counts from 0 when its data-beat element enters
@@ -151,3 +170,40 @@ pre {
 .count.counting { display: inline-block; text-align: right; --n: var(--to); counter-reset: n var(--n); }
 .count.counting::after { content: counter(n); }
 :where(.card.animated .count.counting) { animation: count-up 0.8s ease-out var(--at, 0s) both; }
+
+/* Annotations, drawn when their beat lands (with the card if none; inside a data-beat element
+   they take its beat). <span class="mark"> sweeps a marker stroke under words, .strike draws a
+   line through them, .circle rings them by hand. In inline SVG, any stroke with class "draw"
+   (path, line, polyline, circle, rect) draws itself on. */
+.mark {
+  background: linear-gradient(transparent 60%, color-mix(in srgb, var(--accent) 70%, transparent) 60% 92%,
+                              transparent 92%) no-repeat 0 0 / 100% 100%;
+  padding: 0 0.08em; box-decoration-break: clone; -webkit-box-decoration-break: clone;
+}
+@keyframes mark-in { from { background-size: 0% 100%; } }
+:where(.card.animated .mark) { animation: mark-in calc(var(--spring-s) * 1.6) ease-out var(--at, 0s) both; }
+
+.strike { position: relative; display: inline-block; }  /* never split across lines */
+.strike::after {
+  content: ""; position: absolute; left: -0.05em; right: -0.05em; top: 52%; height: 0.09em;
+  background: var(--accent); border-radius: 0.05em; transform: rotate(-2deg); transform-origin: left;
+}
+@keyframes strike-in { from { transform: rotate(-2deg) scaleX(0); } }
+:where(.card.animated .strike)::after { animation: strike-in calc(var(--spring-s) * 1.4) ease-out var(--at, 0s) both; }
+
+@property --sweep { syntax: "<angle>"; inherits: false; initial-value: 360deg; }
+.circle { position: relative; display: inline-block; margin: 0 0.2em; }
+.circle::before {
+  content: ""; position: absolute; inset: -0.14em -0.22em; border: 0.07em solid var(--accent);
+  border-radius: 50%; transform: rotate(-4deg);
+  mask: conic-gradient(from -100deg, #000 var(--sweep), transparent 0);
+}
+@keyframes circle-in { from { --sweep: 0deg; } }
+:where(.card.animated .circle)::before { animation: circle-in calc(var(--spring-s) * 2) ease-in-out var(--at, 0s) both; }
+
+/* A marked .strike or .circle keeps its words up; only the line or ring waits for the beat. */
+:where(.card.animated .strike[data-beat], .card.animated .circle[data-beat]) { animation: none; }
+
+.card svg .draw { stroke-dasharray: 1; stroke-dashoffset: 0; }
+@keyframes draw-on { from { stroke-dashoffset: 1; } }
+:where(.card.animated svg .draw) { animation: draw-on calc(var(--spring-s) * 2.2) ease-in-out var(--at, 0s) both; }

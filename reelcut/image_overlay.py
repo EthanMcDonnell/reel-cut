@@ -1,14 +1,18 @@
-"""Image overlay renderer — composites logo PNGs over video frames with fade in/out."""
+"""Image overlay renderer — composites logo PNGs over video frames, moving by reelcut.motion."""
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
 from PIL import Image, ImageDraw
 
-from .caption import CaptionFrame
+from .caption import CaptionFrame, FrameWriter
 from .config import ImagesConfig
 from .image_finder import ImageCue
+from .motion import (
+    DISSOLVE_S, EXIT_S, Motion, Pose, draw, ease_in_out, enter_pose, exit_pose, hold_pose,
+    resolve, settle_s, spring, transition_poses, with_band,
+)
 
 # Where an overlay sits. "top" is the default inset band; while the hook's title card is up
 # it moves to "under_title" (or "lower" when images.json asks). "full" is a card covering the frame.
@@ -170,16 +174,23 @@ def render_image_frames(
     fps: int,
     resolution: tuple[int, int],
     title_windows: list[tuple[float, float]] = (),
+    motion: Motion | None = None,
 ) -> list[CaptionFrame]:
     """Generate per-frame transparent PNG overlays, one overlay per frame (see _shown) in
     its band (see place_cues).
     `title_windows` are the output-timeline spans a title card is on screen.
-    Frames with the same cue, fade level and sweep step share one file.
+
+    Each overlay moves by `motion` with its own images.json overrides on top: it plays its
+    entrance when it appears from nothing, its transition when it takes over from another
+    overlay, and its exit when nothing follows or an older overlay comes back from under it.
+    A `fade` lasts images.fade_duration_s. Frames that look the same share one file.
     """
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     w, h = resolution
+    frame = (w, h)
+    base = motion or resolve()
     fade_frames = int(config.fade_duration_s * fps)
     placements = place_cues(cues, config, resolution, title_windows)
 
@@ -208,19 +219,16 @@ def render_image_frames(
         if total <= 0:
             continue
 
-        # Clamp fade so it doesn't exceed half the display window. An edge another overlay
-        # takes over at is a hard cut.
-        effective_fade = min(fade_frames, total // 2)
         sweep_frames = 0
         if sweep:
             sweep_frames = min(total, max(int(SWEEP_MIN_S * fps),
                                           min(int(SWEEP_MAX_S * fps), int(total * SWEEP_SHARE))))
+        m = resolve(asdict(base), cue.motion) if cue.motion else base
         prepared[i] = {
             "logo": logo, "x": place.x, "y": place.y,
             "start": start_frame, "total": total,
-            "fade_in": 0 if any(c.end == cue.start for c in cues) else effective_fade,
-            "fade_out": 0 if any(c.start == cue.end for c in cues) else effective_fade,
             "sweep": sweep, "sweep_frames": sweep_frames,
+            "motion": with_band(m, place.band == FULL), "k": len(prepared),
         }
 
     if not prepared:
@@ -229,41 +237,108 @@ def render_image_frames(
     min_frame = min(p["start"] for p in prepared.values())
     max_frame = max(p["start"] + p["total"] for p in prepared.values())
 
-    frames: list[CaptionFrame] = []
-    cache: dict[tuple, str] = {}  # (cue, alpha, sweep step) → composited file path
-
-    for frame_num in range(min_frame, max_frame):
-        idx = _shown(cues, (frame_num + 0.5) / fps)
+    # What each frame shows, as runs [overlay, first frame, end frame): None is nothing,
+    # -1 a video clip (drawn by the renderer, so a still leaving for it just goes).
+    runs: list[list] = []
+    for f in range(min_frame, max_frame):
+        idx = _shown(cues, (f + 0.5) / fps)
         p = prepared.get(idx)
         if p is None:
-            continue
-        i = frame_num - p["start"]
-        if i < 0 or i >= p["total"]:
-            continue
-        fin, fout, total = p["fade_in"], p["fade_out"], p["total"]
-        if fin > 0 and i < fin:
-            alpha = i / fin
-        elif fout > 0 and i >= total - fout:
-            alpha = (total - i) / fout
+            d = -1 if idx is not None and cues[idx].type == "video" else None
         else:
-            alpha = 1.0
-        if alpha <= 0:
-            continue
-        # Frames still sweeping are each distinct; -1 marks the settled highlight.
-        step = i if i < p["sweep_frames"] else -1
-        sig = (idx, round(alpha, 3), step)
-        path = cache.get(sig)
-        if path is None:
-            canvas = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-            img = p["logo"]
-            if step >= 0:
-                img = _sweep_frame(img, *p["sweep"], (step + 1) / p["sweep_frames"])
-            _composite_logo(canvas, img, alpha, p["x"], p["y"])
-            path = str(output_dir / f"img_{frame_num:06d}.png")
-            canvas.save(path, format="PNG")
-            cache[sig] = path
-        frames.append(CaptionFrame(frame_number=frame_num, image_path=path))
+            d = idx if p["start"] <= f < p["start"] + p["total"] else None
+        if runs and runs[-1][0] == d:
+            runs[-1][2] = f + 1
+        else:
+            runs.append([d, f, f + 1])
 
+    def held(ix: int, f: int) -> Pose:
+        q = prepared[ix]
+        mq = q["motion"]
+        el = f - q["start"]
+        tilt = Pose(rot=mq.tilt if q["k"] % 2 == 0 else -mq.tilt)
+        return tilt + hold_pose(mq.hold, el / q["total"], el / fps, ix + 1, frame)
+
+    def length(move: str, m: Motion) -> int:
+        return fade_frames if move == "fade" else 0 if move == "snap" else round(settle_s(m.spring) * fps)
+
+    def progress(i: int, n: int, timing: str, m: Motion) -> float:
+        if timing == "linear":
+            return i / n
+        if timing == "ease":
+            return ease_in_out(i / n)
+        natural = settle_s(m.spring) * fps  # a window too short for the spring plays it faster
+        return spring(i / fps * max(1.0, natural / n), m.spring)
+
+    frames: list[CaptionFrame] = []
+    cache: dict[tuple, str] = {}  # what's drawn → composited file path
+    writer = FrameWriter()
+
+    for r, (idx, f0, f1) in enumerate(runs):
+        if idx is None or idx < 0:
+            continue
+        prev = runs[r - 1][0] if r else None
+        nxt = runs[r + 1][0] if r + 1 < len(runs) else None
+        prev = prev if prev is not None and prev >= 0 else None
+        p, m, n = prepared[idx], prepared[idx]["motion"], f1 - f0
+        takeover = prev is not None and cues[idx].start >= cues[prev].start
+        exit_over = nxt is not None and nxt >= 0 and cues[nxt].start < cues[idx].start
+        exits = nxt is None or exit_over
+
+        if takeover:
+            n_in = {"cut": 0, "swap": length(m.enter, m), "stack": length(m.enter, m),
+                    "push": round(settle_s(m.spring) * fps),
+                    "dissolve": round(DISSOLVE_S * fps)}[m.transition]
+        else:  # a resumed overlay was under the one leaving; it is already in place
+            n_in = 0 if prev is not None else length(m.enter, m)
+        n_out = 0
+        if exits:
+            n_out = fade_frames if m.exit == "fade" else 0 if m.exit == "snap" else round(EXIT_S * fps)
+        n_in, n_out = min(n_in, n // 2), min(n_out, n // 2)
+        enter_timing = "linear" if m.enter == "fade" else "spring"
+
+        for f in range(f0, f1):
+            i, j = f - f0, f1 - f
+            layers: list[tuple[int, Pose]] = []
+            pose = held(idx, f)
+            if i < n_in:
+                inc = None
+                if takeover:
+                    tp = progress(i, n_in, "ease" if m.transition == "dissolve" else "spring", m)
+                    out, inc = transition_poses(m.transition, tp, i / n_in, frame)
+                    if out is not None:
+                        layers.append((prev, held(prev, f) + out))
+                if inc is None:
+                    inc = enter_pose(m.enter, progress(i, n_in, enter_timing, m), frame, p["k"])
+                pose = pose + inc
+            if exits and j <= n_out:
+                pose = pose + exit_pose(m.exit, 1 - j / n_out, frame, p["k"])
+                if exit_over:
+                    layers.insert(0, (nxt, held(nxt, f)))
+            layers.append((idx, pose))
+            layers = [(ix, ps) for ix, ps in layers if ps.alpha > 0]
+            if not layers:
+                continue
+
+            # Frames still sweeping are each distinct; -1 marks the settled highlight.
+            steps = [(f - prepared[ix]["start"]) for ix, _ in layers]
+            steps = [s if s < prepared[ix]["sweep_frames"] else -1 for s, (ix, _) in zip(steps, layers)]
+            sig = tuple((ix, s, ps.key()) for (ix, ps), s in zip(layers, steps))
+            path = cache.get(sig)
+            if path is None:
+                canvas = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+                for (ix, ps), s in zip(layers, steps):
+                    q = prepared[ix]
+                    img = q["logo"]
+                    if s >= 0:
+                        img = _sweep_frame(img, *q["sweep"], (s + 1) / q["sweep_frames"])
+                    draw(canvas, img, q["x"], q["y"], ps)
+                path = str(output_dir / f"img_{f:06d}.png")
+                writer.save(canvas, path)
+                cache[sig] = path
+            frames.append(CaptionFrame(frame_number=f, image_path=path))
+
+    writer.wait()
     return frames
 
 
@@ -292,6 +367,7 @@ def merge_with_caption_frames(
     w, h = resolution
     result: list[CaptionFrame] = []
     prev_cap = prev_img = prev_merged_path = None
+    writer = FrameWriter()
 
     for fn in sorted(set(cap_map) | set(img_map)):
         cap_path = cap_map.get(fn)
@@ -313,11 +389,12 @@ def merge_with_caption_frames(
             canvas = Image.new("RGBA", (w, h), (0, 0, 0, 0))
             canvas.alpha_composite(Image.open(img_path).convert("RGBA"))
             canvas.alpha_composite(Image.open(cap_path).convert("RGBA"))
-            canvas.save(merged_path, format="PNG")
+            writer.save(canvas, merged_path)
 
             prev_cap, prev_img, prev_merged_path = cap_path, img_path, merged_path
             result.append(CaptionFrame(frame_number=fn, image_path=merged_path))
 
+    writer.wait()
     return result
 
 
@@ -384,20 +461,3 @@ def _figure_card(img: Image.Image, card_w: int) -> Image.Image:
     card.paste((255, 255, 255, 255), (0, 0), mask)
     card.alpha_composite(img, (pad, pad))
     return card
-
-
-def _composite_logo(
-    canvas: Image.Image,
-    logo: Image.Image,
-    alpha: float,
-    x: int,
-    y: int,
-) -> None:
-    """Alpha-composite `logo` onto `canvas` at (x, y), scaling its alpha for fades."""
-    if alpha >= 1.0:
-        canvas.alpha_composite(logo, (x, y))
-        return
-    r, g, b, a = logo.split()
-    a_faded = a.point(lambda v, _a=alpha: int(v * _a))
-    faded = Image.merge("RGBA", (r, g, b, a_faded))
-    canvas.alpha_composite(faded, (x, y))

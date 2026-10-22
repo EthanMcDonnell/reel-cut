@@ -531,16 +531,96 @@ def preview_edl(
 def card(
     html_paths: list[str] = typer.Argument(..., help="Card fragments (assets/<slug>/cards/*.html)."),
     full: bool = typer.Option(False, "--full", help='Render as full-screen slides ("layout": "full").'),
+    beats: Optional[str] = typer.Option(
+        None, "--beats",
+        help="Comma-separated seconds each data-beat enters (from the card's start): renders the "
+             "animation and writes a filmstrip PNG beside each fragment instead.",
+    ),
+    spring_: str = typer.Option("snappy", "--spring", help="Spring the entrances run on."),
 ) -> None:
     """Render designed cards to PNG beside each fragment, to look at before placing them."""
-    from .card import render_cards
+    from .card import card_strip, card_webm, render_cards
 
     missing = [p for p in html_paths if not Path(p).exists()]
     if missing:
         err_console.print(f"[red]Error:[/red] not found: {', '.join(missing)}")
         raise typer.Exit(1)
+    if beats is not None:
+        offsets = [float(b) for b in beats.split(",") if b.strip()]
+        for p in map(Path, html_paths):
+            webm, top = card_webm(p, offsets, 30, full=full, spring=spring_)
+            if top != len(offsets):
+                console.print(f"  [yellow]{p.name}: {top} data-beat(s) but {len(offsets)} beat time(s)[/yellow]")
+            strip = card_strip(webm, p.with_suffix(".strip.png"), 30)
+            console.print(f"  → {strip}")
+        return
     for png in render_cards([Path(p) for p in html_paths], full):
         console.print(f"  → {png}")
+
+
+@app.command()
+def motion(
+    image: Optional[str] = typer.Argument(None, help="Overlay to preview: an image, or a card .html."),
+    config_path: str = typer.Option("config.yaml", "--config", help="Config whose house motion to start from."),
+    slug: Optional[str] = typer.Option(None, "--slug", help="Apply this slug's motion.json too."),
+    look: Optional[str] = typer.Option(None, "--look"),
+    enter: Optional[str] = typer.Option(None, "--enter"),
+    exit_: Optional[str] = typer.Option(None, "--exit"),
+    hold: Optional[str] = typer.Option(None, "--hold"),
+    transition: Optional[str] = typer.Option(None, "--transition"),
+    spring_: Optional[str] = typer.Option(None, "--spring"),
+    tilt: Optional[float] = typer.Option(None, "--tilt"),
+    to: Optional[str] = typer.Option(None, "--to", help="A second overlay that takes over halfway, to see the transition."),
+    layout: str = typer.Option("", "--layout", help='"lower", or "full" for a full-screen card.'),
+    out: str = typer.Option("motion-strip.png", "--out", help="Where to write the filmstrip PNG."),
+    list_: bool = typer.Option(False, "--list", help="List every look, move, hold, transition and spring."),
+) -> None:
+    """Preview overlay motion as a filmstrip: the entrance, the takeover (with --to) and the exit."""
+    from .config import ReelCutConfig, load_config
+    from .image_finder import ImageCue
+    from .image_overlay import render_image_frames
+    from PIL import Image
+
+    from .motion import catalog, contact_sheet, load_motion, resolve
+
+    if list_:
+        print(catalog())
+        return
+    if not image:
+        err_console.print("[red]Error:[/red] give an image to preview, or --list")
+        raise typer.Exit(1)
+    cfg = load_config(config_path) if Path(config_path).exists() else ReelCutConfig()
+    video = load_motion(Path(cfg.assets.location) / slug / "motion.json") if slug else {}
+    flags = dict(look=look, enter=enter, exit=exit_, hold=hold, transition=transition,
+                 spring=spring_, tilt=tilt)
+    try:
+        m = resolve(cfg.motion.model_dump(), video, flags)
+    except ValueError as exc:
+        err_console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1)
+
+    def overlay(path: str, start: float, end: float) -> ImageCue:
+        p = Path(path)
+        if p.suffix == ".html":
+            from .card import card_png
+            return ImageCue(keyword=p.stem, start=start, end=end, layout=layout, type="card",
+                            image_path=str(card_png(p, full=layout == "full")))
+        return ImageCue(keyword=p.stem, start=start, end=end, image_path=str(p), type="screenshot",
+                        layout=layout)
+
+    fps, res, end = cfg.output.fps, tuple(cfg.output.resolution), 2.4 if to else 1.6
+    cues = [overlay(image, 0.0, 1.2 if to else end)] + ([overlay(to, 1.2, end)] if to else [])
+    images = cfg.images.model_copy(update={"start_delay_s": 0.0})
+    with tempfile.TemporaryDirectory() as tmp:
+        drawn = {f.frame_number: f.image_path
+                 for f in render_image_frames(cues, images, Path(tmp), fps, res, motion=m)}
+        last = round(end * fps)
+        picks = list(range(0, 24, 3)) + list(range(36, 63, 3)) * bool(to) + list(range(last - 9, last, 2))
+        blank = Image.new("RGBA", res, (0, 0, 0, 0))
+        sheet = contact_sheet([(f"{f / fps:.2f}s", Image.open(drawn[f]) if f in drawn else blank)
+                               for f in picks])
+    sheet.save(out)
+    console.print(f"  {m}\n  → {out}")
 
 
 # ---------------------------------------------------------------------------
@@ -859,14 +939,21 @@ def _phase2(cfg, doc, outputs: list[tuple[Path, bool]], verbose: bool,
     hook with no overlay at all is a warning. `check_only` stops after the overlay
     coverage report, before any frame is rendered.
     """
+    from dataclasses import asdict
+
     from .caption import render_caption_frames
     from .image_spec import load_images
     from .edl import EDLEntry
     from .image_finder import ImageCue, detect_image_cues
+    from .motion import load_motion, resolve
     from .renderer import render as do_render
     from .transcriber import WordTimestamp
 
     warnings: list[str] = []
+    # House motion (config.yaml) with the slug's motion.json over it; images.json entries
+    # can override it per overlay.
+    motion = resolve(cfg.motion.model_dump(), load_motion(assets_dir / "motion.json") if assets_dir else {})
+    console.print(f"  Motion: {motion}")
 
     # Convert EdlEntry (captions_doc) → EDLEntry (edl module) for renderer
     edl = [
@@ -922,6 +1009,7 @@ def _phase2(cfg, doc, outputs: list[tuple[Path, bool]], verbose: bool,
                 clip_start=spec.clip_start,
                 beats=[remap(clip, b) for b in spec.beats],
                 layout=spec.layout,
+                motion=spec.motion,
             )
             # An overlay is anchored to source times, so a later EDL change can move a
             # cut over it. Once remapped it just gets shorter (or vanishes at zero
@@ -941,9 +1029,19 @@ def _phase2(cfg, doc, outputs: list[tuple[Path, bool]], verbose: bool,
                 console.print(f"  [yellow]\"layout\": \"full\" is for cards only — "
                               f"{spec.type} shown inset[/yellow]")
                 remapped_spec.layout = ""
-            cue = _resolve_image_spec(remapped_spec, cfg.images.display_duration_s, cfg.output.fps)
+            if spec.motion:
+                try:
+                    resolve(asdict(motion), spec.motion)
+                except ValueError as exc:
+                    label = spec.name or Path(spec.path).name
+                    warnings.append(f"overlay {label!r}: {exc} — its motion override is ignored")
+                    console.print(f"  [yellow]{warnings[-1]}[/yellow]")
+                    remapped_spec.motion = {}
+            cue = _resolve_image_spec(remapped_spec, cfg.images.display_duration_s, cfg.output.fps,
+                                      spring=resolve(asdict(motion), remapped_spec.motion).spring)
             if cue:
-                all_image_cues.append(replace(cue, layout=remapped_spec.layout))
+                all_image_cues.append(replace(cue, layout=remapped_spec.layout,
+                                              motion=remapped_spec.motion))
 
         from .image_overlay import clamp_to_hook
         if hook_end_s is not None:
@@ -1007,6 +1105,8 @@ def _phase2(cfg, doc, outputs: list[tuple[Path, bool]], verbose: bool,
                 resolution=tuple(cfg.output.resolution),
                 sentence_pause_s=cfg.cuts.sentence_pause_s,
                 lifts=lifts,
+                motion=motion.captions,
+                spring_name=motion.spring,
             )
             _tlog(time.perf_counter() - t, f"{len(caption_frames)} frames")
 
@@ -1020,6 +1120,7 @@ def _phase2(cfg, doc, outputs: list[tuple[Path, bool]], verbose: bool,
                 fps=cfg.output.fps,
                 resolution=tuple(cfg.output.resolution),
                 title_windows=title_windows,
+                motion=motion,
             )
             caption_frames = merge_with_caption_frames(
                 caption_frames, image_frames, tuple(cfg.output.resolution),
@@ -1039,6 +1140,8 @@ def _phase2(cfg, doc, outputs: list[tuple[Path, bool]], verbose: bool,
                 total_output_s=total_output_s,
                 slug=assets_dir.name if assets_dir else None,
                 registry_path=assets_dir.parent / "series_index.json" if assets_dir else None,
+                motion=motion.heading,
+                spring_name=motion.spring,
             )
             caption_frames = merge_with_caption_frames(
                 heading_frames, caption_frames, tuple(cfg.output.resolution),
@@ -1181,8 +1284,9 @@ def _resolve_audio_tracks(cfg, edl, audio_path: Path | None, warnings: list[str]
     return tracks
 
 
-def _resolve_image_spec(spec, display_duration_s: float, fps: int = 30):
-    """Resolve an ImageSpec from the captions doc to an ImageCue."""
+def _resolve_image_spec(spec, display_duration_s: float, fps: int = 30, spring: str = "snappy"):
+    """Resolve an ImageSpec from the captions doc to an ImageCue. `spring` times an animated
+    card's entrances."""
     from .image_finder import ImageCue
 
     if spec.type == "person":
@@ -1254,7 +1358,7 @@ def _resolve_image_spec(spec, display_duration_s: float, fps: int = 30):
         if spec.beats:
             from .card import card_webm
             webm, top_beat = card_webm(p, [b - spec.start for b in spec.beats], fps,
-                                       full=spec.layout == "full")
+                                       full=spec.layout == "full", spring=spring)
             if top_beat != len(spec.beats):
                 console.print(
                     f"  [yellow]Card {p.name}: {top_beat} data-beat(s) but "

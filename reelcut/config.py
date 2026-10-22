@@ -201,6 +201,21 @@ class ImagesConfig(BaseModel):
 
 
 
+class MotionConfig(BaseModel):
+    # House motion for every video; a slug's motion.json and an images.json entry's "motion"
+    # override it (see reelcut/motion.py). `look` is a bundle of the fields below; any field set
+    # here overrides the look. Valid names: `reelcut motion --list`.
+    look: str = "none"
+    spring: str | None = None
+    enter: str | None = None
+    exit: str | None = None
+    hold: str | None = None
+    transition: str | None = None
+    tilt: float | None = None
+    captions: str | None = None
+    heading: str | None = None
+
+
 class HeadingsConfig(BaseModel):
     enabled: bool = True
     default_end_s: float = 3.0               # end time (s) written into the auto-created headings.json stub; -1 = until end of video
@@ -367,6 +382,7 @@ class ReelCutConfig(BaseModel):
     captions: CaptionsConfig = Field(default_factory=CaptionsConfig)
     images: ImagesConfig = Field(default_factory=ImagesConfig)
     headings: HeadingsConfig = Field(default_factory=HeadingsConfig)
+    motion: MotionConfig = Field(default_factory=MotionConfig)
     audio: AudioConfig = Field(default_factory=AudioConfig)
     sfx: SfxConfig = Field(default_factory=SfxConfig)
     whisper: WhisperConfig = Field(default_factory=WhisperConfig)

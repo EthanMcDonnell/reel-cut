@@ -38,6 +38,8 @@ class ImageSpec:
     beats: list[float] = field(default_factory=list)  # type=card only: source-clip seconds each data-beat enters
     layout: str = ""        # "" / "top" = inset at the top | "lower" | "full" (cards only: a slide
                             # covering the frame) — see images.*_band_pct in config.yaml
+    motion: dict = field(default_factory=dict)  # per-entry motion overrides (enter, exit, hold,
+                            # transition, tilt, spring, look) — see reelcut/motion.py
 
 
 def load_images(path: Path) -> list[ImageSpec]:
@@ -60,6 +62,7 @@ def load_images(path: Path) -> list[ImageSpec]:
             clip_start=float(i.get("clip_start", 0.0)),
             beats=[float(b) for b in i.get("beats", [])],
             layout=i.get("layout", ""),
+            motion=i.get("motion") or {},
         )
         for i in raw
     ]

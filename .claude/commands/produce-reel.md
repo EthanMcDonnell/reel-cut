@@ -39,7 +39,7 @@ An asset with neither `script.md` nor a receipt is the manual-folder case — th
 
 ## Per stage
 
-1. **Dispatch.** Spawn one `reel-step` subagent (`subagent_type: "reel-step"`), one per stage, never reusing a previous stage's agent. Prompt it with just the command and the slug, e.g. *"Run the `produce-video` command for slug `netflix-cdn-architecture`."* Append `--fresh` to the `prepare` prompt if the user passed it. Plus any decisions the user already made in this session that the step would otherwise ask about. Keep its agent id.
+1. **Dispatch.** Spawn one `reel-step` subagent (`subagent_type: "reel-step"`), one per stage, never reusing a previous stage's agent. Prompt it with just the command and the slug, e.g. *"Run the `produce-video` command for slug `netflix-cdn-architecture`."* Append `--fresh` to the `prepare` prompt if the user passed it. Plus any decisions the user already made in this session that the step would otherwise ask about, and any motion direction they gave (appended after the slug for `produce`). Keep its agent id.
 
    **Pass `model` explicitly on every dispatch**, per the table above — the agent definition defaults to `sonnet` and the `model` parameter overrides it. `produce` gets `model: "opus"` because its output is generative rather than mechanical: the literal-noun gag pass (`produce-video:73`), hook detection done by intuition (`:123`), and the title cards and captions themselves (`:228`), whose register is the one a weaker model flattens into "how X did Y". Those are also the parts *no* later check catches — the verify step below is barred from touching wording, so under `--auto` whatever this worker writes is what gets burned into the video.
 

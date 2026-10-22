@@ -239,6 +239,25 @@ headings:
 
 
 # ---------------------------------------------------------------------------
+# Motion — how overlays, captions and the title card move (reelcut/motion.py)
+# ---------------------------------------------------------------------------
+# The house default. A slug's assets/<slug>/motion.json overrides it per video, and an
+# images.json entry's "motion" overrides that per overlay. The `motion` skill picks them.
+# Every valid name: `reelcut motion --list`. Preview: `reelcut motion <image> --look calm`.
+motion:
+  look: editorial                # none | editorial | punchy | calm — a bundle of the fields below
+                                 # none = the old look: overlays fade by images.fade_duration_s, nothing else moves
+  # spring: snappy               # snappy | bouncy | gentle | heavy — the feel of every entrance
+  # enter: swing                 # overlay entrance: snap fade pop rise drop slide swing stamp slot wipe iris shutter
+  # exit: lift                   # snap fade lift sink shrink slot wipe iris shutter
+  # hold: drift                  # while held: still | drift (slow hand-held float) | push (slow zoom in)
+  # transition: stack            # overlay → overlay: cut swap push stack dissolve
+  # tilt: 1.5                    # resting angle (degrees) of inset overlays, alternating sign
+  # captions: pop                # none | pop (each line springs in) | words (each word springs in as said)
+  # heading: slot                # none | slot | ink — the title card's entrance/exit (never on frame 0: it's the cover)
+
+
+# ---------------------------------------------------------------------------
 # Whisper / transcription
 # ---------------------------------------------------------------------------
 whisper:

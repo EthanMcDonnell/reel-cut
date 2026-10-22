@@ -6,7 +6,7 @@ Copy this to `series/<slug>.md` to add a series. The slug is the filename and is
 
 **Optional `SERIES.md`** at the repo root (also gitignored) holds channel-wide notes — calibration from past analytics, naming history. `/video-ideas` reads it if present.
 
-Seven headings are required and every series has them. Three are optional and most series omit them. Order below is the order the files use.
+Seven headings are required and every series has them. Four are optional and most series omit them. Order below is the order the files use.
 
 | Heading | Required | Read by |
 |---|---|---|
@@ -20,6 +20,7 @@ Seven headings are required and every series has them. Three are optional and mo
 | `## Sourcing` | no | `produce-script` Stage 3 |
 | `## Best Hooks` | yes | `hooks` skill, `produce-script` Stage 1 |
 | `## Production` | no | **`scripts/upload_server.py`** |
+| `## Motion` | no | `/produce-video` Step 4d (`motion` skill) |
 
 **Two fields are parsed by code.** `**Target length:**` under `## Voice Profile` is read by `lint_script.py` to set the word cap. It understands three shapes — `hard cap 230`, `150–230 words`, `under 120 words` — and an explicit hard cap wins over a range on the same line. Anything else falls back to the default of 190, so keep one of those three shapes. `**Uploads:** individual` under `## Production` is read by the upload server; see that section.
 
@@ -76,3 +77,7 @@ State what still needs a source when the usual article isn't there.
 ## Production
 *(Optional — omit it and a script's link takes one upload, recorded with every hook and split per hook in production.)*
 **Uploads:** `individual` — every upload from a script's link becomes its own full video (one hook plus body) in a fresh `assets/<slug>-<timestamp>/`, any number of times, and production ignores `script.md` in favour of the take's transcript. Use it for series short enough to record whole per hook. Anything after the word is commentary; only `individual` is recognised.
+
+## Motion
+*(Optional — omit it and the house look in `config.yaml` applies.)*
+**Look:** the `motion` skill look this series starts from (`editorial`, `punchy`, `calm`), and any standing direction — e.g. "captions spring in word by word", "no tilt". Per-video direction given to `/produce-video` overrides it.

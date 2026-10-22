@@ -4,7 +4,11 @@ A heading is one title card on the **output-timeline** (the final video's clock)
 the caller from the hand-authored `assets/<slug>/videos.json` (see `video_spec`). Each
 heading is rendered once to a transparent PNG — an optional dark scrim, a soft-shadowed gold serif title, and an optional
 italic subtitle — and that single PNG is reused for every frame in its `[start, end)` window.
-No animation; the styling matches the approved Playfair-Display gold look.
+The styling matches the approved Playfair-Display gold look.
+
+With motion (reelcut.motion HEADINGS) the lines enter — rising out of a slot, or inked on
+left to right — then push in slowly while held, and leave the same way. A card starting on the
+video's first frame skips its entrance: that frame is the reel's cover, so it shows the card.
 """
 from __future__ import annotations
 
@@ -15,8 +19,9 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
-from .caption import CaptionFrame, _resolve_font
+from .caption import CaptionFrame, FrameWriter, _resolve_font
 from .config import HeadingsConfig
+from .motion import Pose, clamp, draw, ease_in, ease_in_out, spring
 
 _SS = 2  # supersample factor — render large, downscale for crisp edges
 _FONTS_DIR = Path(__file__).parent / "fonts"
@@ -54,6 +59,8 @@ def render_heading_frames(
     total_output_s: float = 0.0,
     slug: str | None = None,
     registry_path: Path | None = None,
+    motion: str = "none",
+    spring_name: str = "snappy",
 ) -> list[CaptionFrame]:
     """Render each heading to one static PNG and emit a CaptionFrame per output frame in its
     [start, end) window — the same PNG path is reused for every frame (no animation).
@@ -80,9 +87,95 @@ def render_heading_frames(
             subtitle=_resolve_series_tokens(h.subtitle, slug, registry_path),
         )
         png = _render_heading_png(h, config, resolution, output_dir / f"heading_{idx:02d}.png")
-        for fn in range(int(h.start * fps), int(end * fps)):
-            frames.append(CaptionFrame(frame_number=fn, image_path=png))
+        first, last = int(h.start * fps), int(end * fps)
+        if motion == "none":
+            frames.extend(CaptionFrame(frame_number=fn, image_path=png) for fn in range(first, last))
+            continue
+        exits = h.end >= 0 and (total_output_s <= 0 or end < total_output_s)
+        frames.extend(_moving_frames(h, config, resolution, output_dir / f"heading_{idx:02d}",
+                                     fps, first, last, exits, motion, spring_name))
     return frames
+
+
+_LINE_STAGGER_S = 0.08
+_HEADING_EXIT_S = 0.3
+_PUSH = 0.025  # how far the title pushes in over its window
+
+
+def _moving_frames(h, config, resolution, out_dir: Path, fps, first, last, exits, motion, spring_name):
+    """One frame per output frame of a moving title card (see the module docstring)."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    w, hgt = resolution
+    use_scrim = config.scrim if h.scrim is None else h.scrim
+    scrim = _scrim(w, hgt, config.scrim_strength) if use_scrim else None
+    lines = _line_sprites(h, config, resolution)
+    x0 = min(x for _, x, _ in lines)
+    x1 = max(x + sp.width for sp, x, _ in lines)
+    y0 = min(y for _, _, y in lines)
+    y1 = max(y + sp.height for sp, _, y in lines)
+    gcx, gcy = (x0 + x1) / 2, (y0 + y1) / 2
+    reveal = "slot" if motion == "slot" else "ink"
+    enters = first > 0
+    n_out = round(_HEADING_EXIT_S * fps) if exits else 0
+
+    frames = []
+    cache: dict[tuple, str] = {}
+    writer = FrameWriter()
+    for fn in range(first, last):
+        t, left = (fn - first) / fps, (last - fn) / fps
+        # Stepped in under half a pixel across the title, so held frames can share files.
+        push = round((1 + _PUSH * ease_in_out((fn - first) / max(1, last - first - 1))) * 2000) / 2000
+        out_q = clamp(1 - left / _HEADING_EXIT_S) if n_out else 0.0
+        a = (clamp(t / 0.25) if enters else 1.0) * (1 - out_q)
+        amounts = [spring(t - i * _LINE_STAGGER_S, spring_name) if enters else 1.0
+                   for i in range(len(lines))]
+        if out_q:
+            amounts = [min(am, 1 - ease_in(out_q)) for am in amounts]
+        key = (round(a, 3), push, tuple(round(clamp(am), 3) for am in amounts))
+        if key not in cache:
+            canvas = Image.new("RGBA", (w, hgt), (0, 0, 0, 0))
+            if scrim is not None:
+                draw(canvas, scrim, 0, 0, Pose(alpha=a))
+            for (sprite, x, y), amount in zip(lines, amounts):
+                cx, cy = x + sprite.width / 2, y + sprite.height / 2
+                draw(canvas, sprite, x, y, Pose(scale=push, dx=(push - 1) * (cx - gcx),
+                                                dy=(push - 1) * (cy - gcy), reveal=reveal, amount=amount))
+            cache[key] = str(out_dir / f"{fn:06d}.png")
+            writer.save(canvas, cache[key])
+        frames.append(CaptionFrame(frame_number=fn, image_path=cache[key]))
+    writer.wait()
+    return frames
+
+
+def _line_sprites(h: HeadingSpec, config: HeadingsConfig, resolution: tuple[int, int]):
+    """Each title line and the subtitle as (sprite with its shadow, x, y) at output size,
+    placed exactly where _render_heading_png draws them."""
+    w, hgt = resolution
+    probe = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+    max_w = w * _SS * (1 - 2 * config.margin_pct / 100)
+    title_font, title_lines = _fit_title(probe, h.title, config, max_w)
+    ascent, descent = title_font.getmetrics()
+    y = int(hgt * _POSITION_TOP_FRAC.get(config.position, 0.08) * _SS)
+    rows = []
+    for ln in title_lines:
+        rows.append((ln, title_font, config.color, y))
+        y += int((ascent + descent) * 1.02)
+    if h.subtitle:
+        sub_font = _load_font(config.subtitle_font, config.subtitle_size, ("Italic", "Medium Italic", "Regular"))
+        rows.append((h.subtitle, sub_font, config.subtitle_color, y + int(18 * _SS)))
+
+    out = []
+    for text, font, fill, top in rows:
+        txt = Image.new("RGBA", (w * _SS, hgt * _SS), (0, 0, 0, 0))
+        _draw_centered(ImageDraw.Draw(txt), txt.width, [text], font, fill, top)
+        layer = Image.new("RGBA", (w, hgt), (0, 0, 0, 0))
+        if config.shadow:
+            layer.alpha_composite(_soft_shadow(txt, config.shadow_blur, config.shadow_opacity, w, hgt), (0, 5))
+        layer.alpha_composite(txt.resize((w, hgt), Image.LANCZOS))
+        box = layer.getbbox()
+        if box:
+            out.append((layer.crop(box), box[0], box[1]))
+    return out
 
 
 # ---------------------------------------------------------------------------
