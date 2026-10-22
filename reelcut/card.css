@@ -40,7 +40,8 @@ html, body { margin: 0; padding: 0; background: transparent; }
 
 /* Heading over the card's content. */
 .card h1 {
-  font-family: "Playfair Display", serif;
+  font-family: var(--title-font, "Playfair Display"), serif;
+  text-transform: var(--title-case, none);
   font-size: 64px;
   font-weight: 700;
   color: var(--accent);

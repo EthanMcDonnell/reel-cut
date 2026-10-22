@@ -234,6 +234,13 @@ class HeadingsConfig(BaseModel):
     shadow_opacity: float = 0.55
     scrim: bool = True                       # dark gradient behind text (per-heading overridable)
     scrim_strength: int = 150                # max scrim darkness at the very top (0-255 alpha)
+    case: Literal["none", "upper", "lower"] = "none"   # recase the title
+    line_height: float = 1.02                # title line spacing, as a multiple of the font's height
+    accent: Literal["color", "marker"] = "color"      # how a title's *starred* words stand out
+    accent_color: str = "#FFFFFF"
+    card_accent: str = "#F3C84E"             # designed cards' accent in this style
+    styles: dict[str, dict] = Field(default_factory=dict)  # named looks laid over these settings;
+                                             # a series picks one, videos.json entries name it
 
 
 class WhisperConfig(BaseModel):

@@ -381,6 +381,8 @@ def render_hooks(
                     end=-1 if cfg.headings.hold_after_hook_s < 0
                     else hook_dur + cfg.headings.hold_after_hook_s,
                     scrim=base.scrim if entry.scrim is None else entry.scrim,
+                    style=entry.style or base.style,
+                    motion=entry.motion or base.motion,
                 )
                 all_warnings.extend(_phase2(
                     cfg, new_doc, variants, verbose,
@@ -538,9 +540,18 @@ def card(
              "animation and writes a filmstrip PNG beside each fragment instead.",
     ),
     spring_: str = typer.Option("snappy", "--spring", help="Spring the entrances run on."),
+    style: Optional[str] = typer.Option(None, "--style", help="Render in this title style (headings.styles)."),
+    config_path: str = typer.Option("config.yaml", "--config", help="Config holding the title styles."),
 ) -> None:
     """Render designed cards to PNG beside each fragment, to look at before placing them."""
     from .card import card_strip, card_webm, render_cards
+
+    card_style = None
+    if style:
+        from .config import load_config
+        from .heading import styled
+        ts = styled(load_config(config_path).headings, style)
+        card_style = {"font": ts.font, "accent": ts.card_accent, "case": ts.case}
 
     missing = [p for p in html_paths if not Path(p).exists()]
     if missing:
@@ -549,13 +560,13 @@ def card(
     if beats is not None:
         offsets = [float(b) for b in beats.split(",") if b.strip()]
         for p in map(Path, html_paths):
-            webm, top = card_webm(p, offsets, 30, full=full, spring=spring_)
+            webm, top = card_webm(p, offsets, 30, full=full, spring=spring_, style=card_style)
             if top != len(offsets):
                 console.print(f"  [yellow]{p.name}: {top} data-beat(s) but {len(offsets)} beat time(s)[/yellow]")
             strip = card_strip(webm, p.with_suffix(".strip.png"), 30)
             console.print(f"  → {strip}")
         return
-    for png in render_cards([Path(p) for p in html_paths], full):
+    for png in render_cards([Path(p) for p in html_paths], full, card_style):
         console.print(f"  → {png}")
 
 
@@ -994,6 +1005,13 @@ def _phase2(cfg, doc, outputs: list[tuple[Path, bool]], verbose: bool,
             console.print(f"  Logos detected: {[c.keyword for c in logo_cues]}")
 
         images = load_images(images_path) if images_path else []
+        # Cards wear the video's title style: its heading font, accent and case.
+        card_style = None
+        titled = next((hs for hs in heading_specs if hs.title and hs.style), None)
+        if titled:
+            from .heading import styled
+            ts = styled(cfg.headings, titled.style)
+            card_style = {"font": ts.font, "accent": ts.card_accent, "case": ts.case}
         remap, clip_order = _build_edl_remap(edl)
         fallback_clip = clip_order[0] if clip_order else ""
         for spec in images:
@@ -1045,7 +1063,8 @@ def _phase2(cfg, doc, outputs: list[tuple[Path, bool]], verbose: bool,
                     console.print(f"  [yellow]overlay {label!r}: {', '.join(outside)} is outside the "
                                   f"{motion.look} palette (`reelcut motion --list`)[/yellow]")
             cue = _resolve_image_spec(remapped_spec, cfg.images.display_duration_s, cfg.output.fps,
-                                      spring=resolve(asdict(motion), remapped_spec.motion).spring)
+                                      spring=resolve(asdict(motion), remapped_spec.motion).spring,
+                                      card_style=card_style)
             if cue:
                 all_image_cues.append(replace(cue, layout=remapped_spec.layout,
                                               motion=remapped_spec.motion))
@@ -1332,9 +1351,10 @@ def _resolve_audio_tracks(cfg, edl, audio_path: Path | None, warnings: list[str]
     return tracks
 
 
-def _resolve_image_spec(spec, display_duration_s: float, fps: int = 30, spring: str = "snappy"):
+def _resolve_image_spec(spec, display_duration_s: float, fps: int = 30, spring: str = "snappy",
+                        card_style: dict | None = None):
     """Resolve an ImageSpec from the captions doc to an ImageCue. `spring` times an animated
-    card's entrances."""
+    card's entrances; `card_style` gives cards the video's title style (see card._style_css)."""
     from .image_finder import ImageCue
 
     if spec.type == "person":
@@ -1406,7 +1426,7 @@ def _resolve_image_spec(spec, display_duration_s: float, fps: int = 30, spring: 
         if spec.beats:
             from .card import card_webm
             webm, top_beat = card_webm(p, [b - spec.start for b in spec.beats], fps,
-                                       full=spec.layout == "full", spring=spring)
+                                       full=spec.layout == "full", spring=spring, style=card_style)
             if top_beat != len(spec.beats):
                 console.print(
                     f"  [yellow]Card {p.name}: {top_beat} data-beat(s) but "
@@ -1426,7 +1446,7 @@ def _resolve_image_spec(spec, display_duration_s: float, fps: int = 30, spring: 
             keyword=p.stem,
             start=spec.start,
             end=spec.end,
-            image_path=str(card_png(p, full=spec.layout == "full")),
+            image_path=str(card_png(p, full=spec.layout == "full", style=card_style)),
             type="card",
         )
 

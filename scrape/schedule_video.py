@@ -175,7 +175,7 @@ def title_for(slug):
 
     videos = load_videos(ROOT / "assets" / slug / "videos.json")
     primary = next((v for v in videos if not v.of), videos[0] if videos else None)
-    title = " ".join((primary.title or "").split()) if primary else ""
+    title = " ".join((primary.title or "").replace("*", "").split()) if primary else ""
     return title or slug
 
 

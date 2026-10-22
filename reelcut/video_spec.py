@@ -9,6 +9,7 @@ This is the single hand-authored description of what comes out of a render (fill
 * `caption`  — the Instagram/Telegram post text
 * `filename` — filesystem stem for the `.mp4`
 * `of`       — set on a mirrored duplicate: the `id` of the entry it mirrors
+* `style` / `motion` — the title card's look (a headings.styles name) and entrance
 
 A base entry (no `of`) defines one hook. An entry with `of` is that hook rendered a second
 time with the footage flipped (`output.flip.apply: duplicate`) — it gets its own card, its
@@ -34,6 +35,8 @@ class VideoSpec:
     caption: str = ""          # pretty post text, e.g. "why reddit ditched kafka 😵"
     filename: str = ""         # filesystem stem, e.g. "why-reddit-ditched-kafka"
     of: str = ""               # base entry id this one mirrors ("" → this IS a base entry)
+    style: str = ""            # headings.styles name for the title card ("" → base settings)
+    motion: str = ""           # the title card's entrance ("" → the video's heading motion)
 
 
 def load_videos(path: Path) -> list[VideoSpec]:
@@ -60,6 +63,8 @@ def load_videos(path: Path) -> list[VideoSpec]:
             caption=v.get("caption", ""),
             filename=v.get("filename", ""),
             of=v.get("of", ""),
+            style=v.get("style", ""),
+            motion=v.get("motion", ""),
         )
         for v in raw
     ]

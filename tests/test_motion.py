@@ -151,6 +151,15 @@ class TestHeadingMotion:
         ink = lambda p: ImageStat.Stat(Image.open(p).getchannel("A")).sum[0]
         assert abs(ink(moving[f]) / ink(still[f]) - 1) < 0.05  # all there; only pushed in a little
 
+    @pytest.mark.parametrize("entrance", ["ink", "stamp", "split"])
+    def test_every_entrance_lands_on_the_still_card(self, tmp_path, entrance):
+        from PIL import ImageStat
+        from reelcut.heading import settled_s
+        moving, still = self._render(tmp_path, 0.0, entrance), self._render(tmp_path, 0.0, "none")
+        f = int(settled_s("snappy") * 30)
+        ink = lambda p: ImageStat.Stat(Image.open(p).getchannel("A")).sum[0]
+        assert abs(ink(moving[f]) / ink(still[f]) - 1) < 0.05
+
     def test_later_card_enters(self, tmp_path):
         moving = self._render(tmp_path, 1.0, "slot")
         assert Image.open(moving[30]).getchannel("A").getbbox() is None

@@ -14,7 +14,7 @@ Seven headings are required and every series has them. Four are optional and mos
 | `## Audience` | yes | `scripts` skill (jargon bar), `produce-script` Stage 3 |
 | `## Topic Selection` | yes | `/video-ideas`, `produce-script` Stage 0 |
 | `## Voice Profile` | yes | `scripts` skill, **`lint_script.py --series`** |
-| `## Title Card` | yes | `/produce-video` Step 4b |
+| `## Title Card` | yes | `/produce-video` Step 4b (title wording, subtitle, style kit) |
 | `## Structure` | no | `produce-script` Stage 0.5 — replaces spine selection |
 | `## CTA & Resources` | yes | `produce-script` Stage 3.6 |
 | `## Sourcing` | no | `produce-script` Stage 3 |
@@ -54,6 +54,7 @@ One or two sentences: what these videos are and what makes the series distinct. 
 ## Title Card
 **Style:** the framing the burned-in title card should hit for this series, then the shared clause every series ends on: **name the concrete thing, hold back the resolution.** The card is slightly mysterious by design — specific enough to be worth stopping for, incomplete enough that the viewer has to stay. Keep it distinct from a plain restatement of the hook (`/produce-video` writes one card per hook, never the hook's verbatim wording).
 **Subtitle:** the fixed branding line under the title, identical across every card in the series. Include `{n:<slug>}` where an episode counter belongs.
+**Style kit:** the title style this series' cards wear — a `headings.styles` name in `config.yaml` (`classic`, `casual`, `bold`, `mono`, `soft`, or your own). Titles and designed cards both take its font and accent.
 
 ## Structure
 *(Optional — most series omit this and let `produce-script` Stage 0.5 choose a spine.)*

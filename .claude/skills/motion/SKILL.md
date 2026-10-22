@@ -80,6 +80,20 @@ Exits: `lift` (up and out), `sink`, `shrink`, `wipe`, `slot`, `iris`, `shutter`,
 - **Video clips** don't take these moves. Animated and still cards do.
 - `"tilt": 0` for anything that must read straight (dense screenshots, diagrams); `"tilt": -3` to exaggerate a gag.
 
+## Title cards
+
+Each videos.json entry's `"motion"` is its title's entrance; vary it between hooks. What suits each style:
+
+| style | entrances |
+|---|---|
+| `classic` | `slot`, `ink` |
+| `casual` | `slot`, `split` (its accent marker sweeps in after the lines land) |
+| `bold` | `stamp`, `split` |
+| `mono` | `split`, `ink` |
+| `soft` | `ink`, `slot` |
+
+`stamp` lands the whole title at once (a verdict); `split` brings lines in from both sides (a contrast); `slot` raises each line out of its slot; `ink` writes it on.
+
 ## 3. Place the camera zooms
 
 Slow zooms on the footage only, anchored on the speaker's eyes.
@@ -110,7 +124,7 @@ Preview every overlay whose moves aren't the look's default, and every animated 
 
 ## 6. Report
 
-A table: each overlay (time, what it shows) → enter / transition / exit / hold, with a few words on why. Then the look, the eye point and each zoom with its line.
+A table: each overlay (time, what it shows) → enter / transition / exit / hold, with a few words on why. Then the look, each hook's title entrance, the eye point and each zoom with its line.
 
 ## Keep it unlike a template
 

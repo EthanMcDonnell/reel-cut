@@ -203,7 +203,7 @@ Read it, then pick the case:
 - **Filled in, but `output.flip` is `apply: duplicate` with `mode` not `off` and a duplicated hook has no entry whose `of` names it** — the mirror would render as a text-identical clone. Author the missing mirror entries only (leave every existing entry alone) and confirm them with AskUserQuestion as below. Under `mode: alternate` only every second hook is duplicated, so only those need one.
 
 Two different artifacts live in each entry, and they are written to different rules:
-- `title` / `subtitle` — **burned into the video** as the gold card over the opening seconds
+- `title` / `subtitle` — **burned into the video** as the title card over the opening seconds, in the series' style
 - `caption` / `filename` — **never rendered**; they name the file and caption the post
 
 ### The entries
@@ -212,15 +212,15 @@ One **base entry per hook** (same order as `hook_windows` from Step 3c), plus �
 
 ```json
 [
-  { "id": "tokens", "title": "What Are\nAI Tokens?", "subtitle": "<series/<slug>.md Title Card Subtitle>",
-    "start": 0.0, "end": 3.1, "scrim": true,
+  { "id": "tokens", "title": "What Are\nAI *Tokens*?", "subtitle": "<series/<slug>.md Title Card Subtitle>",
+    "start": 0.0, "end": 3.1, "scrim": true, "style": "soft", "motion": "slot",
     "caption": "what are ai tokens? 🤔", "filename": "what-are-ai-tokens" },
 
   { "id": "tokens-flipped", "of": "tokens", "title": "The Hidden\nCost Of A Word",
     "caption": "you pay by the syllable 💸", "filename": "pay-by-the-syllable" },
 
-  { "id": "syllable", "title": "Why ChatGPT\nBills Per Word", "subtitle": "<series/<slug>.md Title Card Subtitle>",
-    "start": 3.1, "end": 6.4, "scrim": true,
+  { "id": "syllable", "title": "Why ChatGPT\nBills *Per Word*", "subtitle": "<series/<slug>.md Title Card Subtitle>",
+    "start": 3.1, "end": 6.4, "scrim": true, "style": "soft", "motion": "ink",
     "caption": "big tech bills you by the syllable 🤫", "filename": "billed-by-the-syllable" }
 ]
 ```
@@ -228,10 +228,12 @@ One **base entry per hook** (same order as `hook_windows` from Step 3c), plus �
 Field reference:
 - `id` — stable handle for the entry, and the last-resort filename. Convention: the hook's short name, and `<base-id><flip-suffix>` for its mirror (the suffix is `output.flip.suffix`, default `-flipped`)
 - `of` — **mirror entries only**: the `id` of the hook this one mirrors. It inherits that hook's window, so it needs no `start`/`end`
-- `title` — burned-in card; use `\n` for line breaks. No swear words, even censored (`F*cking`) or when the speaker swears: say the take without one. `{n:<series>}` is auto-replaced with this video's episode number at render time (series slug = a `series/<slug>.md` filename)
+- `title` — burned-in card; use `\n` for line breaks. No swear words, even censored (`F*cking`) or when the speaker swears: say the take without one. `{n:<series>}` is auto-replaced with this video's episode number at render time (series slug = a `series/<slug>.md` filename). Star the one word or short phrase that carries this hook — `Safari *Sucks*`, `What Are *Tokens*?` — and it is drawn in the style's accent (or with a marker swept under it). One starred run per title, never in the subtitle
 - `subtitle` — smaller italic line under the title; also supports `{n:<series>}`. A mirror inherits its hook's subtitle if it omits this
 - `start`/`end` — **output-timeline seconds** from `hook_windows` (Step 3c), not source-clip time
 - `scrim` — `true` darkens footage behind the text; omit to use the config default
+- `style` — the series' `**Style kit:**` from its `## Title Card` section (a `headings.styles` name in `config.yaml`); the same on every entry. Cards in the video take its font and accent too
+- `motion` — the title's entrance: `slot`, `ink`, `stamp` or `split`. Give each hook a different one where the style allows (the `motion` skill says which suit which style); a mirror inherits its hook's
 - `caption` — the pretty post text (emoji + lowercase), used verbatim in the Telegram/Instagram post
 - `filename` — filesystem-safe stem for the `.mp4`: lowercase, hyphen-separated, no emoji, no swear words (even when the title card has one). Leave empty and it's derived from `caption`; if nothing usable survives, the file is named after `id`
 
@@ -248,7 +250,7 @@ A mirror entry is a *second angle on the same hook*, not a different video: it s
 
 **Title card style** — punchy, tailored to that hook's angle, in the series tone (a stylized 2–3-second card, not the hook's verbatim wording). Read the **Style** line under `series/<slug>.md`'s `## Title Card` section for this series' framing — do not invent one here.
 
-Use `\n` for line breaks (2 lines usually reads better on mobile). **Hard ceiling: 2 lines, 18 characters per line, 7 words total.** Past that the renderer shrinks the type to fit (`headings.margin_pct` in `config.yaml` keeps 8% of the width free each side), so an over-long card is not just slower to read, it is physically smaller. Count the characters before proposing.
+Use `\n` for line breaks (2 lines usually reads better on mobile). **Hard ceiling: 2 lines, 18 characters per line, 7 words total** (stars don't count). Past that the renderer shrinks the type to fit (`headings.margin_pct` in `config.yaml` keeps 8% of the width free each side), so an over-long card is not just slower to read, it is physically smaller. Count the characters before proposing.
 
 **A card may compress the claim but never contradict it.** The card is burned in, so an error here can only be fixed by re-rendering and re-uploading. Before proposing, check each card against the spoken body from the Step 1 timeline and against the source article: every number, count, and singular/plural in the card has to survive that check. If the body says "chunks", the card may not say "one file". The failure mode to watch for is a card that states the approach the source *rejected* — it will read as the most striking option precisely because it's wrong. See rule 10 in the `hooks` skill.
 

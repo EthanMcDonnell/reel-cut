@@ -1,6 +1,8 @@
 """Tests for the heading renderer — schema loading and output-timeline frame emission."""
 import json
 
+import pytest
+
 from PIL import Image
 
 from reelcut.config import HeadingsConfig
@@ -131,3 +133,24 @@ class TestSeriesNumber:
             slug="vid-b", registry_path=reg,
         )
         assert Image.open(a[0].image_path).tobytes() != Image.open(b[0].image_path).tobytes()
+
+
+class TestTitleStyles:
+    def test_starred_word_is_drawn_in_the_accent(self, tmp_path):
+        cfg = HeadingsConfig(color="#FFFFFF", accent_color="#FF0000", shadow=False, scrim=False)
+        def red(title, name):
+            png = render_heading_frames([HeadingSpec(title=title, start=0, end=1)], cfg,
+                                        tmp_path / name, 10, (216, 384))[0].image_path
+            import numpy as np
+            px = np.asarray(Image.open(png).convert("RGBA")).reshape(-1, 4)
+            return int(((px[:, 3] > 200) & (px[:, 0] > 200) & (px[:, 1] < 80)).sum())
+        assert red("Safari *Sucks*", "a") > 20
+        assert red("Safari Sucks", "b") == 0
+
+    def test_style_lays_over_the_base_settings(self):
+        from reelcut.heading import styled
+        cfg = HeadingsConfig(title_size=96, styles={"bold": {"font": "Anton", "case": "upper"}})
+        bold = styled(cfg, "bold")
+        assert (bold.font, bold.case, bold.title_size) == ("Anton", "upper", 96)
+        with pytest.raises(ValueError, match="nope"):
+            styled(cfg, "nope")

@@ -160,35 +160,41 @@ _JS_FINISH = """() => {
 }"""
 
 
-def card_png(html_path: Path, full: bool = False) -> Path:
+def card_png(html_path: Path, full: bool = False, style: dict | None = None) -> Path:
     """The rendered PNG for a card fragment, rendering it first if it is missing or stale."""
     html_path = Path(html_path)
-    png = _png_path(html_path, full)
+    png = _png_path(html_path, full, style)
     src_mtime = max(html_path.stat().st_mtime, _CSS.stat().st_mtime)
     if not png.exists() or png.stat().st_mtime < src_mtime:
-        render_cards([html_path], full)
+        render_cards([html_path], full, style)
     return png
 
 
-def render_cards(html_paths: list[Path], full: bool = False) -> list[Path]:
-    """Render each fragment to `<stem>.png` (or `<stem>.full.png`) beside it, in one browser session."""
+def render_cards(html_paths: list[Path], full: bool = False, style: dict | None = None) -> list[Path]:
+    """Render each fragment to `<stem>.png` (or `<stem>.full.png`) beside it, in one browser
+    session. A title `style` (see _style_css) is rendered to its own `<stem>.<key>.png`."""
     out = []
-    with _card_page(full) as load:
+    with _card_page(full, style=style) as load:
         for html_path in map(Path, html_paths):
             page = load(html_path)
             page.evaluate(_JS_FINISH)
-            png = _png_path(html_path, full)
+            png = _png_path(html_path, full, style)
             page.locator(".card").screenshot(path=str(png), omit_background=True)
             out.append(png)
     return out
 
 
-def _png_path(html_path: Path, full: bool) -> Path:
-    return html_path.with_suffix(".full.png" if full else ".png")
+def _png_path(html_path: Path, full: bool, style: dict | None = None) -> Path:
+    key = f".{_style_key(style)}" if style else ""
+    return html_path.with_suffix(f"{'.full' if full else ''}{key}.png")
+
+
+def _style_key(style: dict) -> str:
+    return hashlib.sha1(json.dumps(style, sort_keys=True).encode()).hexdigest()[:6]
 
 
 def card_webm(html_path: Path, beats: list[float], fps: int, full: bool = False,
-              spring: str = "snappy") -> tuple[Path, int]:
+              spring: str = "snappy", style: dict | None = None) -> tuple[Path, int]:
     """The animated render of a card whose Nth `data-beat` enters `beats[N-1]` seconds in.
 
     Named by a hash of the fragment, stylesheet, frame-rounded beats, fps and spring, so each
@@ -198,14 +204,14 @@ def card_webm(html_path: Path, beats: list[float], fps: int, full: bool = False,
     html_path = Path(html_path)
     beats = [round(max(0.0, b) * fps) / fps for b in beats]
     key = hashlib.sha1(
-        json.dumps([html_path.read_text(), _CSS.read_text(), beats, fps, spring]).encode()
+        json.dumps([html_path.read_text(), _CSS.read_text(), beats, fps, spring, style]).encode()
     ).hexdigest()[:10]
     webm = html_path.with_name(f"{html_path.stem}.{'full.' if full else ''}{key}.webm")
     meta = webm.with_suffix(".json")
     if webm.exists() and meta.exists():
         return webm, json.loads(meta.read_text())["top_beat"]
 
-    with _card_page(full, spring) as load, tempfile.TemporaryDirectory() as frames:
+    with _card_page(full, spring, style) as load, tempfile.TemporaryDirectory() as frames:
         page = load(html_path)
         top_beat = page.evaluate(_JS_SET_BEATS, beats)
         box, end_s = page.evaluate(_JS_PAUSE)
@@ -239,7 +245,7 @@ def card_strip(webm: Path, out: Path, fps: int, n: int = 12) -> Path:
 
 
 @contextmanager
-def _card_page(full: bool = False, spring: str = "snappy"):
+def _card_page(full: bool = False, spring: str = "snappy", style: dict | None = None):
     """A browser page and a `load(html_path)` that opens a fragment in it, fonts ready."""
     from playwright.sync_api import sync_playwright
 
@@ -249,7 +255,7 @@ def _card_page(full: bool = False, spring: str = "snappy"):
         page_file = Path(tmp) / "card.html"
 
         def load(html_path: Path):
-            page_file.write_text(_page(html_path, full, spring))
+            page_file.write_text(_page(html_path, full, spring, style))
             page.goto(page_file.as_uri())
             page.evaluate("document.fonts.ready")
             return page
@@ -260,7 +266,7 @@ def _card_page(full: bool = False, spring: str = "snappy"):
             browser.close()
 
 
-def _page(html_path: Path, full: bool = False, spring: str = "snappy") -> str:
+def _page(html_path: Path, full: bool = False, spring: str = "snappy", style: dict | None = None) -> str:
     """The full document for one fragment. `<base>` lets it reference images beside it.
     A fragment that uses `data-focus` is wrapped in a `.cam` the camera moves."""
     body = html_path.read_text()
@@ -274,8 +280,24 @@ def _page(html_path: Path, full: bool = False, spring: str = "snappy") -> str:
     return (
         "<!doctype html><html><head><meta charset='utf-8'>"
         f"<base href='{html_path.resolve().parent.as_uri()}/'>"
-        f"<style>{faces}{_CSS.read_text()}\n{css_vars(spring)}</style></head>"
+        f"<style>{faces}{_CSS.read_text()}\n{css_vars(spring)}\n{_style_css(style)}</style></head>"
         f"<body><div class='card{' full' if full else ''}'>{body}</div></body></html>"
+    )
+
+
+def _style_css(style: dict | None) -> str:
+    """The video's title style on its cards: {"font": <file stem in fonts/>, "accent": <colour>,
+    "case": "none" | "upper" | "lower"} sets the heading font, the accent and the heading case."""
+    if not style:
+        return ""
+    from PIL import ImageFont
+    file = f"{style['font']}.ttf"
+    family = ImageFont.truetype(str(_HERE / "fonts" / file), 12).getname()[0]
+    case = {"upper": "uppercase", "lower": "lowercase"}.get(style.get("case", ""), "none")
+    return (
+        f'@font-face {{ font-family: "{family}"; font-weight: 100 900; '
+        f'src: url(data:font/ttf;base64,{_font_b64(file)}) format("truetype"); }}\n'
+        f':root {{ --accent: {style["accent"]}; --title-font: "{family}"; --title-case: {case}; }}'
     )
 
 
