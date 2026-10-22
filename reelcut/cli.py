@@ -21,7 +21,7 @@ import time
 import traceback
 from dataclasses import replace
 from pathlib import Path
-from typing import Optional
+from typing import Annotated, Optional
 
 import typer
 from rich.console import Console
@@ -180,7 +180,8 @@ def _hook_windows(hooks: list) -> list[tuple[float, float]]:
     return [(v.start, v.end) for v in hooks]
 
 
-def _hook_caption_survival(doc, hook_windows: list[tuple[float, float]]) -> list[str]:
+def _hook_caption_survival(doc, hook_windows: list[tuple[float, float]],
+                           trims: dict[int, list[list]] | None = None) -> list[str]:
     """Check each hook variant would caption exactly the words its footage says.
 
     A per-hook render is the full take with the other hooks flipped to cuts, so its
@@ -196,8 +197,12 @@ def _hook_caption_survival(doc, hook_windows: list[tuple[float, float]]) -> list
     "See," went missing from 8 of 10 videos. This compares the two filters against the
     section partition they are both meant to implement, which is the same comparison an
     editor makes by eye.
+
+    `trims` maps a hook index to the trim span lists its videos drop (default: none); a
+    trimmed variant is owed every word except the trimmed ones.
     """
     from .hook_split import _section_of, build_hook_edl, drop_covered
+    from .trims import apply_trims
 
     remap, _ = _build_edl_remap(doc.edl)
     body_start = hook_windows[-1][1]
@@ -213,63 +218,80 @@ def _hook_caption_survival(doc, hook_windows: list[tuple[float, float]]) -> list
 
     warnings: list[str] = []
     for i in range(len(hook_windows)):
-        new_edl, _, drop_intervals = build_hook_edl(doc.edl, hook_windows, i)
-        runs = _cut_runs(new_edl)
-        survived = {
-            id(w) for w in drop_covered(doc.words, drop_intervals)
-            if not _in_cut_run(w.source_clip, w.start, runs)
-        }
-        owed = {k for k, sec in section.items() if sec == "body" or sec == i}
-        lost = [w for w in doc.words if id(w) in owed - survived]
-        if lost:
-            shown = ", ".join(f"{w.word!r} @ {w.start:.2f}s" for w in lost[:6])
-            if len(lost) > 6:
-                shown += f" (+{len(lost) - 6} more)"
-            warnings.append(
-                f"Hook {i + 1}: {len(lost)} word(s) spoken in this cut but not captioned — {shown}"
-            )
+        hook_edl, _, hook_drops = build_hook_edl(doc.edl, hook_windows, i)
+        for spans in (trims or {}).get(i, [[]]):
+            new_edl = apply_trims(hook_edl, spans)
+            drop_intervals = {c: list(v) for c, v in hook_drops.items()}
+            for clip, a, b in spans:
+                drop_intervals.setdefault(clip, []).append((a, b))
+            runs = _cut_runs(new_edl)
+            survived = {
+                id(w) for w in drop_covered(doc.words, drop_intervals)
+                if not _in_cut_run(w.source_clip, w.start, runs)
+            }
+            trimmed = {id(w) for w in doc.words
+                       if any(c == w.source_clip and a <= w.start < b for c, a, b in spans)}
+            owed = {k for k, sec in section.items() if sec == "body" or sec == i} - trimmed
+            lost = [w for w in doc.words if id(w) in owed - survived]
+            if lost:
+                shown = ", ".join(f"{w.word!r} @ {w.start:.2f}s" for w in lost[:6])
+                if len(lost) > 6:
+                    shown += f" (+{len(lost) - 6} more)"
+                which = f"Hook {i + 1}" + (" (trimmed)" if spans else "")
+                warnings.append(
+                    f"{which}: {len(lost)} word(s) spoken in this cut but not captioned — {shown}"
+                )
     return warnings
 
 
-def _flip_plan(n: int, flip_cfg) -> list[list[tuple[str, bool]]]:
-    """Per-hook output plan: `[(filename_suffix, flip), …]` for each of the `n` hooks.
+def _plan_videos(videos: list, hooks: list, cfg, units: list[int], videos_path: Path) -> list[list]:
+    """Each hook's videos in copy order — its base entry, then its copies — with `flip` and
+    `trim` filled in.
 
-    `mode` picks which hooks are flipped (none / every second one / all); `apply` decides
-    whether a flipped render *replaces* that hook's video or is emitted *alongside* it under
-    a suffixed name. See FlipConfig.
+    The plan is recorded in videos.json the first time a video is rendered, so editing
+    trims.json or the config later can't change what an already-posted file contains. A hook
+    with fewer entries than `output.variants.copies` gets stub copies (`<id>-<n>`, named
+    `<stem>-<n>`) that reuse its card and caption.
     """
-    if flip_cfg.mode == "off":
-        return [[("", False)] for _ in range(n)]
-    flipped = [flip_cfg.mode == "all" or i % 2 == 1 for i in range(n)]
-    if flip_cfg.apply == "in_place":
-        return [[("", f)] for f in flipped]
-    return [[("", False), (flip_cfg.suffix, True)] if f else [("", False)] for f in flipped]
+    from .variants import plan_variants
+    from .video_spec import copies_of, load_videos, stem_for, write_plan
+
+    per_hook = [[h] + copies_of(videos, h.id) for h in hooks]
+    v = cfg.output.variants
+    plan = plan_variants([max(len(e), v.copies) for e in per_hook], v.flip, v.trim, units)
+
+    planned, stubs = {}, []
+    for h, entries, slots in zip(hooks, per_hook, plan):
+        for c, (flip, trim) in enumerate(slots):
+            if c >= len(entries):
+                stubs.append({"id": f"{h.id}-{c + 1}", "of": h.id,
+                              "filename": f"{stem_for(h)}-{c + 1}", "flip": flip, "trim": trim})
+            elif entries[c].flip is None or entries[c].trim is None:
+                e = entries[c]
+                planned[e.id] = (flip if e.flip is None else e.flip, trim if e.trim is None else e.trim)
+    if not planned and not stubs:
+        return per_hook
+    write_plan(videos_path, planned, stubs)
+    console.print(f"Planned {len(planned) + len(stubs)} video(s) → {videos_path}")
+    videos = load_videos(videos_path)
+    return [[h] + copies_of(videos, h.id) for h in _titled_hooks(videos)]
 
 
-def _hook_variant_groups(plan_entries, base, mirror, out_dir: Path):
-    """Group one hook's planned outputs by the videos.json entry that describes them.
+def _titled_hooks(videos: list) -> list:
+    """The hook-defining entries of videos.json that have a card."""
+    from .video_spec import base_videos
 
-    The first output is the hook itself (`base`); any second output is its mirrored duplicate,
-    described by the entry whose `of` names the base — its own card, caption and filename. A
-    duplicate the file doesn't describe falls back to the base entry's card under a suffixed
-    filename, which is a text-identical clone of its hook.
+    return [v for v in base_videos(videos) if v.title]
 
-    Returns `[(entry, [(path, flip), …]), …]`. Outputs described by the same entry stay in one
-    group so they share the overlay frames and segment extraction; a duplicate with its own
-    entry is necessarily its own render.
-    """
-    from .video_spec import stem_for
 
-    groups: list[tuple[object, list[tuple[Path, bool]]]] = []
-    for idx, (suffix, flip) in enumerate(plan_entries):
-        entry = mirror if idx > 0 and mirror else base
-        stem = stem_for(entry) if entry is not base else stem_for(base) + suffix
-        path = out_dir / f"{stem}.mp4"
-        if groups and groups[-1][0] is entry:
-            groups[-1][1].append((path, flip))
-        else:
-            groups.append((entry, [(path, flip)]))
-    return groups
+def _load_trim_units(assets_dir: Path) -> dict[int, list[tuple[str, float, float]]]:
+    """Usable trims.json units (every line resolved), `{}` without the file."""
+    import json
+
+    from .trims import usable_units
+
+    path = assets_dir / "trims.json"
+    return usable_units(json.loads(path.read_text())) if path.exists() else {}
 
 
 # ---------------------------------------------------------------------------
@@ -285,22 +307,30 @@ def render_hooks(
         False, "--check-overlays",
         help="Report each hook video's overlay coverage and gaps, then stop without rendering.",
     ),
+    # Annotated, so the default is a real False when render_hooks is called as a function.
+    plan_only: Annotated[bool, typer.Option(
+        "--plan",
+        help="Plan the variants (recorded in videos.json), print each video's flip, trims and "
+             "length, then stop without rendering.",
+    )] = False,
     verbose: bool = typer.Option(False, "--verbose", "-v"),
 ) -> None:
-    """Phase 2 (per-hook): render one video per hook — each is hook_i + the shared body.
+    """Phase 2 (per-hook): render every video of videos.json — hook_i + the shared body.
 
     The titled base entries of videos.json are the hook definition (one per hook, as produced
-    by /produce-video). Each render is a normal full render with the *other* hooks flipped to
-    cuts, so music/captions/scaling all behave as usual — no concat. Outputs
-    output/<slug>/<entry-slug>.mp4, and a mirrored duplicate takes the filename and card of
-    the entry whose `of` names its hook.
+    by /produce-video); an entry with `of` is another copy of that hook. Each render is a
+    normal full render with the *other* hooks flipped to cuts — and, for a trimmed video, its
+    trims.json spans too — so music/captions/scaling all behave as usual, no concat. What
+    makes each video different (`flip`, `trim`) is planned once from `output.variants` and
+    recorded on its entry. Outputs output/<slug>/<entry-stem>.mp4.
     """
     from .captions_doc import CaptionsDoc, load_captions_doc
     from .config import load_config
     from .heading import HeadingSpec
-    from .hook_split import build_hook_edl, drop_covered
+    from .hook_split import build_hook_edl, drop_covered, snap_windows
     from .image_spec import load_images, save_images
-    from .video_spec import base_videos, load_videos, mirror_of
+    from .trims import apply_trims, stale_spans
+    from .video_spec import load_videos, stem_for
 
     try:
         cfg = load_config(config_path)
@@ -318,85 +348,135 @@ def render_hooks(
     assets_dir = cap_path.parent
 
     videos = load_videos(assets_dir / "videos.json")
-    hooks = [v for v in base_videos(videos) if v.title]
+    hooks = _titled_hooks(videos)
     if not hooks:
         err_console.print(
             "[red]Error:[/red] videos.json has no titled hook entries — fill it in first "
             "(/produce-video Step 4b)."
         )
         raise typer.Exit(1)
-    from .hook_split import snap_windows
     hook_windows = snap_windows(doc.edl, doc.words, _hook_windows(hooks))
 
-    # Output videos are grouped in a per-slug folder and named by their entry's filename
-    # (falling back to the caption, then the entry id).
+    units = _load_trim_units(assets_dir)
+    per_hook = _plan_videos(videos, hooks, cfg, sorted(units), assets_dir / "videos.json")
+
+    # Every trim a video names must exist, be usable, and still sit on this EDL's cuts.
+    named = {u for entries in per_hook for e in entries for u in (e.trim or [])}
+    missing = sorted(named - set(units))
+    if missing:
+        err_console.print(f"[red]Error:[/red] videos.json drops trim unit(s) {missing}, which "
+                          "trims.json doesn't have as usable — re-run `reelcut trims` or fix the entry.")
+        raise typer.Exit(1)
+    stale = stale_spans(doc.edl, [sp for u in named for sp in units[u]])
+    if stale:
+        err_console.print(f"[red]Error:[/red] trims.json is stale — {len(stale)} span(s) no longer sit "
+                          "on the EDL's cuts (was /prepare-video re-run?). Re-run `reelcut trims`.")
+        raise typer.Exit(1)
+
+    def spans_for(trim):
+        return [sp for u in (trim or []) for sp in units[u]]
+
     out_dir = Path(cfg.output.location) / slug
     out_dir.mkdir(parents=True, exist_ok=True)
     images = load_images(assets_dir / "images.json")
     audio_path = assets_dir / "audio.json"
 
     n = len(hook_windows)
-    plan = _flip_plan(n, cfg.output.flip)
-    n_videos = sum(len(p) for p in plan)
+    if plan_only:
+        _print_plan(doc, hook_windows, per_hook, spans_for)
+        return
+    n_videos = sum(len(e) for e in per_hook)
     console.print(f"[bold]{n_videos} video(s) to render from {n} hook(s)[/bold]\n")
     all_warnings: list[str] = []
 
     # Cheap pure-python pre-pass, before any encode time is spent: a variant that captions
     # the wrong set of words looks fine everywhere except on screen.
-    caption_warnings = _hook_caption_survival(doc, hook_windows)
+    caption_warnings = _hook_caption_survival(doc, hook_windows, {
+        i: [spans_for(t) for t in {tuple(e.trim or []) for e in entries}]
+        for i, entries in enumerate(per_hook)
+    })
     for w in caption_warnings:
         err_console.print(f"  [yellow]Warning:[/yellow] {w}")
     all_warnings.extend(caption_warnings)
     for i in range(n):
         base = hooks[i]
+        hook_edl, hook_dur, hook_drops = build_hook_edl(doc.edl, hook_windows, i)
 
-        new_edl, hook_dur, drop_intervals = build_hook_edl(doc.edl, hook_windows, i)
-        new_doc = CaptionsDoc(
-            source_clips=doc.source_clips,
-            edl=new_edl,
-            words=drop_covered(doc.words, drop_intervals),
-        )
-
-        # Per-hook image stub, written into the assets dir and cleaned up after the render.
-        tmp_images = assets_dir / f".render-hook{i + 1}.images.json"
-        save_images(drop_covered(images, drop_intervals), tmp_images)
-
-        # One or two outputs per hook — the second is the flipped duplicate when output.flip
-        # is set to duplicate. Outputs described by the same videos.json entry go through
-        # _phase2 together so the shared work (overlay frames, segment extraction, concat) is
-        # done once; a duplicate with its own entry is its own _phase2 call.
-        groups = _hook_variant_groups(plan[i], base, mirror_of(videos, base.id), out_dir)
+        # Videos with the same card and the same trims share one render pass (overlay frames,
+        # segment extraction); only the final encode repeats, flipped or not.
+        groups: dict[tuple, tuple] = {}
+        for entry in per_hook[i]:
+            card = HeadingSpec(
+                title=entry.title or base.title,
+                subtitle=entry.subtitle or base.subtitle,
+                start=0.0,
+                # -1 = until the end of the video; otherwise the card outlasts the hook.
+                end=-1 if cfg.headings.hold_after_hook_s < 0
+                else hook_dur + cfg.headings.hold_after_hook_s,
+                scrim=base.scrim if entry.scrim is None else entry.scrim,
+                style=entry.style or base.style,
+                motion=entry.motion or base.motion,
+            )
+            trim = tuple(entry.trim or [])
+            key = (card.title, card.subtitle, card.scrim, card.style, card.motion, trim)
+            groups.setdefault(key, (card, trim, []))[2].append(
+                (out_dir / f"{stem_for(entry)}.mp4", bool(entry.flip)))
         console.rule(
             f"[bold]Hook {i + 1}/{n}[/bold] → "
-            + ", ".join(p.name for _, variants in groups for p, _ in variants)
+            + ", ".join(p.name for _, _, outputs in groups.values() for p, _ in outputs)
         )
 
-        try:
-            for entry, variants in groups:
-                card = HeadingSpec(
-                    title=entry.title or base.title,
-                    subtitle=entry.subtitle or base.subtitle,
-                    start=0.0,
-                    # -1 = until the end of the video; otherwise the card outlasts the hook.
-                    end=-1 if cfg.headings.hold_after_hook_s < 0
-                    else hook_dur + cfg.headings.hold_after_hook_s,
-                    scrim=base.scrim if entry.scrim is None else entry.scrim,
-                    style=entry.style or base.style,
-                    motion=entry.motion or base.motion,
-                )
+        for g, (card, trim, outputs) in enumerate(groups.values()):
+            spans = spans_for(trim)
+            drop_intervals = {c: list(v) for c, v in hook_drops.items()}
+            for clip, a, b in spans:
+                drop_intervals.setdefault(clip, []).append((a, b))
+            new_doc = CaptionsDoc(
+                source_clips=doc.source_clips,
+                edl=apply_trims(hook_edl, spans),
+                words=drop_covered(doc.words, drop_intervals),
+            )
+            # Per-video image stub, written into the assets dir and cleaned up after the render.
+            tmp_images = assets_dir / f".render-hook{i + 1}-{g + 1}.images.json"
+            save_images(drop_covered(images, drop_intervals), tmp_images)
+            try:
                 all_warnings.extend(_phase2(
-                    cfg, new_doc, variants, verbose,
+                    cfg, new_doc, outputs, verbose,
                     headings=[card], assets_dir=assets_dir,
                     images_path=tmp_images, audio_path=audio_path,
                     reset_logos_per_section=False,
                     hook_end_s=hook_dur, check_only=check_overlays,
                 ))
-                if check_overlays:
-                    break  # variants of one hook share their overlays
-        finally:
-            tmp_images.unlink(missing_ok=True)
+            finally:
+                tmp_images.unlink(missing_ok=True)
+            if check_overlays:
+                break  # a hook's videos share their overlays, less any a trim drops
 
     _exit_with_warnings(all_warnings)
+
+
+def _print_plan(doc, hook_windows, per_hook, spans_for) -> None:
+    """The variant plan as a table: each video's hook, copy, flip, trims and length."""
+    from .hook_split import build_hook_edl
+    from .trims import apply_trims
+    from .video_spec import stem_for
+
+    table = Table("video", "hook", "copy", "flip", "trims", "length")
+    seen: dict[int, set] = {}
+    for i, entries in enumerate(per_hook):
+        hook_edl, _, _ = build_hook_edl(doc.edl, hook_windows, i)
+        for c, e in enumerate(entries):
+            edl = apply_trims(hook_edl, spans_for(e.trim))
+            length = sum(x.end - x.start for x in edl if x.keep)
+            core = " (core)" if i == 0 and c == 0 else ""
+            table.add_row(stem_for(e) + core, str(i + 1), str(c + 1), "✓" if e.flip else "–",
+                          ", ".join(map(str, e.trim or [])) or "–", f"{length:.1f}s")
+            look = (bool(e.flip), tuple(e.trim or []))
+            if look in seen.setdefault(i, set()):
+                err_console.print(f"  [yellow]Warning:[/yellow] hook {i + 1} has two videos with the "
+                                  "same flip and trims — they differ only in their card")
+            seen[i].add(look)
+    console.print(table)
 
 
 # ---------------------------------------------------------------------------
@@ -1000,7 +1080,7 @@ def _phase2(cfg, doc, outputs: list[tuple[Path, bool]], verbose: bool,
     `outputs` is one `(path, flip)` pair per file — a hook and its flipped duplicate are one
     call, so the caption/image/heading frames and the segment extraction are done once and
     only the final encode repeats. `flip` mirrors the footage; overlays are composited after
-    the flip, so captions and title cards read normally (see output.flip in config).
+    the flip, so captions and title cards read normally (see output.variants in config).
 
     `headings` are the title cards to burn in (built from videos.json by the caller, so a
     mirrored duplicate can be given its own card). `assets_dir` is the slug's asset folder —

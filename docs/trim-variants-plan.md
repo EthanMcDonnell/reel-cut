@@ -79,9 +79,10 @@ because its EDL differs. So `copies: 2` with `trim: rotate` roughly doubles rend
 | 2 | 2 | ✓ | 1, 2 |
 | 3 | 3 | – | 1 |
 
-3 hooks, 2 units, `copies: 2, flip: copies, trim: rotate`: 6 videos, subsets
-`– / {1,2} / {1} / {2} / {1,2} / {1}`. Each hook's two copies have different trims, and every
-second copy is flipped.
+3 hooks, 2 units, `copies: 2, flip: copies, trim: rotate`: 6 videos. The plan is ordered by
+copy (every hook's first video, then every hook's second), so the trims go
+hook 1–3 first videos `– / {1,2} / {1}`, then their copies `{2} / – / {1,2}`. Each hook's two
+videos have different trims, and every copy is flipped.
 
 ## 3. Marking lines: script time (`scripts` skill and `/produce-script` Stage 3)
 
@@ -127,7 +128,7 @@ cuts at 96% of body sentence breaks (section 4).
 `/prepare-video` strips the markers before it scores script coverage
 (`debug_report._script_body_lines`).
 
-## 4. Finding exact cut points (new code, `/produce-video` Step 3d)
+## 4. Finding exact cut points (`reelcut trims`, `/produce-video` Step 4e)
 
 **`reelcut trims <captions>` writes `assets/<slug>/trims.json`:**
 
@@ -210,19 +211,21 @@ Gap writeup notes where a marked line had no pause.
 | `/produce-script` | Stage 3: write the markers. Stage 3.5: linter checks. |
 | `lint_script.py` | Parse markers, enforce the limits, report full vs. all-trimmed word counts. |
 | `/prepare-video` | Strip markers before the coverage check. |
-| `/produce-video` | New Step 3d after hook windows: run `reelcut trims`, fix overlays that straddle a trim, report rejected units. Step 4b: run the planner, write `flip`/`trim` on every entry, write one entry per copy (own title and caption, as mirror entries work now). Step 5: `render-hooks --plan` first, then render. |
+| `/produce-video` | Step 4b: write one entry per copy (own title and caption, as mirror entries worked). New Step 4e after 4b (it needs the hook windows): run `reelcut trims`, fix overlays already on screen when a trim starts, report rejected units. Step 5: `render-hooks --plan` first, which plans and records `flip`/`trim` on every entry, then render. |
 | `video_spec.py` | `flip: bool`, `trim: list[int]` on entries. `of` becomes "another copy of this hook" instead of "the mirror of". |
 | `/schedule-video` | Never book two copies of the same hook in adjacent slots. |
 
-## 7. Build order (each step leaves the pipeline working)
+## 7. Status
 
-1. **Resolver and `trims.json`**: done.
-2. **Render from `videos.json` `flip`/`trim`**, plus caption-survival and `--plan`.
-   Verify: render one slug with a hand-written trim, and check every cut in the trim's
-   `.debug` report.
-3. **Planner and `output.variants`** (replaces `output.flip`), with tests for every
-   guarantee in section 1, and an old slug re-rendering to the same files.
-4. **Skills and linter** (section 6).
+All four steps are built (`reelcut/trims.py`, `reelcut/variants.py`, `render-hooks`, linter,
+skills).
+
+- **Existing slugs:** each slug's `videos.json` now records the plan it was actually rendered
+  with, so a re-render reproduces the posted files. Slugs with mirror entries were rendered
+  under the old `all + duplicate` setting (bases plain, mirrors flipped); the rest under
+  `alternate + in_place`.
+- `video_spec.mirror_of` no longer has callers, but an existing test still covers it, so it
+  was kept.
 
 ## Open questions
 
@@ -230,4 +233,4 @@ Gap writeup notes where a marked line had no pause.
   pauses that weren't cut. Those are gap-detector misses that would hurt the normal edit
   too, not something specific to trims.
 - `copies: 2` doubles output per slug. That depends on whether the scheduler has slots for
-  it, so the multi-take spacing rule needs to cover copies.
+  it. `/schedule-video` already keeps a copy out of the slots next to its own hook.

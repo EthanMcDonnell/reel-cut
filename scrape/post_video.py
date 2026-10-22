@@ -67,7 +67,7 @@ REQUEST_TIMEOUT_S = 360
 def captions_for(slug):
     """Map each rendered file stem -> pretty caption from assets/<slug>/videos.json.
 
-    One entry per rendered video, so a mirrored duplicate (the entry with ``of``) is keyed by
+    One entry per rendered video, so a copy of a hook (the entry with ``of``) is keyed by
     its own stem and posts under its own caption.
     """
     from reelcut.video_spec import load_videos, stem_for
@@ -82,9 +82,9 @@ def captions_for(slug):
 def caption_for(slug, stem):
     """Caption for one rendered file, from its videos.json entry.
 
-    A mirrored duplicate that videos.json doesn't describe is written as its hook's stem plus
-    the flip suffix, so an exact miss falls back to the longest stem the filename starts
-    with — that copy posts with the same caption as the hook it mirrors.
+    A stub copy (no caption of its own) is named its hook's stem plus a suffix, so an exact
+    miss falls back to the longest stem the filename starts with — that copy posts with the
+    same caption as its hook.
     """
     titles = captions_for(slug)
     if stem in titles:

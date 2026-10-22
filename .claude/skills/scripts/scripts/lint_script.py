@@ -45,6 +45,11 @@ KNOWN_SERIES = {
     p.stem for p in (PROJECT_ROOT / "series").glob("*.md")
 } - {"series-template"} | {"misc"}
 
+# A removable body line: `[cut-N] Sentence.` N is its removal priority; lines sharing N
+# are one unit. reelcut/trims.py resolves them; trim variants drop them.
+TRIM_MARKER = re.compile(r"^\[cut-(\d+)\]\s*")
+TRIM_MAX_SHARE = 0.25  # marked words, as a share of the body
+
 # Throat-clearing openers (banned). Deliberately narrow so it never catches the
 # open-loop phrase "But here's the part nobody talks about", which is legitimate
 # in a script that genuinely withholds a reveal. Whether this script is one is a
@@ -165,9 +170,43 @@ def longest_shared_run(a, b, minimum):
     return ""
 
 
+def lint_trims(lines):
+    """Check the `[cut-N]` markers. Returns (errors, marked) — `marked` is
+    {line_index: unit} for the body word count."""
+    errors, marked, section, prev = [], {}, None, None
+    for i, line in enumerate(lines):
+        s = line.strip()
+        if s in ALL_HEADERS:
+            section, prev = s, None
+            continue
+        m = TRIM_MARKER.match(s)
+        if m:
+            text = s[m.end():]
+            if section != "**SCRIPT**":
+                errors.append((i + 1, "trim-section", "[cut-N] lines belong in **SCRIPT** only"))
+            elif prev is None:
+                errors.append((i + 1, "trim-first-line", "the first **SCRIPT** line hands off from the hooks; it can't be cut"))
+            else:
+                if not text.endswith((".", "!", "?")):
+                    errors.append((i + 1, "trim-sentence", "a [cut-N] line must be a whole sentence ending in . ! or ?"))
+                if not TRIM_MARKER.sub("", prev).endswith((".", "!", "?")):
+                    errors.append((i + 1, "trim-sentence", "the line before a [cut-N] line must end a sentence"))
+            marked[i] = int(m.group(1))
+        if s:
+            prev = s
+    units = sorted(set(marked.values()))
+    if units and units != list(range(1, len(units) + 1)):
+        errors.append((0, "trim-numbering", f"[cut-N] units are {units}; number them 1, 2, 3 with no gaps"))
+    return errors, marked
+
+
 def lint(lines, cap=DEFAULT_WORD_CAP, cap_label=None, slug=None):
     errors, warns = [], []
     cap_label = cap_label or f"no series given, default cap {cap}"
+    trim_errors, marked = lint_trims(lines)
+    errors += trim_errors
+    # Every other check reads the spoken words, without the markers.
+    lines = [TRIM_MARKER.sub("", l.strip()) if i in marked else l for i, l in enumerate(lines)]
     stripped = [l.strip() for l in lines]
     joined = "\n".join(lines)
 
@@ -288,10 +327,10 @@ def lint(lines, cap=DEFAULT_WORD_CAP, cap_label=None, slug=None):
     # (recorded once, then split into separate videos) and the CTA is an appended
     # tag, so both are excluded from the cap — only SCRIPT + CONCLUSION, the
     # shared body, counts. Also excludes headers and reference URLs.
-    words, n_hooks = 0, 0
+    words, n_hooks, trim_words = 0, 0, 0
     body, script_lines, conclusion_lines = [], [], []
     section, in_refs = None, False
-    for s in stripped:
+    for idx, s in enumerate(stripped):
         if s == "**REFERENCES:**":
             in_refs = True
             continue
@@ -307,11 +346,16 @@ def lint(lines, cap=DEFAULT_WORD_CAP, cap_label=None, slug=None):
                 n_hooks += 1
             continue
         words += len(s.split())
+        if idx in marked:
+            trim_words += len(s.split())
         body.append(s)
         (script_lines if section == "**SCRIPT**" else conclusion_lines).append(s)
     if words > cap:
         note = f"body only, {n_hooks} hooks excluded" if n_hooks else "body only"
         warns.append((0, "word-count", f"{words} words of content ({note}; {cap_label})"))
+    if trim_words and trim_words > TRIM_MAX_SHARE * words:
+        errors.append((0, "trim-share", f"{trim_words} of {words} body words are marked [cut-N]; "
+                                         f"at most {int(TRIM_MAX_SHARE * 100)}%"))
 
     # Per-sentence length. A spoken sentence past ~25 words has chained one
     # clause too many, burying the reveal under its own qualifiers. Across the
@@ -372,6 +416,9 @@ def main():
         lines = lines[:-1]
 
     errors, warns = lint(lines, cap, cap_label, args.series)
+    _, marked = lint_trims(lines)
+    if marked:
+        print(f"trims: {len(set(marked.values()))} unit(s) on {len(marked)} line(s)")
 
     def show(items):
         for ln, code, msg in sorted(items):

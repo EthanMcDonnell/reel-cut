@@ -7,6 +7,8 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from .trims import MARKER
+
 if TYPE_CHECKING:
     from .config import ReelCutConfig
     from .edl import EDLEntry
@@ -717,7 +719,7 @@ def _script_body_lines(base_path: Path) -> list[str] | None:
         if header:
             section = header.group(1).rstrip(":")
         elif section in _SPOKEN_SECTIONS and raw.strip():
-            lines.append(raw.strip())
+            lines.append(MARKER.sub("", raw.strip()))  # a [cut-N] marker isn't spoken
     return lines
 
 

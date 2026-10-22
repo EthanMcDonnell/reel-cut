@@ -110,6 +110,17 @@ Take the viewer on a journey of discovery, not a lecture — they should feel li
 - "That's how you serve a billion users without breaking."
 **REFERENCES** — URLs for any statistics or data used.
 
+## Optional Lines (`[cut-N]`)
+After the trim pass, mark the body sentences a shorter cut could drop. Trim variants of the video drop them (`reelcut trims`, `output.variants.trim`).
+- Prefix the whole sentence: `[cut-1] That's about three times what the old cluster cost.` N is removal priority, 1 = least needed. Lines that only work together share a number.
+- 0–3 units. Never add a line to have something to mark; no qualifying line means no marks.
+- A line qualifies only if all hold:
+  1. It's in `**SCRIPT**`, but not the first line, the crux, the payoff, the turn, or the diagram walk-through.
+  2. Nothing after it refers back to it: no "that", "this", "it", "the second one", no name or number first introduced there.
+  3. Read aloud without it, the line before lands and the line after opens cleanly.
+  4. It and the line before it end in `.`, `!` or `?`.
+- The full script, marks included, fits the word cap. Marked words stay under 25% of the body. The linter enforces both.
+
 ## Exact Output Format
 The script and the saved file must both use this exact format — bold headers, no blank lines between sections, no deviations. SETUP, EXTRA, and PAYOFF fold into the single **SCRIPT** block. `**CTA**` is optional; include it only when there is a CTA, and always between **CONCLUSION** and **REFERENCES**:
 ```

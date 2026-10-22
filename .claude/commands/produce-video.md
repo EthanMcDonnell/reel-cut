@@ -198,9 +198,11 @@ Invoke the `motion` skill and direct how this video moves: its look and camera z
 
 Read it, then pick the case:
 - **Missing, or the first entry's `title` is empty** (the stub state from `prepare-video`, or a slug that predates this file) — write the whole thing as below.
-- **Titled, but a base entry has `end` of `0`** — `prepare-video` kept the wording from a prior run and cleared the windows. Fill `start`/`end` on every base entry from `hook_windows` (Step 3c) and change nothing else: the cards and captions are already approved. Then handle mirrors as below. Rendering with a `0`/`0` window is refused.
-- **Filled in, and mirror entries are already there or aren't wanted** — skip to Step 5. "Aren't wanted" means `output.flip` in `config.yaml` is `mode: "off"` or `apply: in_place`.
-- **Filled in, but `output.flip` is `apply: duplicate` with `mode` not `off` and a duplicated hook has no entry whose `of` names it** — the mirror would render as a text-identical clone. Author the missing mirror entries only (leave every existing entry alone) and confirm them with AskUserQuestion as below. Under `mode: alternate` only every second hook is duplicated, so only those need one.
+- **Titled, but a base entry has `end` of `0`** — `prepare-video` kept the wording from a prior run and cleared the windows. Fill `start`/`end` on every base entry from `hook_windows` (Step 3c) and change nothing else: the cards and captions are already approved. Then handle copies as below. Rendering with a `0`/`0` window is refused.
+- **Filled in, and every hook has `output.variants.copies` entries** (its base plus copies) — skip to Step 5.
+- **Filled in, but a hook has fewer entries than `output.variants.copies`** — the missing copy would render as a text-identical clone. Author the missing copy entries only (leave every existing entry alone) and confirm them with AskUserQuestion as below.
+
+Never write `flip` or `trim` yourself: `render-hooks` plans them from `output.variants` and records them on each entry the first time it runs. An entry that already has them keeps them.
 
 Two different artifacts live in each entry, and they are written to different rules:
 - `title` / `subtitle` — **burned into the video** as the title card over the opening seconds, in the series' style
@@ -208,7 +210,7 @@ Two different artifacts live in each entry, and they are written to different ru
 
 ### The entries
 
-One **base entry per hook** (same order as `hook_windows` from Step 3c), plus — when `output.flip` in `config.yaml` is `apply: duplicate` with `mode` not `off` — one **mirror entry** per duplicated hook, linked by `of`:
+One **base entry per hook** (same order as `hook_windows` from Step 3c), plus — when `output.variants.copies` in `config.yaml` is above 1 — that many minus one **copy entries** per hook, linked by `of`:
 
 ```json
 [
@@ -216,7 +218,7 @@ One **base entry per hook** (same order as `hook_windows` from Step 3c), plus �
     "start": 0.0, "end": 3.1, "scrim": true, "style": "soft", "motion": "slot",
     "caption": "what are ai tokens? 🤔", "filename": "what-are-ai-tokens" },
 
-  { "id": "tokens-flipped", "of": "tokens", "title": "The Hidden\nCost Of A Word",
+  { "id": "tokens-2", "of": "tokens", "title": "The Hidden\nCost Of A Word",
     "caption": "you pay by the syllable 💸", "filename": "pay-by-the-syllable" },
 
   { "id": "syllable", "title": "Why ChatGPT\nBills *Per Word*", "subtitle": "<series/<slug>.md Title Card Subtitle>",
@@ -226,14 +228,14 @@ One **base entry per hook** (same order as `hook_windows` from Step 3c), plus �
 ```
 
 Field reference:
-- `id` — stable handle for the entry, and the last-resort filename. Convention: the hook's short name, and `<base-id><flip-suffix>` for its mirror (the suffix is `output.flip.suffix`, default `-flipped`)
-- `of` — **mirror entries only**: the `id` of the hook this one mirrors. It inherits that hook's window, so it needs no `start`/`end`
+- `id` — stable handle for the entry, and the last-resort filename. Convention: the hook's short name, and `<base-id>-<n>` for its copies
+- `of` — **copy entries only**: the `id` of the hook this one copies. It inherits that hook's window, so it needs no `start`/`end`
 - `title` — burned-in card; use `\n` for line breaks. No swear words, even censored (`F*cking`) or when the speaker swears: say the take without one. `{n:<series>}` is auto-replaced with this video's episode number at render time (series slug = a `series/<slug>.md` filename). Star the one word or short phrase that carries this hook — `Safari *Sucks*`, `What Are *Tokens*?` — and it is drawn in the style's accent (or with a marker swept under it). One starred run per title, never in the subtitle
-- `subtitle` — smaller italic line under the title; also supports `{n:<series>}`. A mirror inherits its hook's subtitle if it omits this
+- `subtitle` — smaller italic line under the title; also supports `{n:<series>}`. A copy inherits its hook's subtitle if it omits this
 - `start`/`end` — **output-timeline seconds** from `hook_windows` (Step 3c), not source-clip time
 - `scrim` — `true` darkens footage behind the text; omit to use the config default
 - `style` — the series' `**Style kit:**` from its `## Title Card` section (a `headings.styles` name in `config.yaml`); the same on every entry. Cards in the video take its font and accent too
-- `motion` — the title's entrance (`slot`, `ink`, `stamp`, `split` or `type`), as the series file's `## Motion` **Titles:** line directs; vary it between hooks where that allows. A mirror inherits its hook's
+- `motion` — the title's entrance (`slot`, `ink`, `stamp`, `split` or `type`), as the series file's `## Motion` **Titles:** line directs; vary it between hooks where that allows. A copy inherits its hook's
 - `caption` — the pretty post text (emoji + lowercase), used verbatim in the Telegram/Instagram post
 - `filename` — filesystem-safe stem for the `.mp4`: lowercase, hyphen-separated, no emoji, no swear words (even when the title card has one). Leave empty and it's derived from `caption`; if nothing usable survives, the file is named after `id`
 
@@ -244,9 +246,9 @@ Field reference:
 
 ### Every entry gets its OWN title and caption
 
-**Do NOT stamp one shared title across the cards, and do not let a mirror reuse the text of the hook it mirrors.** This is deliberate. All of these videos (`render-hooks` → `output/<slug>/*.mp4`) share an identical body and voiceover, so the burned-in card and the caption are the elements we can cheaply make distinct per variant. Reused text stamps a byte-identical overlay onto the exact region Instagram scans hardest for near-duplicates; distinct text removes that shared signal and keeps each card matching the hook the viewer just heard. (This alone does **not** de-cluster the videos — the shared body + voiceover cap that. It is cheap, on-strategy hygiene, not a silver bullet.)
+**Do NOT stamp one shared title across the cards, and do not let a copy reuse the text of the hook it copies.** This is deliberate. All of these videos (`render-hooks` → `output/<slug>/*.mp4`) share an identical body and voiceover, so the burned-in card and the caption are the elements we can cheaply make distinct per variant. Reused text stamps a byte-identical overlay onto the exact region Instagram scans hardest for near-duplicates; distinct text removes that shared signal and keeps each card matching the hook the viewer just heard. (This alone does **not** de-cluster the videos — the shared body + voiceover cap that. It is cheap, on-strategy hygiene, not a silver bullet.)
 
-A mirror entry is a *second angle on the same hook*, not a different video: it sits over the same spoken words, so it must stay true to them.
+A copy entry is a *second angle on the same hook*, not a different video: it sits over the same spoken words, so it must stay true to them.
 
 **Title card style** — punchy, tailored to that hook's angle, in the series tone (a stylized 2–3-second card, not the hook's verbatim wording). Read the **Style** line under `series/<slug>.md`'s `## Title Card` section for this series' framing — do not invent one here.
 
@@ -266,15 +268,38 @@ Use `\n` for line breaks (2 lines usually reads better on mobile). **Hard ceilin
 
 Examples of the register: `the cloud? never heard of it` · `dropbox unsubscribed from amazon` · `big tech hates this one weird trick: owning your servers 🤫` · `turns out the cloud was just amazon's computers ☁️`
 
-**Use AskUserQuestion** to present the full proposed set at once — one option to accept all, plus "Enter my own". Pair each proposed title/caption with the hook it was derived from so the mapping is clear, and mark which entries are mirrors.
+**Use AskUserQuestion** to present the full proposed set at once — one option to accept all, plus "Enter my own". Pair each proposed title/caption with the hook it was derived from so the mapping is clear, and mark which entries are copies.
 
-**A mirror entry is the default — omitting one is the user's call at the AskUserQuestion above, not yours to skip.** `videos.json` is one entry per output `.mp4` and a duplicated hook produces two, so neither a single-hook asset nor an instruction to keep the file short licenses dropping the mirror. An omitted mirror reuses its hook's card and caption under `<filename><flip-suffix>.mp4` and renders faster — it shares the hook's overlay frames and segment extraction (~80% of a render) and repeats only the encode — at the cost of the byte-identical overlay that *Every entry gets its OWN title and caption* exists to prevent.
+**A copy entry is the default — omitting one is the user's call at the AskUserQuestion above, not yours to skip.** `videos.json` is one entry per output `.mp4`, so neither a single-hook asset nor an instruction to keep the file short licenses dropping a copy. An omitted copy is recorded by `render-hooks` as a stub (`<id>-<n>`, named `<filename>-<n>.mp4`) that reuses its hook's card and caption — the byte-identical overlay that *Every entry gets its OWN title and caption* exists to prevent.
 
 **Logo resets:** each base entry's start/end is a logo-reset boundary. A brand re-mentioned after any card edge re-fires its logo in that section — no extra configuration needed.
 
+## Step 4e — Trims (trims.json)
+
+Needs the hook windows from Step 4b. Resolve the script's `[cut-N]` lines to the exact spans trimmed variants drop:
+
+```bash
+.venv/bin/reelcut trims config.yaml "assets/<video-slug>/<actual-captions-filename>.captions.json"
+```
+
+It writes `assets/<video-slug>/trims.json` and prints one row per line: `ok` with the seconds it removes, or `rejected` with why. A unit with any rejected line is not used. Fix what is yours to fix, re-run, and report the rest:
+- **on screen when the trim starts** — an overlay (or zoom) begins before the line and runs into it. End it at the trim start the message gives, unless it has to span that line.
+- **no cut before/after**, **delivered joined to its neighbour**, **not found** — how it was spoken; nothing to fix. List them in the report.
+- `vanishes` (an overlay that starts inside the line) and `also_removes` (an ad-libbed word that goes with it) are not errors. Check each `also_removes` belongs to the line.
+
+No `[cut-N]` lines writes an empty file and the slug gets no trim variety.
+
 ## Step 5 — Render (one video per hook)
 
-**Check the overlays first** (renders nothing):
+**Check the plan first** (renders nothing; records `flip`/`trim` on each entry the first time):
+
+```bash
+.venv/bin/reelcut render-hooks config.yaml "assets/<video-slug>/<actual-captions-filename>.captions.json" --plan
+```
+
+It prints every video's hook, copy, flip, trims and length. Hook 1's first video is the full, unflipped core. Include the table in the report.
+
+**Then check the overlays** (renders nothing):
 
 ```bash
 .venv/bin/reelcut render-hooks config.yaml "assets/<video-slug>/<actual-captions-filename>.captions.json" --check-overlays
@@ -286,11 +311,11 @@ It prints each video's coverage, every 1s+ gap with its words, and a warning for
 .venv/bin/reelcut render-hooks config.yaml "assets/<video-slug>/<actual-captions-filename>.captions.json"
 ```
 
-`render-hooks` reads the titled base entries of `videos.json` (one per hook, from Step 4b) and renders **one video per hook** — each is `hook_i + body`, with the other hooks cut out. The outputs are grouped in a per-slug folder and named by their entry's `filename`: `output/<video-slug>/<filename>.mp4` (falling back to the entry's `caption`, then its `id`). Music, captions, and the title card behave exactly as in a normal render; there is no concatenation.
+`render-hooks` renders **every entry of `videos.json`** — each is `hook_i + body`, with the other hooks cut out, its trims dropped and its footage flipped as planned. The outputs are grouped in a per-slug folder and named by their entry's `filename`: `output/<video-slug>/<filename>.mp4` (falling back to the entry's `caption`, then its `id`). Music, captions, and the title card behave exactly as in a normal render; there is no concatenation.
 
-**More files than hooks?** That is `output.flip` in `config.yaml`. With `apply: duplicate` a flipped hook is written *twice* — so `mode: all` turns 3 hooks into 6 files; with `apply: in_place` the count is unchanged and the selected hooks are simply mirrored. The mirror is applied to the footage only, never to the captions or title card. `/post-video` picks the extra files up automatically.
+**More files than hooks?** That is `output.variants.copies` in `config.yaml`. A flip mirrors the footage only, never the captions or title card. Videos of one hook that share a card and trims share one render pass and repeat only the encode; a trimmed video is its own pass. `/post-video` picks the extra files up automatically.
 
-A duplicate described by a mirror entry (`of`, Step 4b) is written under that entry's own name, card and caption, and is its own render pass. A duplicate with no mirror entry is cheap — named `<filename><flip-suffix>.mp4`, it shares the hook's overlay frames and segment extraction (~80% of a render), repeats only the encode, and posts with the hook's caption.
+`render-hooks` refuses to run when `trims.json` is stale (re-run Step 4e) or an entry names a unit that isn't usable.
 
 Report all output paths when done.
 
@@ -311,7 +336,7 @@ Commit the fixture alongside the video's other artifacts.
 
 ## Step 7 — Notify Telegram
 
-Every rendered `output/<video-slug>/*.mp4` is already reachable over the tailnet: `scripts/upload_server.py` (the same server behind the script and upload links) serves it at `http://<tailnet-ip>:8770/reels/<slug>/<name>.mp4`. Post a link for each **not-yet-notified** hook video **of this slug** to the Telegram `file-exchange` topic. The loop is scoped to the current slug's folder so other videos' hooks are never touched; a `.notified` log additionally dedupes across renders, so re-running only posts newly rendered hooks. The Telegram caption is the entry's `caption` from `videos.json`, so a mirrored duplicate posts under its own.
+Every rendered `output/<video-slug>/*.mp4` is already reachable over the tailnet: `scripts/upload_server.py` (the same server behind the script and upload links) serves it at `http://<tailnet-ip>:8770/reels/<slug>/<name>.mp4`. Post a link for each **not-yet-notified** hook video **of this slug** to the Telegram `file-exchange` topic. The loop is scoped to the current slug's folder so other videos' hooks are never touched; a `.notified` log additionally dedupes across renders, so re-running only posts newly rendered hooks. The Telegram caption is the entry's `caption` from `videos.json`, so a copy posts under its own.
 
 **Prerequisites** (set up once, outside this workflow):
 - Tailscale installed and this machine joined to the tailnet (`tailscale up`).
@@ -336,11 +361,11 @@ for f in "{PROJECT_ROOT}"/output/"${SLUG}"/*.mp4; do
   name=$(basename "$f")
   key="${SLUG}/${name}"
   grep -qxF "$key" "$SENT_LOG" && continue   # already notified — skip
-  # Pretty caption: the videos.json entry whose stem matches this file (a mirrored duplicate
-  # has its own entry, so it posts under its own caption). `stem` mirrors
+  # Pretty caption: the videos.json entry whose stem matches this file (a copy has its own
+  # entry, so it posts under its own caption). `stem` mirrors
   # reelcut.video_spec.stem_for — filename, else caption, else id. Falls back to the filename.
-  # An undescribed duplicate is <stem><flip-suffix>.mp4, so an exact miss falls back to the
-  # longest stem the filename starts with — same rule as post_video.caption_for.
+  # A stub copy is <stem>-<n>.mp4 with no caption of its own, so an exact miss falls back to
+  # the longest stem the filename starts with — same rule as post_video.caption_for.
   caption=$(jq -r --arg s "${name%.mp4}" '
     def slugify: ascii_downcase | gsub("[^a-z0-9]+"; "-") | gsub("^-|-$"; "");
     def stem: [(.filename // ""), (.caption // ""), (.id // "")] | map(slugify) | map(select(. != "")) | first // "";

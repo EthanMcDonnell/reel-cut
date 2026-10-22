@@ -67,3 +67,20 @@ def test_unit_lines_with_no_cut_between_them_merge_into_one_span():
     [row] = _resolve([(1, "First point stands."), (1, "Extra colour here.")], edl=edl)
     assert row["status"] == "ok"
     assert (row["start"], row["end"]) == (1.3, 4.0)
+
+
+def test_span_from_an_older_edl_is_stale():
+    from reelcut.trims import stale_spans
+    # /prepare-video re-run: the cut after S2 now ends 0.1s later, so the old span would
+    # leave a sliver of silence and start into nothing it was resolved against.
+    rebuilt = _edl((0.0, 1.0, True), (1.0, 1.3, False), (1.3, 2.5, True), (2.5, 2.9, False),
+                   (2.9, 4.0, True), (4.0, 4.3, False), (4.3, 6.25, True))
+    span = (CLIP, 2.8, 4.0)
+    assert stale_spans(EDL, [span]) == []
+    assert stale_spans(rebuilt, [span]) == [span]
+
+
+def test_trimmed_variant_is_owed_every_word_but_the_trimmed_ones():
+    from reelcut.cli import _hook_caption_survival
+    doc = CaptionsDoc(source_clips=[CLIP], edl=EDL, words=WORDS)
+    assert _hook_caption_survival(doc, [(0.0, 1.0)], {0: [[(CLIP, 2.8, 4.0)]]}) == []

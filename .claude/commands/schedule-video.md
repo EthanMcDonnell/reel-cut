@@ -84,9 +84,9 @@ Hooks are paired to slots in the order this prints — **not** `ls` order:
 .venv/bin/python scrape/schedule_video.py <slug> --order
 ```
 
-It lists the unclaimed hooks with the flipped copies (a videos.json entry with `of`, or an undescribed `<hook><suffix>` file) spread between the unflipped ones, so two flipped hooks never go out back to back while there is an unflipped one to put between them, and a copy doesn't sit next to the hook it mirrors where that can be avoided. Mirrors carry their own filenames, so alphabetical order used to bunch them — `github-stars-over-money` went out with both its flipped hooks consecutively. Use this order through Steps 3–5; don't re-sort it.
+It lists the unclaimed hooks with the copies (a videos.json entry with `of`) spread between the originals, so two copies never go out back to back while there is an original to put between them, and a copy doesn't sit next to its own hook where that can be avoided. Copies carry their own filenames, so alphabetical order would bunch them. Use this order through Steps 3–5; don't re-sort it.
 
-Caption each remaining file from `assets/<slug>/videos.json`, using the same rule as `/post-video`: match the file's stem to its entry's stem; a mirrored duplicate that videos.json doesn't describe falls back to the **longest stem the filename starts with**, so it inherits the caption of the hook it mirrors.
+Caption each remaining file from `assets/<slug>/videos.json`, using the same rule as `/post-video`: match the file's stem to its entry's stem; a stub copy with no caption of its own falls back to the **longest stem the filename starts with**, so it inherits the caption of its hook.
 
 ### The automation
 

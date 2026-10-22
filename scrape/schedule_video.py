@@ -42,7 +42,7 @@ Env (read from the repo-root ``.env``):
   COCKPIT_URL   optional, default http://localhost:3000
 
 ``--order`` prints the slug's unclaimed hooks in the order to book them, so the
-skill pairs them to slots without two flipped copies landing back to back.
+skill pairs them to slots without two copies of hooks landing back to back.
 
 Usage:
   .venv/bin/python scrape/schedule_video.py <slug> --order
@@ -94,9 +94,9 @@ def parse_pair(raw):
 
 
 def mirrors_for(slug, stems):
-    """Map each flipped hook's stem -> the stem of the hook it mirrors.
+    """Map each copy's stem -> the stem of the hook it copies.
 
-    A mirror is known by its videos.json entry's ``of``; one videos.json doesn't
+    A copy is known by its videos.json entry's ``of``; a file videos.json doesn't
     describe falls back to the longest described stem it starts with, the same
     rule ``caption_for`` uses to caption it.
     """
@@ -119,15 +119,16 @@ def mirrors_for(slug, stems):
 
 
 def booking_order(stems, mirrors):
-    """Order hooks so flipped copies are spread between the unflipped ones.
+    """Order hooks so the copies (videos.json entries with ``of``) are spread
+    between the originals.
 
     Every hook of a slug gets its own slot, one gap apart, in this order. Taken
-    alphabetically, the flipped copies (which carry their own filenames) could
-    land back to back. Here the shorter group is spread evenly through the
-    longer one, so two flipped hooks only sit side by side when there are more
-    of them than unflipped hooks to put between. Of the rotations of the
-    flipped list, the first that keeps each copy off its own original's
-    neighbouring slots wins (or the one with the fewest such neighbours).
+    alphabetically, the copies (which carry their own filenames) could land back
+    to back. Here the shorter group is spread evenly through the longer one, so
+    two copies only sit side by side when there are more of them than originals
+    to put between. Of the rotations of the copies, the first that keeps each
+    copy off its own original's neighbouring slots wins (or the one with the
+    fewest such neighbours).
     """
     originals = [s for s in stems if s not in mirrors]
     flipped = [s for s in stems if s in mirrors]

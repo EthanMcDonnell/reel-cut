@@ -80,7 +80,7 @@ Same command without `--dry-run`. It writes `captions.json` and appends to `asse
 .venv/bin/reelcut render-hooks config.yaml "assets/<video-slug>/<actual-captions-filename>.captions.json"
 ```
 
-This overwrites `output/<video-slug>/*.mp4` in place — the previous renders are gone. Say so before running it if the user might still want the old files.
+This overwrites `output/<video-slug>/*.mp4` in place — the previous renders are gone. Say so before running it if the user might still want the old files. If it refuses because `trims.json` is stale (a cut landed on a trim's edge), re-run `reelcut trims` (`/produce-video` Step 4e) and render again.
 
 Report the output paths.
 

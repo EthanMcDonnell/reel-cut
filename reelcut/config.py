@@ -95,30 +95,31 @@ class ZoomConfig(BaseModel):
     max: float = 1.0
 
 
-class FlipConfig(BaseModel):
-    # Horizontally mirrors the camera image. The flip is applied to the footage BEFORE the
-    # caption / title-card / image overlay is composited, so burned-in text is never mirrored —
-    # only what the camera saw (which does mirror anything physically in shot: on-screen text
-    # behind you, a logo on a shirt, which hand you gesture with).
+class VariantsConfig(BaseModel):
+    # What makes each rendered video of a slug different. One planner (reelcut/variants.py)
+    # assigns every video a (flip, trims) pair, writes it onto its videos.json entry, and
+    # render-hooks renders exactly that. Hook 1's first video is always the untouched core.
     #
-    # `mode` — which hooks get a flipped render:
-    #   "off"       no flipping (default)
-    #   "alternate" every second hook (hooks 2, 4, 6…) — 3 hooks → the middle one flipped
-    #   "all"       every hook
-    # `apply` — what a flipped render does to the output set:
-    #   "in_place"  the hook's one video IS the flipped one (3 hooks → 3 videos)
-    #   "duplicate" the hook also gets an extra flipped file (3 hooks + mode:all → 6 videos)
+    # `copies` — videos per hook. 1 = each hook's one video carries the variation; 2+ = every
+    #   hook also gets extra copies (videos.json entries with `of`), each made different.
+    # `flip` — which videos are horizontally mirrored. The flip is applied to the footage
+    #   BEFORE overlays are composited, so burned-in text is never mirrored — only what the
+    #   camera saw (on-screen text behind you, a logo on a shirt, which hand you gesture with):
+    #   "off" | "alternate" (every second video in the plan) | "copies" (only the extra
+    #   copies) | "all" (every video but the core).
+    # `trim` — "rotate" gives videos different subsets of the script's [cut-N] lines
+    #   (trims.json): every line cut, then each one alone, then pairs, before any repeat.
     #
-    # NOT a proven Instagram dedup lever: SSCD is explicitly trained on horizontal flips, so a
-    # mirrored copy still matches its original.
-    mode: Literal["off", "alternate", "all"] = "off"
-    apply: Literal["in_place", "duplicate"] = "duplicate"
-    suffix: str = "-flipped"   # appended to the filename of *duplicate* flipped outputs only
+    # NOT proven Instagram dedup levers: SSCD is trained on flips, and a trimmed body still
+    # shares most of its audio and frames with the full one.
+    copies: int = Field(default=1, ge=1)
+    flip: Literal["off", "alternate", "copies", "all"] = "off"
+    trim: Literal["off", "rotate"] = "off"
 
-    @field_validator("mode", mode="before")
+    @field_validator("flip", "trim", mode="before")
     @classmethod
     def _yaml_off_is_false(cls, v):
-        return "off" if v is False else v  # bare `mode: off` parses as the YAML boolean False
+        return "off" if v is False else v  # bare `off` parses as the YAML boolean False
 
 
 class EncodeVariationConfig(BaseModel):
@@ -144,7 +145,7 @@ class OutputConfig(BaseModel):
     render_workers: int = 8
     zoom: ZoomConfig = Field(default_factory=ZoomConfig)
     encode_variation: EncodeVariationConfig = Field(default_factory=EncodeVariationConfig)
-    flip: FlipConfig = Field(default_factory=FlipConfig)
+    variants: VariantsConfig = Field(default_factory=VariantsConfig)
 
     @field_validator("resolution")
     @classmethod

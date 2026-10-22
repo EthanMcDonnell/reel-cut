@@ -203,6 +203,8 @@ This runs *with* the series voice, not against it. Punchy one-line delivery is s
 - Bad: "Every event lands on a broker's local disk first, and that fast tier holds only the last five minutes." (restates the article's table)
 - Good: "Every event lands on a broker's local disk first, and stays there for five minutes."
 
+**Mark the optional lines.** After the trim pass, mark the body sentences a shorter cut could drop with `[cut-N]`, per the `scripts` skill's **Optional Lines** rules. Trim variants of the video drop them.
+
 For every claim, stat, or quote that will appear in the script:
 
 1. **Locate it verbatim** in `FULL_CONTENT`. Drop any quote that doesn't appear there.
@@ -234,6 +236,8 @@ After the script is written, save it:
    ```
 
    **Always pass `--series`** (omit it only for `misc`, which has no series file). The word cap comes from that series' own `**Target length:**` line, so without the flag the linter falls back to a series-agnostic default that is too loose for the short series and too tight for `tbbt`.
+
+   It also checks the `[cut-N]` marks (body only, not the first line, whole sentences, numbered 1, 2, 3, at most 25% of the body) and prints how many units the script has.
 
    If it exits non-zero, fix every reported blocking error, re-save, and re-run until it passes. Warnings are advisory — review them, but they don't block. The word-count warning already excludes the `**HOOK**` and `**CTA**` blocks, so it is measuring the shared body against the series' real ceiling. Do not continue to Stage 4 until the linter passes.
 
@@ -401,7 +405,7 @@ A hit on the figure is not the right hit by default: the same number often recur
 For each kept claim, write **four fields**:
 
 - **`article_snippet`** — the proof phrase, **verbatim** from `FULL_CONTENT` (copy it, don't paraphrase, or it won't be found). Roughly **40–200 characters**: long enough to read as a standalone clause, short enough to stay centred on the proof token. Maps to exactly one script sentence. **Put the proof inside the first 80 characters** — the capture tool locates the block by matching that prefix, and falls back to highlighting the prefix alone when the tail can't be matched (`anchor_range`, Step 4.3).
-- **`script_context`** — the **exact verbatim script line** this screenshot supports, copied word-for-word from the script. This is the line the screenshot is shown under in the video.
+- **`script_context`** — the **exact verbatim script line** this screenshot supports, copied word-for-word from the script, without any `[cut-N]` marker. This is the line the screenshot is shown under in the video.
 - **`trigger_show_word`** — a short verbatim anchor (one word or a 2–4 word phrase) **from inside `script_context`** marking where in the spoken line the screenshot should *appear*. Pick the word at the moment the claim starts landing — usually the first word of the clause that states the claim.
 - **`trigger_go_away_word`** — a short verbatim anchor from inside `script_context` marking where the screenshot should *disappear* — usually the last word of the claim, before the script moves on. Choose anchors that are unique within the line so they can't match the wrong spot.
 

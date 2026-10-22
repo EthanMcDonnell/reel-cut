@@ -209,3 +209,55 @@ def resolve_trims(doc, marked: list[tuple[int, str]], body_start: float,
             else:
                 rows.append({**row, "status": "ok", "reason": "", "vanishes": vanishes})
     return sorted(rows, key=lambda r: (r["unit"], r.get("start", 0.0)))
+
+
+def usable_units(rows: list[dict]) -> dict[int, list[tuple[str, float, float]]]:
+    """`{unit: [(source_clip, start, end), …]}` for every unit whose lines all resolved."""
+    out: dict[int, list] = {}
+    bad = {r["unit"] for r in rows if r["status"] != "ok"}
+    for r in rows:
+        if r["unit"] not in bad:
+            out.setdefault(r["unit"], []).append((r["source_clip"], r["start"], r["end"]))
+    return out
+
+
+def stale_spans(edl: list, spans: list[tuple[str, float, float]]) -> list[tuple[str, float, float]]:
+    """Spans whose edges no longer sit on the EDL's cuts (or clip edges).
+
+    trims.json is resolved against one EDL; re-running /prepare-video rebuilds it, and a span
+    from the old one would cut into speech without any error.
+    """
+    from .cli import _cut_runs
+
+    runs = _cut_runs(edl)
+    out = []
+    for clip, s, e in spans:
+        keeps = [x for x in edl if x.keep and x.source_clip == clip]
+        starts = [ce for _, ce in runs.get(clip, [])] + [x.start for x in keeps[:1]]
+        ends = [cs for cs, _ in runs.get(clip, [])] + [x.end for x in keeps[-1:]]
+        if not any(abs(s - t) < 2e-3 for t in starts) or not any(abs(e - t) < 2e-3 for t in ends):
+            out.append((clip, s, e))
+    return out
+
+
+def apply_trims(edl: list, spans: list[tuple[str, float, float]]) -> list:
+    """`edl` with each span flipped to a cut (reason "trim"), splitting keep entries at its
+    edges — a span normally covers whole keep entries already, but a per-hook EDL is split
+    at section boundaries."""
+    import dataclasses
+
+    out = list(edl)
+    for clip, s, e in spans:
+        nxt = []
+        for x in out:
+            if x.source_clip != clip or not x.keep or x.end <= s or x.start >= e:
+                nxt.append(x)
+                continue
+            if x.start < s:
+                nxt.append(dataclasses.replace(x, end=s))
+            nxt.append(dataclasses.replace(x, start=max(x.start, s), end=min(x.end, e),
+                                           keep=False, reason="trim"))
+            if x.end > e:
+                nxt.append(dataclasses.replace(x, start=e))
+        out = nxt
+    return out
