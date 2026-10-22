@@ -166,7 +166,11 @@ sfx:                                # automatic sounds on the events below, plus
   level_db: 6                       # effect peak vs the voice's integrated loudness. Lower = quieter.
   min_gap_s: 0.8                    # an effect this close after the one before is dropped
   events:                           # listed in tie-break order: at the same instant the first wins
-    heading: {sounds: [thud], gain_db: -4}
+    heading: {sounds: [thud], gain_db: -4}          # a title card landing (a still title: its first frame)
+    heading_stamp: {sounds: [thud], gain_db: -4}    # ...one per title entrance, on the frame it lands
+    heading_slot: {sounds: [whoosh-4-243400], gain_db: -8}
+    heading_split: {sounds: [whoosh-2-169867], gain_db: -8}
+    heading_ink: {sounds: [pen-writing-1-211247], gain_db: -6}
     beat: {sounds: [tick-1, tick-2, tick-3, tick-4], gain_db: -6}  # animated-card beats, rising
 
 captions:

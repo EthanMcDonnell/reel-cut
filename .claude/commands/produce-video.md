@@ -176,7 +176,7 @@ All `start`/`end` values are **source-clip seconds** taken from the `words` arra
 
 ## Step 4c — Sound effects (sfx.json)
 
-Overlays play no sound of their own; the title card's thud and animated-card beats are automatic. Any other sound is placed in `assets/<video-slug>/sfx.json`, a JSON list rewritten each run:
+Overlays play no sound of their own; the title card's sound (on the frame it lands, matched to its entrance) and animated-card beats are automatic. Any other sound is placed in `assets/<video-slug>/sfx.json`, a JSON list rewritten each run:
 
 ```json
 [{ "sound": "impact-3-336495", "at": 18.758, "source_clip": "assets/slug/clip.MOV", "gain_db": 0 }]

@@ -372,7 +372,8 @@ class SfxConfig(BaseModel):
                               # loudness (speech peaks run ~10-15 dB above it, so effects stay under)
     min_gap_s: float = 0.8    # an effect this close after the one before is dropped
     events: dict[str, SfxEvent] = Field(default_factory=dict)  # event → sound. Events: heading,
-                              # screenshot, person, concept, logo, figure, card, video, beat. Ties
+                              # screenshot, person, concept, logo, figure, card, video, beat,
+                              # heading_<entrance> (slot, ink, stamp, split). Ties
                               # at the same instant go to the event listed first.
 
     @field_validator("events", mode="before")

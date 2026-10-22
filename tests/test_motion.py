@@ -160,6 +160,33 @@ class TestHeadingMotion:
         ink = lambda p: ImageStat.Stat(Image.open(p).getchannel("A")).sum[0]
         assert abs(ink(moving[f]) / ink(still[f]) - 1) < 0.05
 
+    def test_subtitle_waits_for_the_title_to_land(self, tmp_path):
+        from PIL import ImageStat
+        from reelcut.heading import landing_s
+        def ink(sub):
+            fr = render_heading_frames([HeadingSpec(title="Hello There", subtitle=sub, start=0, end=3)],
+                                       HeadingsConfig(scrim=False), tmp_path / f"s{bool(sub)}", 30,
+                                       (216, 384), total_output_s=10, motion="slot")
+            at = lambda t: ImageStat.Stat(Image.open(fr[int(t * 30)].image_path).getchannel("A")).sum[0]
+            return at(landing_s("slot", "snappy", 1)), at(2.0)
+        (title_landed, title_held), (both_landed, both_held) = ink(""), ink("Series #1")
+        assert both_landed == pytest.approx(title_landed, rel=0.02)   # subtitle not in yet
+        assert both_held > title_held * 1.05                           # ...and in by 2s
+
+    def test_title_sound_lands_with_the_title(self):
+        from types import SimpleNamespace
+        from reelcut.cli import _heading_sounds
+        from reelcut.config import SfxConfig
+        from reelcut.heading import landing_s
+        sfx = SfxConfig(events={"heading": {"sounds": ["thud"]}, "heading_slot": {"sounds": ["whoosh"]}})
+        m = resolve({"heading": "slot"})
+        heads = [HeadingSpec(title="A\nB", start=1.0, end=3.0),
+                 HeadingSpec(title="C", start=5.0, end=7.0, motion="stamp")]
+        events = dict(_heading_sounds(heads[:1], m, sfx))
+        assert events["heading_slot"] == pytest.approx(1.0 + landing_s("slot", "snappy", 2))
+        assert dict(_heading_sounds(heads[1:], m, sfx))["heading"] > 5.0  # no stamp sound set: falls back
+        assert landing_s("stamp", "snappy", 2) < landing_s("slot", "snappy", 2)
+
     def test_later_card_enters(self, tmp_path):
         moving = self._render(tmp_path, 1.0, "slot")
         assert Image.open(moving[30]).getchannel("A").getbbox() is None

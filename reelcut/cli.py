@@ -1098,7 +1098,7 @@ def _phase2(cfg, doc, outputs: list[tuple[Path, bool]], verbose: bool,
                 acc += e.end - e.start
             prev_keep = e.keep
         sfx_tracks = plan_sfx(
-            sfx_events(all_image_cues, heading_specs), cfg.sfx,
+            sfx_events(all_image_cues, _heading_sounds(heading_specs, motion, cfg.sfx)), cfg.sfx,
             sfx_library(Path(cfg.assets.location) / "sfx"), total_output_s, warnings, placed,
             cuts,
         )
@@ -1208,6 +1208,25 @@ def _phase2(cfg, doc, outputs: list[tuple[Path, bool]], verbose: bool,
                                 "-frames:v", "1", "-q:v", "2", str(cover)], check=False)
 
     return warnings
+
+
+def _heading_sounds(headings: list, motion, sfx_cfg) -> list[tuple[str, float]]:
+    """Each title card's sound event: `heading_<entrance>` when sfx.events has one, else
+    `heading`, at the moment the title lands. The card's first frame stays a moment a placed
+    sound may sit on (`heading_start`, which plays nothing by itself)."""
+    from .heading import landing_s, plain_title
+
+    out = []
+    for h in headings:
+        if not h.title:
+            continue
+        entrance = h.motion or motion.heading
+        kind = f"heading_{entrance}"
+        if not (kind in sfx_cfg.events and sfx_cfg.events[kind].sounds):
+            kind = "heading"
+        lines = plain_title(h.title).count("\n") + 1
+        out += [(kind, h.start + landing_s(entrance, motion.spring, lines)), ("heading_start", h.start)]
+    return out
 
 
 def _camera_zooms(motion, video_motion: dict, edl: list, words: list, total_s: float,

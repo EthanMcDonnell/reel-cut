@@ -128,13 +128,27 @@ def render_heading_frames(
 _LINE_STAGGER_S = 0.08
 
 
-_MARK_S = 0.45  # an accent marker's sweep, once the lines are in
+_MARK_S = 0.45  # an accent marker's sweep, once the title has landed
+_SUB_DELAY_S = 0.15  # the subtitle follows the landed title by this much, on its own
+_SUB_S = 0.35
 
 
 def settled_s(spring_name: str) -> float:
-    """Seconds after its start by which a moving title card has fully entered — up to four
-    lines once the title wraps, then its accent marker."""
-    return 4 * _LINE_STAGGER_S + settle_s(spring_name) + _MARK_S + 0.1
+    """Seconds after its start by which a moving title card has fully entered — up to three
+    title lines once it wraps, then its subtitle and accent marker."""
+    return 2 * _LINE_STAGGER_S + settle_s(spring_name) + _SUB_DELAY_S + max(_SUB_S, _MARK_S) + 0.1
+
+
+def landing_s(motion: str, spring_name: str, lines: int) -> float:
+    """Seconds after its start that a title card's last line lands — where its sound goes."""
+    if motion == "none":
+        return 0.0
+    first = settle_s(spring_name)  # an overdamped spring only arrives as it settles
+    for i in range(1, 600):
+        if spring(i / 240, spring_name) >= 0.995:
+            first = i / 240
+            break
+    return first if motion == "stamp" else (lines - 1) * _LINE_STAGGER_S + first
 _HEADING_EXIT_S = 0.3
 _PUSH = 0.025  # how far the title pushes in over its window
 
@@ -152,10 +166,15 @@ def _moving_frames(h, config, resolution, out_dir: Path, fps, first, last, exits
     y1 = max(y + sp.height for sp, _, y in lines)
     gcx, gcy = (x0 + x1) / 2, (y0 + y1) / 2
     n_out = round(_HEADING_EXIT_S * fps) if exits else 0
-    landed = (len(lines) - 1) * _LINE_STAGGER_S + settle_s(spring_name)
+    n_title = len(lines) - bool(h.subtitle)
+    landed = landing_s(motion, spring_name, n_title)
 
     def line_pose(i: int, t: float, out_q: float) -> Pose:
-        """Line i's entrance (and exit) pose, before the push-in."""
+        """Line i's entrance (and exit) pose, before the push-in. The subtitle comes in on its
+        own once the title has landed: a short rise, the same for every entrance."""
+        if i >= n_title:
+            q = ease_in_out(clamp((t - landed - _SUB_DELAY_S) / _SUB_S))
+            return Pose(dy=(1 - q) * 0.008 * hgt, alpha=q * (1 - ease_in(out_q)))
         if motion == "stamp":  # the whole title lands at once, from big
             p = spring(t, spring_name)
             pose = Pose(scale=1.25 - 0.25 * p, alpha=clamp(p * 3))

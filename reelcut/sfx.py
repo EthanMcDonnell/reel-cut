@@ -18,18 +18,19 @@ _SR = 48000
 _AUDIO_EXTS = {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".opus"}
 
 
-def sfx_events(cues: list, headings: list) -> list[tuple[str, float, int]]:
-    """(event, output-timeline second, index) for every overlay start, card beat and heading.
+def sfx_events(cues: list, headings: list[tuple[str, float]]) -> list[tuple[str, float, int]]:
+    """(event, output-timeline second, index) for every overlay start, card beat and title card.
 
     An animated card renders as a `video` cue with kind "card", so it fires `card`, not `video`.
     A beat's index is its position in the card; beats past the cue's end (cut off at a hook
-    boundary) are skipped.
+    boundary) are skipped. `headings` are each title card's (event, second) — the moment it
+    lands, as `heading` or `heading_<entrance>` — which the caller works out.
     """
     events = []
     for c in cues:
         events.append(("card" if c.kind == "card" else c.type, c.start, 0))
         events.extend(("beat", b, i) for i, b in enumerate(c.beats) if b < c.end)
-    events.extend(("heading", h.start, 0) for h in headings)
+    events.extend((kind, t, 0) for kind, t in headings)
     return events
 
 
