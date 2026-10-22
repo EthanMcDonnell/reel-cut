@@ -672,6 +672,71 @@ def timeline(
 
 
 # ---------------------------------------------------------------------------
+# reelcut trims  (Phase 2 — resolve the script's [cut-N] lines to EDL spans)
+# ---------------------------------------------------------------------------
+
+@app.command()
+def trims(
+    config_path: str = typer.Argument("config.yaml", help="Path to config.yaml"),
+    captions_path: str = typer.Argument(..., help="Path to .captions.json"),
+) -> None:
+    """Find each [cut-N] line of script.md in the transcript and write trims.json beside the
+    captions: the exact span a variant render drops, or why the line can't be dropped."""
+    import json
+
+    from .captions_doc import load_captions_doc
+    from .config import load_config
+    from .hook_split import snap_windows
+    from .trims import marked_lines, resolve_trims
+    from .video_spec import base_videos, load_videos
+
+    cfg = load_config(config_path)
+    cap_path = Path(captions_path)
+    assets_dir = cap_path.parent
+    script = assets_dir / "script.md"
+    marked = marked_lines(script.read_text()) if script.exists() else []
+    out_path = assets_dir / "trims.json"
+    if not marked:
+        out_path.write_text("[]\n")
+        console.print("No [cut-N] lines in script.md — wrote an empty trims.json")
+        return
+
+    doc = load_captions_doc(cap_path)
+    hooks = [v for v in base_videos(load_videos(assets_dir / "videos.json")) if v.title]
+    if not hooks:
+        err_console.print("[red]Error:[/red] videos.json has no hook windows yet "
+                          "(/produce-video Step 3c) — trims must start after the last hook.")
+        raise typer.Exit(1)
+    body_start = snap_windows(doc.edl, doc.words, _hook_windows(hooks))[-1][1]
+
+    # Everything on screen, in source time: images.json entries and motion.json zooms.
+    first_clip = doc.source_clips[0] if doc.source_clips else ""
+    overlays = []
+    for name, key in (("images.json", None), ("motion.json", "zooms")):
+        path = assets_dir / name
+        if not path.exists():
+            continue
+        raw = json.loads(path.read_text() or "null")
+        items = raw if key is None else (raw or {}).get(key, [])
+        for it in items or []:
+            label = "zoom" if key else f"{it.get('type', 'image')} {it.get('name') or Path(it.get('path', '')).name}"
+            overlays.append((label, it.get("source_clip") or first_clip,
+                             float(it.get("start", 0)), float(it.get("end", 0))))
+
+    rows = resolve_trims(doc, marked, body_start, overlays)
+    out_path.write_text(json.dumps(rows, indent=2) + "\n")
+
+    table = Table("unit", "status", "seconds", "line / reason")
+    for r in rows:
+        detail = r["text"] if r["status"] == "ok" else f"{r['text']}\n[yellow]{r['reason']}[/yellow]"
+        if r.get("vanishes"):
+            detail += f"\n[dim]vanishes with it: {', '.join(r['vanishes'])}[/dim]"
+        table.add_row(str(r["unit"]), r["status"], str(r.get("seconds", "")), detail)
+    console.print(table)
+    console.print(f"→ {out_path}")
+
+
+# ---------------------------------------------------------------------------
 # Phase 1 — transcription core
 # ---------------------------------------------------------------------------
 
