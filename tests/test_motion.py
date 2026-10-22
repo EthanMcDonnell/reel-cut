@@ -68,6 +68,21 @@ class TestOverlayMotion:
         assert not _same(moving[2], still[2])   # mid-swing
         assert _same(moving[45], still[45])     # settled
 
+    def test_entrance_glides_into_its_resting_tilt(self, tmp_path):
+        # A swing hinged at the top used to hand its tilt back to the centre when it ended,
+        # jumping the overlay sideways on the frame the entrance finished.
+        import numpy as np
+        red = _solid(tmp_path, "red", (255, 0, 0, 255), size=(40, 60))
+        m = resolve({"enter": "swing", "tilt": 4, "hold": "still", "exit": "snap"})
+        frames = _frames([_cue(red, 0.0, 2.0)], tmp_path, m)
+        xs = []
+        for f in sorted(frames)[:30]:
+            a = np.asarray(Image.open(frames[f]).getchannel("A"), dtype=float)
+            xs.append((a.sum(axis=0) * np.arange(a.shape[1])).sum() / a.sum())
+        steps = np.abs(np.diff(xs))
+        slowed = int(np.argmax(steps < 0.5))
+        assert steps[slowed:].max() < 0.5
+
     def test_stack_keeps_the_outgoing_overlay_under_the_incoming_one(self, tmp_path):
         red = _solid(tmp_path, "red", (255, 0, 0, 255))
         blue = _solid(tmp_path, "blue", (0, 0, 255, 255))
@@ -92,7 +107,7 @@ class TestOverlayMotion:
 
 
 class TestCaptionMotion:
-    WORDS = [WordTimestamp(word=w, start=i * 0.5, end=i * 0.5 + 0.4, confidence=1.0)
+    WORDS = [WordTimestamp(word=w, start=i * 1.0, end=i * 1.0 + 0.9, confidence=1.0)
              for i, w in enumerate(["alpha", "beta", "gamma"])]
 
     def _render(self, tmp_path, motion):
@@ -105,13 +120,13 @@ class TestCaptionMotion:
         def width(p):
             box = Image.open(p).getchannel("A").getbbox()
             return box[2] - box[0]
-        assert width(words[12]) < width(plain[12])  # "beta" and "gamma" not yet said
-        assert _same(words[42], plain[42])          # all said and settled
+        assert width(words[15]) < width(plain[15])  # "beta" and "gamma" not yet said
+        assert _same(words[80], plain[80])          # all said and settled
 
     def test_popped_line_settles_to_the_still_line(self, tmp_path):
         pop, plain = self._render(tmp_path, "pop"), self._render(tmp_path, "none")
         assert not _same(pop[1], plain[1])
-        assert _same(pop[28], plain[28])
+        assert _same(pop[50], plain[50])
 
 
 class TestHeadingMotion:

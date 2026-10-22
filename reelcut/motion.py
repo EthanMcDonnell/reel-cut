@@ -17,7 +17,7 @@ from dataclasses import dataclass, replace
 from functools import lru_cache
 from pathlib import Path
 
-from PIL import Image, ImageChops, ImageDraw
+from PIL import Image, ImageChops, ImageDraw, ImageOps
 
 # (stiffness, damping, mass). None of these is Remotion's default spring (100/10/1), whose
 # slow wobble is the tell of a stock template.
@@ -52,7 +52,7 @@ _FIELDS = (*_CHOICES, "tilt")
 
 EXIT_S = 0.22        # an exit's length (a fade's is images.fade_duration_s)
 DISSOLVE_S = 0.3
-_SETTLE_EPS = 0.004  # a spring has settled once it stays this close to 1
+_SETTLE_EPS = 0.001  # a spring has settled once it stays this close to 1 (a 0.1px snap at most)
 
 
 @dataclass(frozen=True)
@@ -195,20 +195,21 @@ class Pose:
     alpha: float = 1.0
     reveal: str = ""          # "slot" | "wipe" | "ink" | "iris" | "shutter"
     amount: float = 1.0       # how much of the reveal is open
-    pivot: float = 0.5        # where on the sprite's height it rotates about: 0 top, 0.5 centre
+    hinge: float = 0.0        # degrees counter-clockwise about the top edge (rot turns about the centre)
 
     def __add__(self, o: "Pose") -> "Pose":
         reveal, amount = self.reveal, self.amount
         if o.reveal and (not reveal or o.amount < amount):
             reveal, amount = o.reveal, o.amount
         return Pose(self.dx + o.dx, self.dy + o.dy, self.scale * o.scale, self.rot + o.rot,
-                    self.alpha * o.alpha, reveal, amount, o.pivot if o.pivot != 0.5 else self.pivot)
+                    self.alpha * o.alpha, reveal, amount, self.hinge + o.hinge)
 
     def key(self) -> tuple:
-        """Rounded to what can show, so frames that look the same share one file."""
-        return (round(self.dx * 2) / 2, round(self.dy * 2) / 2, round(self.scale, 4),
-                round(self.rot, 2), round(self.alpha, 3), self.reveal,
-                round(clamp(self.amount), 3) if self.reveal else 1.0, self.pivot)
+        """Rounded finer than a slow drift moves in a frame, so frames that look the same share
+        one file but a moving overlay never stalls on a reused one."""
+        return (round(self.dx, 2), round(self.dy, 2), round(self.scale, 5), round(self.rot, 3),
+                round(self.alpha, 3), self.reveal,
+                round(clamp(self.amount), 3) if self.reveal else 1.0, round(self.hinge, 3))
 
 
 STILL = Pose()
@@ -233,7 +234,7 @@ def enter_pose(move: str, p: float, frame: tuple[int, int], k: int = 0) -> Pose:
     if move == "slide":
         return Pose(dx=side * (1 - p) * 0.5 * fw, alpha=a)
     if move == "swing":
-        return Pose(rot=side * (1 - p) * 9, dy=-(1 - p) * 0.015 * fh, alpha=a, pivot=0.0)
+        return Pose(hinge=side * (1 - p) * 9, dy=-(1 - p) * 0.015 * fh, alpha=a)
     if move == "stamp":
         return Pose(scale=1.22 - 0.22 * p, alpha=clamp(p * 4))
     return Pose(reveal=move, amount=clamp(p))
@@ -277,6 +278,9 @@ def transition_poses(kind: str, p: float, lin: float, frame: tuple[int, int]) ->
 # Drawing
 # ---------------------------------------------------------------------------
 
+_MARGIN = 2
+
+
 def draw(canvas: Image.Image, sprite: Image.Image, x: float, y: float, pose: Pose = STILL) -> None:
     """Alpha-composite `sprite`, whose resting top-left is (x, y), onto `canvas` in `pose`."""
     if pose.alpha <= 0:
@@ -284,15 +288,22 @@ def draw(canvas: Image.Image, sprite: Image.Image, x: float, y: float, pose: Pos
     if pose.reveal and pose.amount < 1:
         sprite = _reveal(sprite, pose.reveal, clamp(pose.amount))
     w, h = sprite.size
-    if pose.scale == 1 and pose.rot == 0:
-        _paste(canvas, _faded(sprite, pose.alpha), round(x + pose.dx), round(y + pose.dy))
-        return
+    if pose.scale == 1 and pose.rot == 0 and pose.hinge == 0 and float(x + pose.dx).is_integer() \
+            and float(y + pose.dy).is_integer():
+        _paste(canvas, _faded(sprite, pose.alpha), int(x + pose.dx), int(y + pose.dy))
+        return  # a whole-pixel offset; anything finer resamples below so slow moves stay smooth
 
-    s, th = pose.scale, math.radians(pose.rot)
+    # A transparent margin, so the sprite's own edge resamples smoothly instead of hopping
+    # whole pixels (the resampler treats outside-the-sprite as missing, not as clear).
+    sprite = ImageOps.expand(sprite, _MARGIN, (0, 0, 0, 0))
+    x, y, w, h = x - _MARGIN, y - _MARGIN, w + 2 * _MARGIN, h + 2 * _MARGIN
+    s, th = pose.scale, math.radians(pose.rot + pose.hinge)
     cos, sin = math.cos(th), math.sin(th)
-    vy = (pose.pivot - 0.5) * h * s   # pivot offset from the centre; rotation keeps it fixed
-    cx = x + w / 2 + pose.dx - vy * sin
-    cy = y + h / 2 + pose.dy + vy - vy * cos
+    # The hinge turns about the top edge: shift the centre so the top stays put. Only the
+    # hinge's own angle moves it, so the shift fades to nothing as the hinge closes.
+    vy, hg = -(h - 2 * _MARGIN) * s / 2, math.radians(pose.hinge)
+    cx = x + w / 2 + pose.dx - vy * math.sin(hg)
+    cy = y + h / 2 + pose.dy + vy - vy * math.cos(hg)
     bw = s * (abs(w * cos) + abs(h * sin))
     bh = s * (abs(w * sin) + abs(h * cos))
     ox, oy = math.floor(cx - bw / 2) - 1, math.floor(cy - bh / 2) - 1
