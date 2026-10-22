@@ -1,7 +1,8 @@
-# Sound-effect catalog: what each kind is for, and the Freesound search that fills it.
-# scripts/fetch_sfx.py downloads CC0 matches to assets/sfx/catalog/<name>-<n>-<id>.mp3;
-# /produce-video picks from them by `use`. Meme entries are CC0 soundalikes, not the originals.
-# max_s: longest file accepted (default 6). skip: Freesound IDs rejected by ear, never re-fetched.
+# Sound-effect kinds: what each is for, and the Freesound search that finds more.
+# The library is assets/sfx/<kind>-<n>.*; /produce-video picks from it by `use`.
+# scripts/fetch_sfx.py downloads new CC0 matches to assets/sfx/new/ for review, skipping every
+# Freesound ID already in assets/sfx/SOURCES.md. Meme entries are CC0 soundalikes, not originals.
+# max_s: longest file accepted (default 6). skip: extra Freesound IDs never to fetch.
 
 - {name: vine-boom, query: vine boom, use: mock-dramatic reveal; a statement left hanging}
 - {name: bruh, query: bruh, use: deadpan disbelief at something dumb}
@@ -10,7 +11,7 @@
 - {name: sad-violin, query: sad violin, use: mock sympathy; a loss}
 - {name: curb-outro, query: curb your enthusiasm, use: awkward ending; cringe beat, max_s: 12}
 - {name: windows-error, query: windows error, use: something breaks; a bug}
-- {name: metal-pipe, query: metal pipe falling, use: absurd sudden fail}
+- {name: metal-pipe, query: metal pipe falling, use: something breaks; absurd sudden fail}
 - {name: air-horn, query: air horn, use: hype; a big win}
 - {name: are-you-sure, query: are you sure about that, use: calling out a dubious claim}
 - {name: why-running, query: why are you running, use: someone dodging a problem}
@@ -41,7 +42,7 @@
 - {name: whoosh, query: whoosh, use: transition; motion}
 - {name: imessage-send, query: message sent, use: sending a message}
 - {name: apple-pay, query: success chime, use: a payment going through}
-- {name: record-scratch, query: record scratch, use: "stop, wait, what?"}
+- {name: record-scratch, query: record scratch, use: "hold up — stop, wait, what?"}
 - {name: bass-drop, query: bass drop boom, use: a big moment}
 - {name: riser, query: riser, use: build-up; ends on the claim it leads into}
 - {name: sparkle, query: sparkle, use: something new, shiny or magic}
@@ -53,3 +54,25 @@
 - {name: rain-ambience, query: rain ambience, use: gloomy mood, max_s: 10}
 - {name: glass-clink, query: glass clink, use: cheers; celebrating}
 - {name: cinematic-impact, query: cinematic impact hit, use: a title or dramatic reveal}
+
+# Everyday sounds
+- {name: click, query: mouse click, use: an on-screen click}
+- {name: double-click, query: double click, use: opening something; a double click}
+- {name: tick, query: soft ui click, use: a small step; card beats (pitched rising)}
+- {name: pop, query: pop, use: something appearing; a light accent}
+- {name: thud, query: low thump, use: a title or point landing with weight}
+- {name: swipe, query: swipe whoosh, use: a quick slide or swap}
+- {name: paper-slide, query: paper slide, use: a document or card sliding in}
+- {name: paper-crumple, query: paper pages, use: rifling through paper; scrapping an idea}
+- {name: paper-rip, query: paper rip, use: tearing something up; a reveal}
+- {name: champagne-pop, query: champagne cork, use: celebrating; a launch}
+- {name: groan, query: soft grunt, use: a weary groan; effort}
+- {name: car-horn, query: car horn, use: an interruption; "hey!"}
+- {name: church-bell, query: church bell, use: a solemn or ironic toll}
+- {name: ding, query: triangle ding, use: an idea; a clean, bright hit}
+- {name: drum-roll, query: drum roll, use: build-up before a reveal}
+- {name: phone-ring, query: phone ring, use: an incoming call or alert}
+- {name: door-knock, query: knock on door, use: someone at the door; "knock knock"}
+- {name: level-up, query: level up, use: an upgrade; leveling up}
+- {name: coin-pickup, query: coin pickup, use: a small win; points scored}
+- {name: thunder, query: thunder, use: ominous news; a storm coming}

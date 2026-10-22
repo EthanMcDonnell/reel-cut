@@ -4,9 +4,10 @@
     .venv/bin/python scripts/fetch_sfx.py [--per 3] [name ...]
 
 Searches Freesound's public site (no API key) for CC0 sounds under the entry's max_s,
-most-downloaded first, and saves the top `--per` HQ previews to
-assets/sfx/catalog/<name>-<n>-<id>.mp3, crediting each in assets/sfx/catalog/SOURCES.md.
-Files already on disk are skipped, so it is safe to re-run.
+most-downloaded first, and saves the top `--per` HQ previews for review to
+assets/sfx/new/<name>-<id>.mp3, crediting each in assets/sfx/new/SOURCES.md. Any Freesound
+ID already credited in assets/sfx/SOURCES.md (kept or rejected) or new/SOURCES.md is never
+fetched again, so it is safe to re-run.
 """
 
 import argparse
@@ -21,7 +22,8 @@ import yaml
 
 REPO = Path(__file__).resolve().parent.parent
 CATALOG = Path(__file__).with_name("sfx_catalog.yaml")
-OUT = REPO / "assets" / "sfx" / "catalog"
+LIBRARY = REPO / "assets" / "sfx"
+OUT = LIBRARY / "new"
 SEARCH = "https://freesound.org/search/"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
@@ -59,22 +61,23 @@ def main() -> int:
     OUT.mkdir(parents=True, exist_ok=True)
     sources = OUT / "SOURCES.md"
     if not sources.exists():
-        sources.write_text("# CC0 sound effects from freesound.org (HQ previews)\n\n"
+        sources.write_text("# Unreviewed CC0 downloads from freesound.org (HQ previews)\n\n"
                            "| File | Title | Source |\n|---|---|---|\n")
+    known = {m for f in (LIBRARY / "SOURCES.md", sources) if f.exists()
+             for m in re.findall(r"freesound\.org/s/(\d+)", f.read_text())}
 
     missing = []
     with httpx.Client(headers=HEADERS, follow_redirects=True, timeout=30) as client:
         for e in entries:
-            skip = {str(i) for i in e.get("skip", [])}
+            skip = known | {str(i) for i in e.get("skip", [])}
             found = [s for s in search(client, e["query"], e.get("max_s", 6))
                      if s["id"] not in skip][:args.per]
             if not found:
                 missing.append(e["name"])
-            for n, s in enumerate(found):
-                path = OUT / f"{e['name']}-{n}-{s['id']}.mp3"
-                if path.exists():
-                    continue
+            for s in found:
+                path = OUT / f"{e['name']}-{s['id']}.mp3"
                 path.write_bytes(client.get(s["mp3"]).raise_for_status().content)
+                known.add(s["id"])
                 with sources.open("a") as f:
                     f.write(f"| {path.name} | {s['title']} by {s['user']} | "
                             f"https://freesound.org/s/{s['id']}/ |\n")

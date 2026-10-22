@@ -182,7 +182,7 @@ Overlays play no sound of their own; the title card's sound (on the frame it lan
 [{ "sound": "impact-3-336495", "at": 18.758, "source_clip": "assets/slug/clip.MOV", "gain_db": 0 }]
 ```
 
-- `sound` is a file stem under `assets/sfx/` (`find assets/sfx -name '*.mp3' -o -name '*.wav'`); the stem's prefix names the kind. `scripts/sfx_catalog.yaml` says what each catalog kind is for, and `assets/sfx/catalog/SOURCES.md` gives each file's title.
+- `sound` is a file stem in `assets/sfx/` (`ls assets/sfx`), named `<kind>-<n>`. Every file there is approved: `scripts/sfx_catalog.yaml` says what each kind is for, and `assets/sfx/SOURCES.md` gives each file's real title, which can be more specific than its kind. Never use anything under `assets/sfx/new/` — unreviewed downloads.
 - A sound marks something changing on screen, never a spoken word alone. `at` is one of: an `images.json` entry's `start` or beat, the hook's first word (the title card), or a kept `edl` span's `start` (a cut). The render drops any other with a warning, which `--check-overlays` prints. The sound's peak is aligned to `at`, so a riser builds up to it.
 - Meme stings (vine boom, bruh, sad trombone…) are for comedic or opinion takes, not explainers.
 - Place one where the change earns it — a reveal, a full-screen card entering, a jump between sections — not on every overlay. A few per video at most; `[]` is fine. Don't repeat a file back to back.
