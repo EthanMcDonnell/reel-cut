@@ -44,6 +44,7 @@ def render(
     outputs: list[tuple[str | Path, bool]] | None = None,
     audio_tracks: list[dict] | None = None,
     video_overlays: list | None = None,
+    zoom: tuple[list, dict] | None = None,
 ) -> list[Path]:
     """Render one or more output files from EDL keep-segments with optional caption overlay.
 
@@ -61,6 +62,9 @@ def render(
 
     `video_overlays` are `(cue, placement)` pairs for `type="video"` ImageCues
     (output-timeline), played muted in their box under the caption/image layer.
+
+    `zoom` is `(plan, settings)` from reelcut.motion.zoom_plan: camera zooms on the footage
+    alone, under every overlay.
     """
     if not outputs:
         outputs = [(Path(config.output.location) / "output.mp4", False)]
@@ -117,7 +121,7 @@ def render(
                 pos = f" ({n}/{len(out_specs)})" if len(out_specs) > 1 else ""
                 progress.update(task, description=f"Encoding {path.name}{pos}…")
                 _final_encode(concat_path, path, config, caption_seq, audio_tracks, flip,
-                              video_overlays)
+                              video_overlays, **({"zoom": zoom} if zoom and zoom[0] else {}))
 
         written = [path for path, _ in out_specs]
         progress.update(task, description=f"Done → {written[-1]}", completed=1, total=1)
@@ -314,6 +318,7 @@ def _final_encode(
     audio_tracks: list[dict] | None = None,
     flip: bool = False,
     video_overlays: list | None = None,
+    zoom: tuple[list, dict] | None = None,
 ) -> None:
     """Re-encode to final output spec, optionally overlaying caption frames in the same pass."""
     w, h = config.output.resolution
@@ -335,6 +340,11 @@ def _final_encode(
             # flipping the composited frame instead would mirror the burned-in captions and
             # title card, which is what makes a naive hflip look broken.
             video = video.filter("hflip")
+        if zoom:
+            # Camera zooms on the footage only, after the flip (so they anchor on the mirrored
+            # eyes) and before any overlay, so captions and cards never zoom.
+            from .motion import zoom_corners
+            video = video.filter("perspective", **zoom_corners(*zoom, fps, flip))
         # async resampling keeps audio locked to video PTS after the fps conversion.
         audio = main.audio.filter("aresample", **{"async": 1000})
         audio = _mix_audio_tracks(audio, audio_tracks)

@@ -190,7 +190,7 @@ Overlays play no sound of their own; the title card's thud and animated-card bea
 
 ## Step 4d — Motion (motion.json)
 
-Invoke the `motion` skill and direct how this video moves: its look in `assets/<video-slug>/motion.json`, and `"motion"` overrides on the `images.json` entries whose moment earns one. Give it any direction from `$ARGUMENTS` (it wins) and the series file's `## Motion` section if there is one. Be creative inside the skill's vocabulary, preview each override, and list the look and overrides in the report.
+Invoke the `motion` skill and direct how this video moves: its look in `assets/<video-slug>/motion.json`, the camera zooms (`zoom.eyes` from the frame you looked at in Step 4, and `zooms` placed on the lines that land), and `"motion"` overrides on the `images.json` entries whose moment earns one. Give it any direction from `$ARGUMENTS` (it wins) and the series file's `## Motion` section if there is one. Be creative inside the skill's vocabulary, preview each override, and list the look and overrides in the report.
 
 ## Step 4b — videos.json (one entry per rendered video)
 

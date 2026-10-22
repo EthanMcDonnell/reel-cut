@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 import math
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from functools import lru_cache
 from pathlib import Path
 
@@ -36,19 +36,27 @@ TRANSITIONS = ("cut", "swap", "push", "stack", "dissolve")
 CAPTIONS = ("none", "pop", "words")
 HEADINGS = ("none", "slot", "ink")
 
+# Camera zooms on the footage: ease in to `scale` over `in` seconds, hold a random `hold`,
+# ease back out over `out`, then rest a random `every` before the next. `eyes` is the point
+# (fractions of the frame) the zoom is anchored on, so the speaker's eyes stay where they are.
+ZOOM = {"scale": 1.05, "in": 2.0, "hold": [2.0, 3.0], "out": 2.0, "every": [3.0, 5.0],
+        "eyes": [0.5, 0.4]}
+
 LOOKS = {
     "none": dict(spring="snappy", enter="fade", exit="fade", hold="still", transition="cut",
-                 tilt=0.0, captions="none", heading="none"),
+                 tilt=0.0, captions="none", heading="none", zoom={}),
     "editorial": dict(spring="snappy", enter="swing", exit="lift", hold="drift", transition="stack",
-                      tilt=1.5, captions="pop", heading="slot"),
+                      tilt=1.5, captions="pop", heading="slot", zoom=dict(ZOOM)),
     "punchy": dict(spring="bouncy", enter="stamp", exit="snap", hold="still", transition="push",
-                   tilt=0.0, captions="words", heading="slot"),
+                   tilt=0.0, captions="words", heading="slot",
+                   zoom=dict(ZOOM, scale=1.08, **{"in": 0.25, "out": 0.25})),
     "calm": dict(spring="gentle", enter="rise", exit="fade", hold="push", transition="dissolve",
-                 tilt=0.0, captions="pop", heading="ink"),
+                 tilt=0.0, captions="pop", heading="ink",
+                 zoom=dict(ZOOM, scale=1.04, hold=[2.5, 3.5], every=[4.0, 6.0], **{"in": 2.5, "out": 2.5})),
 }
 _CHOICES = {"spring": SPRINGS, "enter": ENTERS, "exit": EXITS, "hold": HOLDS,
             "transition": TRANSITIONS, "captions": CAPTIONS, "heading": HEADINGS}
-_FIELDS = (*_CHOICES, "tilt")
+_FIELDS = (*_CHOICES, "tilt", "zoom")
 
 EXIT_S = 0.22        # an exit's length (a fade's is images.fade_duration_s)
 DISSOLVE_S = 0.3
@@ -65,6 +73,7 @@ class Motion:
     tilt: float = 0.0
     captions: str = "none"
     heading: str = "none"
+    zoom: dict = field(default_factory=dict)  # see ZOOM; {} is no zoom
 
 
 def resolve(*layers: dict | None) -> Motion:
@@ -77,7 +86,11 @@ def resolve(*layers: dict | None) -> Motion:
             if key == "look":
                 if value not in LOOKS:
                     raise ValueError(f"unknown motion look {value!r} — one of {', '.join(LOOKS)}")
-                vals.update(LOOKS[value])
+                vals.update({k: dict(v) if isinstance(v, dict) else v for k, v in LOOKS[value].items()})
+            elif key == "zoom":
+                vals["zoom"] = _zoom(vals["zoom"], value)
+            elif key == "zooms":
+                continue  # timeline data, placed by the renderer (see placed_zooms)
             elif key == "tilt":
                 vals["tilt"] = float(value)
             elif key in _CHOICES:
@@ -87,6 +100,21 @@ def resolve(*layers: dict | None) -> Motion:
             else:
                 raise ValueError(f"unknown motion key {key!r} — one of look, {', '.join(_FIELDS)}")
     return Motion(**vals)
+
+
+def _zoom(current: dict, value) -> dict:
+    """A layer's `zoom`: false/"off" turns it off, true turns on the defaults, an object
+    overrides fields of the current zoom (or of the defaults, if it was off)."""
+    if value in (False, "off"):
+        return {}
+    if value is True or value == "on":
+        return dict(current or ZOOM)
+    if not isinstance(value, dict):
+        raise ValueError(f"motion zoom must be on, off or an object, not {value!r}")
+    unknown = set(value) - set(ZOOM)
+    if unknown:
+        raise ValueError(f"unknown zoom key {sorted(unknown)[0]!r} — one of {', '.join(ZOOM)}")
+    return {**(current or ZOOM), **value}
 
 
 def load_motion(path: Path) -> dict:
@@ -105,6 +133,7 @@ def catalog() -> str:
     rows = [f"look        {', '.join(LOOKS)}"]
     rows += [f"{k:<11} {', '.join(v)}" for k, v in _CHOICES.items()]
     rows.append("tilt        resting angle in degrees, alternating sign per overlay")
+    rows.append(f"zoom        off, on, or an object over {ZOOM}")
     rows += ["", "looks:"] + [f"  {name:<10} " + " ".join(f"{k}={v}" for k, v in vals.items())
                               for name, vals in LOOKS.items()]
     return "\n".join(rows)
@@ -388,3 +417,69 @@ def with_band(m: Motion, full: bool) -> Motion:
         return m
     return replace(m, tilt=0.0, hold="still" if m.hold == "drift" else m.hold,
                    enter="rise" if m.enter == "swing" else m.enter)
+
+
+# ---------------------------------------------------------------------------
+# Camera zoom
+# ---------------------------------------------------------------------------
+
+def placed_zooms(zoom: dict, spans: list[tuple[float, float, float | None]]) -> list[tuple]:
+    """(start, full, release, end, scale) for zooms placed by hand — each (start, end, scale)
+    in output seconds: in at its start, out by its end. One too short for both ramps splits
+    its length between them; one overlapping the zoom before starts where that one ends."""
+    out = []
+    for a, d, scale in sorted(spans):
+        if out:
+            a = max(a, out[-1][3])
+        if d - a < 0.5:
+            continue
+        ramp_in, ramp_out = zoom["in"], zoom["out"]
+        if ramp_in + ramp_out > d - a:
+            k = (d - a) / (ramp_in + ramp_out)
+            ramp_in, ramp_out = ramp_in * k, ramp_out * k
+        out.append((a, a + ramp_in, d - ramp_out, d, scale or zoom["scale"]))
+    return out
+
+
+def zoom_plan(zoom: dict, total_s: float, sentence_starts: list[float], seed: str) -> list[tuple]:
+    """(start, full, release, end, scale) output-timeline seconds of each zoom, on a steady
+    rhythm — the fallback when no zooms are placed. A zoom starts on a sentence that begins
+    near when it is due, so the camera moves with the speech."""
+    if not zoom:
+        return []
+    import random
+    rng = random.Random(seed)
+    plan = []
+    t = rng.uniform(*zoom["every"])
+    while True:
+        near = [s for s in sentence_starts if abs(s - t) <= 0.8]
+        if near:
+            t = min(near, key=lambda s: abs(s - t))
+        full = t + zoom["in"]
+        release = full + rng.uniform(*zoom["hold"])
+        end = release + zoom["out"]
+        if end > total_s - 0.2:
+            return plan
+        plan.append((t, full, release, end, zoom["scale"]))
+        t = end + rng.uniform(*zoom["every"])
+
+
+def zoom_corners(plan: list[tuple], zoom: dict, fps: int, flip: bool = False) -> dict:
+    """ffmpeg `perspective` options (sense=source) that crop toward `zoom["eyes"]` by the
+    plan's eased scale each frame. Sub-pixel, unlike crop or zoompan, so the face never jitters."""
+    t = f"(in/{fps})"
+    ease = lambda u: f"(pow({u},2)*(3-2*{u}))"
+    ramps = "+".join(
+        f"{sc - 1:.4f}*between({t},{a:.3f},{d:.3f})*min({ease(f'clip(({t}-{a:.3f})/{max(b - a, 1e-3):.3f},0,1)')},"
+        f"1-{ease(f'clip(({t}-{c:.3f})/{max(d - c, 1e-3):.3f},0,1)')})"
+        for a, b, c, d, sc in plan
+    )
+    z = f"(1+{ramps})"
+    ex, ey = zoom["eyes"]
+    if flip:
+        ex = 1 - ex  # the footage is mirrored before the zoom
+    x0, y0 = f"({ex:.4f}*W*(1-1/{z}))", f"({ey:.4f}*H*(1-1/{z}))"
+    x1, y2 = f"({x0}+W/{z})", f"({y0}+H/{z})"
+    return dict(x0=x0, y0=y0, x1=x1, y1=y0, x2=x0, y2=y2, x3=x1, y3=y2,
+                interpolation="cubic", sense="source", eval="frame",
+                enable="+".join(f"between(t,{a:.3f},{d:.3f})" for a, _, _, d, _ in plan))

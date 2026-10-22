@@ -256,6 +256,10 @@ motion:
   # captions: pop                # none | pop (each line springs in) | words (each word springs in as said)
   # heading: slot                # none | slot | ink — the title card's entrance/exit; the render then
                                  # writes <name>.cover.jpg from after it settles, used as the reel cover
+  # zoom: {scale: 1.05, in: 2, hold: [2, 3], out: 2, every: [3, 5], eyes: [0.5, 0.4]}
+                                 # slow camera zooms on the footage, anchored on the eyes (fractions of the
+                                 # frame); `off` to disable. Claude places them per video in motion.json
+                                 # "zooms"; without that they fall every `every` seconds on a sentence start
 
 
 # ---------------------------------------------------------------------------

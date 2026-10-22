@@ -41,6 +41,15 @@ A `look` resets every field to its bundle before that layer's own fields apply. 
 
 Every card, animated or still, enters, holds, hands over and leaves by these moves like any overlay. Full-screen cards swap `swing` for `rise` and never drift; give them `shutter`, `iris`, `wipe` or `slot` to enter.
 
+## Camera zooms
+
+Slow zooms on the footage only (never the captions or overlays), anchored on the speaker's eyes so they stay where they are. The look sets their feel (`zoom` in motion.json overrides it: `{"scale": 1.06, "in": 2, "out": 2, "eyes": [0.5, 0.42]}`, or `"zoom": "off"`).
+
+- **Set `eyes`** from one frame of the footage with a grid on it — `ffmpeg -ss 8 -i <clip> -frames:v 1 -vf "scale=270:480,drawgrid=w=iw/10:h=ih/10:c=red@0.5" <scratchpad>/eyes.png`, then Read it — the point between the eyes as fractions of width and height. A few percent off is fine.
+- **Place them** in motion.json `"zooms"`, in source-clip time like images.json: `[{"start": 12.4, "end": 17.9, "source_clip": "…", "scale": 1.07}]`. In at `start`, out by `end`; `scale` is optional.
+- **Where:** on the line that lands a point, a reveal, a punchline or a number; start on its first word and end on its last word or just after. Leave a few seconds between zooms, and none under a full-screen card.
+- **No `zooms` key** puts them on a steady rhythm (every few seconds, each on a sentence start). `"zooms": []` means none.
+
 ## Inside cards
 
 On top of `data-beat`, `data-hot` and `.count` (see /produce-video Step 3e):

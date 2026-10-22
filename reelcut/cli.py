@@ -953,7 +953,8 @@ def _phase2(cfg, doc, outputs: list[tuple[Path, bool]], verbose: bool,
     warnings: list[str] = []
     # House motion (config.yaml) with the slug's motion.json over it; images.json entries
     # can override it per overlay.
-    motion = resolve(cfg.motion.model_dump(), load_motion(assets_dir / "motion.json") if assets_dir else {})
+    video_motion = load_motion(assets_dir / "motion.json") if assets_dir else {}
+    motion = resolve(cfg.motion.model_dump(), video_motion)
     console.print(f"  Motion: {motion}")
 
     # Convert EdlEntry (captions_doc) → EDLEntry (edl module) for renderer
@@ -1162,8 +1163,12 @@ def _phase2(cfg, doc, outputs: list[tuple[Path, bool]], verbose: bool,
         # An animated card is drawn with the stills (so it moves like them); clips go to ffmpeg.
         video_cues = [(c, p) for c, p in zip(all_image_cues, placements)
                       if c.type == "video" and c.kind != "card" and p]
+        zooms = _camera_zooms(motion, video_motion, edl, caption_words, total_output_s,
+                              outputs[0][0].stem)
+        if zooms:
+            console.print(f"  Camera zooms: {len(zooms)}")
         written = do_render(edl, caption_frames, cfg, outputs, audio_tracks=audio_tracks,
-                            video_overlays=video_cues)
+                            video_overlays=video_cues, zoom=(zooms, motion.zoom))
         console.print(f"\n[green bold]Done![/green bold] ({time.perf_counter() - t:.1f}s)")
         for p in written:
             console.print(f"  → {p}")
@@ -1179,6 +1184,31 @@ def _phase2(cfg, doc, outputs: list[tuple[Path, bool]], verbose: bool,
                                 "-frames:v", "1", "-q:v", "2", str(cover)], check=False)
 
     return warnings
+
+
+def _camera_zooms(motion, video_motion: dict, edl: list, words: list, total_s: float,
+                  seed: str) -> list[tuple]:
+    """The camera zooms for this render. Zooms placed in motion.json `zooms` (source-clip
+    times, like images.json) are used as placed — one that a cut leaves under half a second
+    is dropped; without any, zooms fall on a steady rhythm, each starting on a sentence."""
+    from .motion import placed_zooms, zoom_plan
+    from .transcriber import _TERMINAL_PUNCT
+
+    if not motion.zoom:
+        return []
+    if "zooms" not in video_motion:
+        starts = [b.start for a, b in zip(words, words[1:]) if a.word.rstrip().endswith(_TERMINAL_PUNCT)]
+        return zoom_plan(motion.zoom, total_s, starts, seed)
+    remap, clip_order = _build_edl_remap(edl)
+    spans = []
+    for z in video_motion["zooms"]:
+        clip = z.get("source_clip") or (clip_order[0] if clip_order else "")
+        if not any(e.keep and e.source_clip == clip and e.start <= z["start"] < e.end for e in edl):
+            continue  # starts in a cut (a dropped take, or another hook in a per-hook render)
+        a, d = remap(clip, z["start"]), remap(clip, z["end"])
+        if d - a >= 0.5:
+            spans.append((a, d, z.get("scale")))
+    return placed_zooms(motion.zoom, spans)
 
 
 def _print_coverage(cues: list, total_s: float, words: list) -> None:

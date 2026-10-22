@@ -156,3 +156,43 @@ def test_motion_override_survives_the_per_hook_images_round_trip(tmp_path):
     path = tmp_path / "images.json"
     save_images([ImageSpec(type="person", start=0, end=1, name="A", motion={"enter": "pop"})], path)
     assert load_images(path)[0].motion == {"enter": "pop"}
+
+
+class TestCameraZoom:
+    ZOOM = {"scale": 1.2, "in": 0.5, "hold": [1.0, 1.0], "out": 0.5, "every": [1.0, 1.0],
+            "eyes": [0.5, 0.3]}
+
+    def test_zoom_keeps_the_eyes_in_place(self, tmp_path):
+        # A dot at the anchor stays put while a dot elsewhere is pushed outward.
+        import subprocess
+        from reelcut.motion import zoom_corners
+        frame = Image.new("RGB", (200, 400), "white")
+        for x, y in ((100, 120), (40, 300)):  # the eyes; somewhere else
+            frame.paste((0, 0, 0), (x - 3, y - 3, x + 3, y + 3))
+        frame.save(tmp_path / "f.png")
+        opts = zoom_corners([(0.0, 0.5, 1.5, 2.0, 1.2)], self.ZOOM, fps=10)
+        vf = "perspective=" + ":".join(f"{k}='{v}'" for k, v in opts.items() if k != "enable")
+        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-loop", "1", "-framerate", "10", "-i",
+                        str(tmp_path / "f.png"), "-vf", vf, "-frames:v", "10", str(tmp_path / "o%02d.png")],
+                       check=True)
+        held = Image.open(tmp_path / "o10.png").convert("L")  # 0.9s in: fully zoomed
+        dark = lambda box: held.crop(box).getextrema()[0]
+        assert dark((97, 117, 103, 123)) < 60      # the eyes have not moved
+        assert dark((37, 297, 43, 303)) > 200      # the other dot has
+
+    def test_placed_zoom_in_a_cut_is_dropped(self):
+        from reelcut.cli import _camera_zooms
+        from reelcut.edl import EDLEntry
+        edl = [EDLEntry(start=0, end=10, keep=True, source_clip="c", reason=""),
+               EDLEntry(start=10, end=20, keep=False, source_clip="c", reason=""),
+               EDLEntry(start=20, end=30, keep=True, source_clip="c", reason="")]
+        video = {"zooms": [{"start": 2, "end": 6, "source_clip": "c"},
+                           {"start": 12, "end": 16, "source_clip": "c"},
+                           {"start": 22, "end": 26, "source_clip": "c"}]}
+        zooms = _camera_zooms(resolve({"zoom": self.ZOOM}), video, edl, [], 20.0, "x")
+        assert [(round(a, 2), round(d, 2)) for a, _, _, d, _ in zooms] == [(2, 6), (12, 16)]
+
+    def test_overlapping_placed_zooms_never_stack(self):
+        from reelcut.motion import placed_zooms
+        zooms = placed_zooms(self.ZOOM, [(0.0, 4.0, None), (3.0, 7.0, None)])
+        assert zooms[1][0] >= zooms[0][3]

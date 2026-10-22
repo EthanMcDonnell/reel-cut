@@ -214,6 +214,7 @@ class MotionConfig(BaseModel):
     tilt: float | None = None
     captions: str | None = None
     heading: str | None = None
+    zoom: dict | bool | str | None = None   # off, on, or an object over motion.ZOOM
 
 
 class HeadingsConfig(BaseModel):
