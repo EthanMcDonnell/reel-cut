@@ -7,8 +7,8 @@ italic subtitle — and that single PNG is reused for every frame in its `[start
 The styling matches the approved Playfair-Display gold look.
 
 With motion (reelcut.motion HEADINGS) the lines enter — rising out of a slot, or inked on
-left to right — then push in slowly while held, and leave the same way. A card starting on the
-video's first frame skips its entrance: that frame is the reel's cover, so it shows the card.
+left to right — then push in slowly while held, and leave the same way. The reel's first frame
+then has no title on it, so the render writes a cover from a frame after `settled_s`.
 """
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 from .caption import CaptionFrame, FrameWriter, _resolve_font
 from .config import HeadingsConfig
-from .motion import Pose, clamp, draw, ease_in, ease_in_out, spring
+from .motion import Pose, clamp, draw, ease_in, ease_in_out, settle_s, spring
 
 _SS = 2  # supersample factor — render large, downscale for crisp edges
 _FONTS_DIR = Path(__file__).parent / "fonts"
@@ -98,6 +98,12 @@ def render_heading_frames(
 
 
 _LINE_STAGGER_S = 0.08
+
+
+def settled_s(spring_name: str) -> float:
+    """Seconds after its start by which a moving title card has fully entered, allowing for
+    up to four lines once the title wraps."""
+    return 4 * _LINE_STAGGER_S + settle_s(spring_name) + 0.1
 _HEADING_EXIT_S = 0.3
 _PUSH = 0.025  # how far the title pushes in over its window
 
@@ -115,7 +121,6 @@ def _moving_frames(h, config, resolution, out_dir: Path, fps, first, last, exits
     y1 = max(y + sp.height for sp, _, y in lines)
     gcx, gcy = (x0 + x1) / 2, (y0 + y1) / 2
     reveal = "slot" if motion == "slot" else "ink"
-    enters = first > 0
     n_out = round(_HEADING_EXIT_S * fps) if exits else 0
 
     frames = []
@@ -126,9 +131,8 @@ def _moving_frames(h, config, resolution, out_dir: Path, fps, first, last, exits
         # Stepped in under half a pixel across the title, so held frames can share files.
         push = round((1 + _PUSH * ease_in_out((fn - first) / max(1, last - first - 1))) * 2000) / 2000
         out_q = clamp(1 - left / _HEADING_EXIT_S) if n_out else 0.0
-        a = (clamp(t / 0.25) if enters else 1.0) * (1 - out_q)
-        amounts = [spring(t - i * _LINE_STAGGER_S, spring_name) if enters else 1.0
-                   for i in range(len(lines))]
+        a = clamp(t / 0.25) * (1 - out_q)
+        amounts = [spring(t - i * _LINE_STAGGER_S, spring_name) for i in range(len(lines))]
         if out_q:
             amounts = [min(am, 1 - ease_in(out_q)) for am in amounts]
         key = (round(a, 3), push, tuple(round(clamp(am), 3) for am in amounts))

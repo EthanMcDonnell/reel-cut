@@ -37,9 +37,9 @@ A `look` resets every field to its bundle before that layer's own fields apply. 
 - **tilt** — resting angle in degrees; alternates sign overlay to overlay. Never on full-screen cards.
 - **spring** — `snappy`, `bouncy`, `gentle`, `heavy`. Times every entrance, caption and card beat.
 - **captions** — `none`, `pop` (each line springs in), `words` (each word springs in as it is said).
-- **heading** — `none`, `slot`, `ink`. The title also pushes in slowly while up. A card on the video's first frame skips its entrance, so the cover always shows the title.
+- **heading** — `none`, `slot`, `ink`. The title also pushes in slowly while up. Its first frame is then empty, so the render writes `<name>.cover.jpg` from after it settles and scheduling uses that as the cover.
 
-Full-screen cards swap `swing` for `rise` and never drift; give them `shutter`, `iris`, `wipe` or `slot` to enter.
+Every card, animated or still, enters, holds, hands over and leaves by these moves like any overlay. Full-screen cards swap `swing` for `rise` and never drift; give them `shutter`, `iris`, `wipe` or `slot` to enter.
 
 ## Inside cards
 
@@ -48,6 +48,9 @@ On top of `data-beat`, `data-hot` and `.count` (see /produce-video Step 3e):
 - `data-enter="pop|drop|slide|swing|stamp|wipe"` on a beat element picks its entrance (default rises).
 - `class="stagger"` — its children enter one after another, from the stagger's beat.
 - `<span class="mark">` sweeps a marker under words; `.strike` draws a line through them; `.circle` rings them. Give each its own `data-beat` to draw on a later word.
+- `data-focus="N"` moves a camera in on that element at beat N (`data-zoom`, default 1.6); `data-focus-out="M"` pulls back. For walking through one part of a flow or diagram while it is discussed.
+- `data-swap="N" data-to="new words"` rolls the element's words over at beat N — a correction or a before → after in place.
+- `<div class="bar" style="--v: 72%">label</div>` fills to `--v` on its beat. Only for proportions the script says out loud.
 - Inline SVG: any stroke with `class="draw"` draws itself on — arrows, underlines, a path through a diagram.
 - Custom `@keyframes` time to the video's spring with `animation: name var(--spring-s) var(--spring) var(--at) both`. A script can animate by defining `window.reelcutSeek(seconds)` and `window.reelcutDuration`; beat times are in `window.reelcutBeats`.
 
@@ -62,7 +65,7 @@ Check a card's motion: `.venv/bin/reelcut card <html> --beats 0,1.2,2.4 --spring
    - a flash gag → `pop` in, `snap` out
    - a turn ("but actually", before → after) → `push` transition
    - a diagram to study → `push` hold, `tilt: 0`
-   - inside a card: a correction → `.strike`, the key phrase → `.mark`, the named thing → `.circle`, a path or flow → SVG `.draw`, a list said in one breath → `.stagger`
+   - inside a card: a correction → `.strike` or `data-swap`, the key phrase → `.mark`, the named thing → `.circle`, a path or flow → SVG `.draw`, one step of it being explained → `data-focus`, a list said in one breath → `.stagger`, a said comparison → `.bar`
 4. **Restraint.** Two or three overrides per video at most; repetition is what makes the look read as a style. Never `bouncy` on a serious or sad story.
 5. **Preview every override before rendering:** `.venv/bin/reelcut motion <image> --slug <slug> --enter stamp --to <next image> --out <scratchpad>/m.png`, then Read the strip.
 6. **Report** the look, and each override with the moment it marks.

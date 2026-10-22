@@ -191,3 +191,49 @@ def test_still_card_shows_count_as_written(tmp_path):
     ref.write_text("<p>42</p>")
 
     assert abs(_bright_cols(card_png(html)) - _bright_cols(card_png(ref))) <= 4  # no counter "0" added
+
+
+def test_animated_card_moves_like_any_overlay(tmp_path):
+    # An animated card used to go to ffmpeg as a plain clip, skipping every overlay move.
+    from reelcut.config import ImagesConfig
+    from reelcut.motion import resolve
+
+    html = tmp_path / "c.html"
+    html.write_text('<p>Always</p><p data-beat="1">Later</p>')
+    cue = _resolve_image_spec(
+        ImageSpec(type="card", start=0.0, end=2.0, path=str(html), beats=[0.5]), 1.0, 10)
+    cfg = ImagesConfig(enabled=True, start_delay_s=0)
+    frames = {f.frame_number: f.image_path for f in render_image_frames(
+        [cue], cfg, tmp_path / "f", fps=10, resolution=(500, 900),
+        motion=resolve({"enter": "pop", "exit": "snap"}))}
+
+    def area(p):
+        box = Image.open(p).getchannel("A").getbbox()
+        return (box[2] - box[0]) * (box[3] - box[1])
+    assert area(frames[1]) < area(frames[15])  # popped in from smaller
+
+
+def test_focus_moves_the_camera_in_on_its_element(tmp_path):
+    from reelcut.card import card_webm
+
+    html = tmp_path / "c.html"
+    html.write_text('<p>Top line</p><p data-focus="1" data-zoom="2">Zoomed</p><p>Bottom line</p>')
+
+    webm, top_beat = card_webm(html, [0.3], fps=10)
+
+    assert top_beat == 1
+    before = _middle_line_height(_frame_at(webm, 0.1, tmp_path / "before.png"))
+    after = _middle_line_height(_last_frame(webm, tmp_path / "after.png"))
+    assert after > before * 1.3  # the focused line is drawn bigger
+
+
+def _middle_line_height(png) -> int:
+    """Height of the run of text rows through the frame's middle."""
+    im = Image.open(png).convert("RGBA")
+    px = im.load()
+    lit = [any(px[x, y][3] > 200 and min(px[x, y][:3]) > 200 for x in range(0, im.width, 2))
+           for y in range(im.height)]
+    mid = im.height // 2
+    top = next(y for y in range(mid, -1, -1) if not lit[y])
+    bottom = next(y for y in range(mid, im.height) if not lit[y])
+    return bottom - top

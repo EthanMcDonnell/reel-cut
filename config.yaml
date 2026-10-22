@@ -254,7 +254,8 @@ motion:
   # transition: stack            # overlay → overlay: cut swap push stack dissolve
   # tilt: 1.5                    # resting angle (degrees) of inset overlays, alternating sign
   # captions: pop                # none | pop (each line springs in) | words (each word springs in as said)
-  # heading: slot                # none | slot | ink — the title card's entrance/exit (never on frame 0: it's the cover)
+  # heading: slot                # none | slot | ink — the title card's entrance/exit; the render then
+                                 # writes <name>.cover.jpg from after it settles, used as the reel cover
 
 
 # ---------------------------------------------------------------------------

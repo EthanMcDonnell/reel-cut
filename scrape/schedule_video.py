@@ -194,6 +194,10 @@ def schedule(video_path, caption, scheduled_at, slug, automation=None):
     }
     if automation:
         payload["automation"] = automation
+    # The render writes a cover when the title animates in, since the first frame lacks it.
+    cover = video_path.with_suffix(".cover.jpg")
+    if cover.exists():
+        payload["cover_path"] = str(cover.resolve())
     r = session.post(f"{COCKPIT}/api/schedule", json=payload, timeout=REQUEST_TIMEOUT_S)
     return r
 

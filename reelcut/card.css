@@ -25,7 +25,7 @@ html, body { margin: 0; padding: 0; background: transparent; }
   font-weight: 600;
   line-height: 1.25;
 }
-.card > :first-child { margin-top: 0; }
+.card > :first-child, .cam > :first-child { margin-top: 0; }
 
 /* A full-screen card (images.json "layout": "full") is a solid 9:16 slide covering the frame.
    Its content is centred above the captions and Instagram's bottom bar. */
@@ -36,7 +36,7 @@ html, body { margin: 0; padding: 0; background: transparent; }
   background: rgb(14, 14, 16);
   display: flex; flex-direction: column; justify-content: center;
 }
-.card > :last-child { margin-bottom: 0; }
+.card > :last-child, .cam > :last-child { margin-bottom: 0; }
 
 /* Heading over the card's content. */
 .card h1 {
@@ -105,15 +105,14 @@ pre {
 
 /* Animated cards. An element marked data-beat="N" enters at the Nth time in its images.json
    entry's `beats`; reelcut sets that offset on it as --at. Elements without data-beat show with
-   the card. Entrances run on the video's spring: reelcut appends --spring (a linear() easing)
+   the card, which itself enters, holds and leaves by the video's motion like any overlay.
+   Entrances run on the video's spring: reelcut appends --spring (a linear() easing)
    and --spring-s after this sheet. These defaults have zero specificity, so a fragment's own
    animation (using animation-delay: var(--at)) replaces them. Animate opacity/transform only:
    layout must not move between frames.
    data-enter picks a beat's entrance: rise (default) | pop | drop | slide | swing | stamp | wipe. */
 :root { --spring: ease-out; --spring-s: 0.35s; }
-@keyframes card-in { from { opacity: 0; transform: scale(0.96); } }
 @keyframes beat-in { from { opacity: 0; transform: translateY(24px); } }
-@keyframes full-in { from { opacity: 0; } }
 @keyframes enter-pop { from { opacity: 0; transform: scale(0.6); } }
 @keyframes enter-drop { from { opacity: 0; transform: translateY(-28px); } }
 @keyframes enter-slide { from { opacity: 0; transform: translateX(80px); } }
@@ -127,8 +126,6 @@ pre {
 [data-enter="swing"] { --enter: enter-swing; transform-origin: 0 0; }
 [data-enter="stamp"] { --enter: enter-stamp; }
 [data-enter="wipe"] { --enter: enter-wipe; }
-:where(.card.animated) { animation: card-in var(--spring-s) var(--spring) both; }
-:where(.card.full.animated) { animation-name: full-in; }
 :where(.card.animated [data-beat], .card.animated .stagger > *) {
   animation: var(--enter) var(--spring-s) var(--spring) var(--at, 0s) both;
 }
@@ -207,3 +204,28 @@ pre {
 .card svg .draw { stroke-dasharray: 1; stroke-dashoffset: 0; }
 @keyframes draw-on { from { stroke-dashoffset: 1; } }
 :where(.card.animated svg .draw) { animation: draw-on calc(var(--spring-s) * 2.2) ease-in-out var(--at, 0s) both; }
+
+/* Camera: data-focus="N" on an element zooms the card in on it at beat N (data-zoom sets how
+   far, default 1.6), data-focus-out="M" pulls back out. The card crops what the camera leaves. */
+.card:has(> .cam) { overflow: hidden; }
+.cam { transform-origin: 50% 50%; }
+
+/* data-swap="N" data-to="new words": at beat N the element's words roll up and out and the new
+   ones roll in, in the accent. It keeps the wider of the two widths throughout. */
+.swapping { display: inline-grid; vertical-align: bottom; overflow: hidden; padding-bottom: 0.08em; }
+.swapping > * { grid-area: 1 / 1; }
+.swap-new { color: var(--accent); }
+@keyframes swap-out { to { opacity: 0; transform: translateY(-0.8em); } }
+@keyframes swap-in { from { opacity: 0; transform: translateY(0.8em); } }
+:where(.card.animated .swap-old) { animation: swap-out var(--spring-s) ease-in var(--swap-at) both; }
+:where(.card.animated .swap-new) { animation: swap-in var(--spring-s) var(--spring) var(--swap-at) both; }
+
+/* <div class="bar" style="--v: 72%">label</div>: a meter that fills to --v when its beat lands. */
+.bar { position: relative; isolation: isolate; margin: 0 0 18px; padding: 14px 22px; border-radius: 16px;
+       background: rgba(255, 255, 255, 0.06); }
+.bar:last-child { margin-bottom: 0; }
+.bar::before { content: ""; position: absolute; inset: 0; z-index: -1; width: var(--v, 100%);
+               border-radius: inherit; background: color-mix(in srgb, var(--accent) 38%, transparent);
+               transform-origin: left; }
+@keyframes bar-fill { from { transform: scaleX(0); } }
+:where(.card.animated .bar)::before { animation: bar-fill calc(var(--spring-s) * 1.8) var(--spring) var(--at, 0s) both; }

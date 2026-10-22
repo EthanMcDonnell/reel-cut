@@ -136,11 +136,14 @@ class TestHeadingMotion:
             heads, HeadingsConfig(), tmp_path / f"{motion}{start}", fps=30, resolution=(216, 384),
             total_output_s=10.0, motion=motion)}
 
-    def test_card_on_the_first_frame_is_already_up(self, tmp_path):
-        # Frame 0 is the reel's cover, so it must carry the finished title.
+    def test_title_enters_then_matches_the_still_card(self, tmp_path):
+        from reelcut.heading import settled_s
         moving, still = self._render(tmp_path, 0.0, "slot"), self._render(tmp_path, 0.0, "none")
-        diff = ImageChops.difference(Image.open(moving[0]), Image.open(still[0])).convert("L")
-        assert diff.getextrema()[1] < 40
+        assert Image.open(moving[0]).getchannel("A").getbbox() is None
+        f = int(settled_s("snappy") * 30)
+        from PIL import ImageStat
+        ink = lambda p: ImageStat.Stat(Image.open(p).getchannel("A")).sum[0]
+        assert abs(ink(moving[f]) / ink(still[f]) - 1) < 0.05  # all there; only pushed in a little
 
     def test_later_card_enters(self, tmp_path):
         moving = self._render(tmp_path, 1.0, "slot")

@@ -196,38 +196,49 @@ def render_image_frames(
 
     prepared: dict[int, dict] = {}
     for i, (cue, place) in enumerate(zip(cues, placements)):
-        if cue.type == "video" or place is None:
-            continue  # a video is drawn by the renderer; here it only hides the stills
-        try:
-            logo = Image.open(cue.image_path).convert("RGBA")
-        except Exception:
-            continue
-
-        # Figures (article charts/diagrams) sit on an opaque padded card so transparent
-        # or wide images read against the footage; the card's total width is place.w.
-        sweep = None
-        if cue.type == "figure":
-            logo = _figure_card(logo, place.w)
-        else:
-            logo = logo.resize((place.w, place.h), Image.LANCZOS)
-            if cue.type == "screenshot":
-                sweep = _load_sweep(cue.image_path, place.w, place.h)
-
+        animated = cue.type == "video" and cue.kind == "card"
+        if cue.type == "video" and not animated or place is None:
+            continue  # a video clip is drawn by the renderer; here it only hides the stills
         delay_frames = int(config.start_delay_s * fps)
         start_frame = max(int(cue.start * fps), delay_frames)
         total = int(cue.end * fps) - start_frame
         if total <= 0:
             continue
 
-        sweep_frames = 0
-        if sweep:
-            sweep_frames = min(total, max(int(SWEEP_MIN_S * fps),
-                                          min(int(SWEEP_MAX_S * fps), int(total * SWEEP_SHARE))))
+        # `step(n)` is the sprite n frames in while it is still changing (a screenshot's
+        # highlight sweeping on, an animated card building); after `steps` frames it is `logo`.
+        steps, step = 0, None
+        if animated:
+            paths = _card_frames(cue.image_path, output_dir / f"card_{i:03d}")
+            if not paths:
+                continue
+            size = (place.w, place.h)
+            step = lambda n, _p=paths, _s=size: Image.open(_p[n]).convert("RGBA").resize(_s, Image.LANCZOS)
+            logo, steps = step(len(paths) - 1), len(paths) - 1
+        else:
+            try:
+                logo = Image.open(cue.image_path).convert("RGBA")
+            except Exception:
+                continue
+            # Figures (article charts/diagrams) sit on an opaque padded card so transparent
+            # or wide images read against the footage; the card's total width is place.w.
+            if cue.type == "figure":
+                logo = _figure_card(logo, place.w)
+            else:
+                logo = logo.resize((place.w, place.h), Image.LANCZOS)
+                sweep = _load_sweep(cue.image_path, place.w, place.h) if cue.type == "screenshot" else None
+                if sweep:
+                    steps = min(total, max(int(SWEEP_MIN_S * fps),
+                                           min(int(SWEEP_MAX_S * fps), int(total * SWEEP_SHARE))))
+                    step = lambda n, _l=logo, _w=sweep, _n=steps: _sweep_frame(_l, *_w, (n + 1) / _n)
+
         m = resolve(asdict(base), cue.motion) if cue.motion else base
         prepared[i] = {
             "logo": logo, "x": place.x, "y": place.y,
             "start": start_frame, "total": total,
-            "sweep": sweep, "sweep_frames": sweep_frames,
+            # An animated card's frames count from its own start, not the delayed first frame.
+            "t0": int(cue.start * fps) if animated else start_frame,
+            "step": step, "steps": steps,
             "motion": with_band(m, place.band == FULL), "k": len(prepared),
         }
 
@@ -320,9 +331,9 @@ def render_image_frames(
             if not layers:
                 continue
 
-            # Frames still sweeping are each distinct; -1 marks the settled highlight.
-            steps = [(f - prepared[ix]["start"]) for ix, _ in layers]
-            steps = [s if s < prepared[ix]["sweep_frames"] else -1 for s, (ix, _) in zip(steps, layers)]
+            # Frames still changing are each distinct; -1 marks the settled sprite.
+            steps = [f - prepared[ix]["t0"] for ix, _ in layers]
+            steps = [s if 0 <= s < prepared[ix]["steps"] else -1 for s, (ix, _) in zip(steps, layers)]
             sig = tuple((ix, s, ps.key()) for (ix, ps), s in zip(layers, steps))
             path = cache.get(sig)
             if path is None:
@@ -331,7 +342,7 @@ def render_image_frames(
                     q = prepared[ix]
                     img = q["logo"]
                     if s >= 0:
-                        img = _sweep_frame(img, *q["sweep"], (s + 1) / q["sweep_frames"])
+                        img = q["step"](s)
                     draw(canvas, img, q["x"], q["y"], ps)
                 path = str(output_dir / f"img_{f:06d}.png")
                 writer.save(canvas, path)
@@ -401,6 +412,18 @@ def merge_with_caption_frames(
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+def _card_frames(webm: str, out_dir: Path) -> list[str]:
+    """An animated card's frames as PNGs (libvpx keeps the alpha the native decoder drops)."""
+    import subprocess
+    out_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-c:v", "libvpx-vp9", "-i", webm,
+                        str(out_dir / "%05d.png")], check=True)
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return []
+    return [str(p) for p in sorted(out_dir.glob("*.png"))]
+
 
 def _load_sweep(path: str, w: int, h: int) -> tuple[Image.Image, list] | None:
     """The un-highlighted crop and highlighted line boxes saved beside a screenshot.

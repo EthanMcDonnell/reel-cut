@@ -12,8 +12,9 @@ stylesheet is newer, so images.json can point at the .html and always show its c
 
 An animated card renders to `<name>.<key>.webm` (VP9 with alpha). Elements marked
 `data-beat="N"` enter at the Nth offset, so a list or flow builds in time with the words;
-`data-hot="N"` lights an element at the Nth offset until the next one lights, and a `.count`
-number counts up. Entrances run on the video's spring (reelcut.motion), injected as the CSS
+`data-hot="N"` lights an element at the Nth offset until the next one lights, a `.count`
+number counts up, `data-focus="N"` moves a camera in on an element (`data-focus-out="M"` pulls
+back), and `data-swap="N"` rolls an element's words over to its `data-to` text. Entrances run on the video's spring (reelcut.motion), injected as the CSS
 `--spring` easing and `--spring-s` duration. A fragment's own script can animate too: it
 defines `window.reelcutSeek(seconds)` and `window.reelcutDuration`, and reads its beat times
 from `window.reelcutBeats`.
@@ -46,10 +47,34 @@ _FONTS = {  # @font-face family → (bundled file, weight range, style)
 # the highlight moves through the card. A whole-number .count counts up from 0.
 # Returns the highest beat number used, so a fragment with more beats than times is caught.
 _JS_SET_BEATS = """offs => {
-  document.querySelector('.card').classList.add('animated');
   window.reelcutBeats = offs;
   let top = 0;
-  const at = n => (offs[n - 1] ?? 0) + 's';
+  const sec = n => offs[n - 1] ?? 0;
+  const at = n => sec(n) + 's';
+  // Camera: measured before anything animates, so every element is where it rests.
+  const cam = document.querySelector('.cam');
+  const shots = [];
+  if (cam) {
+    const c = cam.getBoundingClientRect();
+    document.querySelectorAll('[data-focus]').forEach(el => {
+      // Aim at what the element shows (its text and children), not its full-width box, and
+      // never so close that it won't fit.
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      const r = range.getBoundingClientRect();
+      const z = Math.max(1, Math.min(parseFloat(el.dataset.zoom) || 1.6,
+                                     0.92 * c.width / r.width, 0.92 * c.height / r.height));
+      const tx = z * (c.width / 2 - (r.left + r.width / 2 - c.left));
+      const ty = z * (c.height / 2 - (r.top + r.height / 2 - c.top));
+      top = Math.max(top, +el.dataset.focus);
+      shots.push([sec(+el.dataset.focus), `translate(${tx}px, ${ty}px) scale(${z})`]);
+      if (el.dataset.focusOut) {
+        top = Math.max(top, +el.dataset.focusOut);
+        shots.push([sec(+el.dataset.focusOut), 'none']);
+      }
+    });
+  }
+  document.querySelector('.card').classList.add('animated');
   document.querySelectorAll('[data-beat]').forEach(el => {
     const n = parseInt(el.dataset.beat, 10) || 0;
     top = Math.max(top, n);
@@ -77,6 +102,36 @@ _JS_SET_BEATS = """offs => {
     const base = parseFloat(getComputedStyle(el).getPropertyValue('--at')) || 0;
     [...el.children].forEach((c, i) => c.style.setProperty('--at', (base + i * 0.09) + 's'));
   });
+  // data-swap="N": at beat N the words roll over to data-to, in place.
+  document.querySelectorAll('[data-swap]').forEach(el => {
+    top = Math.max(top, +el.dataset.swap);
+    const next = document.createElement('span');
+    next.className = 'swap-new';
+    next.textContent = el.dataset.to || '';
+    const old = document.createElement('span');
+    old.className = 'swap-old';
+    old.append(...el.childNodes);
+    el.append(old, next);
+    el.classList.add('swapping');
+    el.style.setProperty('--swap-at', at(+el.dataset.swap));
+  });
+  if (shots.length) {
+    const root = getComputedStyle(document.documentElement);
+    const ease = root.getPropertyValue('--spring').trim() || 'ease-out';
+    const move = parseFloat(root.getPropertyValue('--spring-s')) * 1600;  // a camera moves slower
+    shots.sort((a, b) => a[0] - b[0]);
+    const end = shots[shots.length - 1][0] * 1000 + move;
+    const frames = [{offset: 0, transform: 'none', easing: 'linear'}];
+    let last = 'none', at0 = 0;  // a shot called before the last one lands starts from there
+    shots.forEach(([t, tf]) => {
+      at0 = Math.max(at0, t * 1000 / end);
+      frames.push({offset: at0, transform: last, easing: ease});
+      at0 = Math.min(1, Math.max(at0, (t * 1000 + move) / end));
+      frames.push({offset: at0, transform: tf, easing: 'linear'});
+      last = tf;
+    });
+    cam.animate(frames, {duration: end, fill: 'both'});
+  }
   return top;
 }"""
 
@@ -206,7 +261,11 @@ def _card_page(full: bool = False, spring: str = "snappy"):
 
 
 def _page(html_path: Path, full: bool = False, spring: str = "snappy") -> str:
-    """The full document for one fragment. `<base>` lets it reference images beside it."""
+    """The full document for one fragment. `<base>` lets it reference images beside it.
+    A fragment that uses `data-focus` is wrapped in a `.cam` the camera moves."""
+    body = html_path.read_text()
+    if "data-focus" in body:
+        body = f"<div class='cam'>{body}</div>"
     faces = "".join(
         f'@font-face {{ font-family: "{family}"; font-weight: {weight}; font-style: {style}; '
         f'src: url(data:font/ttf;base64,{_font_b64(file)}) format("truetype"); }}\n'
@@ -216,7 +275,7 @@ def _page(html_path: Path, full: bool = False, spring: str = "snappy") -> str:
         "<!doctype html><html><head><meta charset='utf-8'>"
         f"<base href='{html_path.resolve().parent.as_uri()}/'>"
         f"<style>{faces}{_CSS.read_text()}\n{css_vars(spring)}</style></head>"
-        f"<body><div class='card{' full' if full else ''}'>{html_path.read_text()}</div></body></html>"
+        f"<body><div class='card{' full' if full else ''}'>{body}</div></body></html>"
     )
 
 

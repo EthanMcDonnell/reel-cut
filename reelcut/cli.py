@@ -15,6 +15,7 @@ os.environ.setdefault("HF_HUB_OFFLINE", "1")
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 os.environ.setdefault("OMP_NUM_THREADS", "1")
 
+import subprocess
 import tempfile
 import time
 import traceback
@@ -1158,12 +1159,24 @@ def _phase2(cfg, doc, outputs: list[tuple[Path, bool]], verbose: bool,
         n_out = f"{len(outputs)} videos" if len(outputs) > 1 else "final video"
         console.print(f"[bold]Step 6c/6[/bold] Rendering {n_out}… encoder: [cyan]{encoder}[/cyan]")
         t = time.perf_counter()
-        video_cues = [(c, p) for c, p in zip(all_image_cues, placements) if c.type == "video" and p]
+        # An animated card is drawn with the stills (so it moves like them); clips go to ffmpeg.
+        video_cues = [(c, p) for c, p in zip(all_image_cues, placements)
+                      if c.type == "video" and c.kind != "card" and p]
         written = do_render(edl, caption_frames, cfg, outputs, audio_tracks=audio_tracks,
                             video_overlays=video_cues)
         console.print(f"\n[green bold]Done![/green bold] ({time.perf_counter() - t:.1f}s)")
         for p in written:
             console.print(f"  → {p}")
+        # A moving title isn't on the first frame, which Instagram would take as the cover,
+        # so write one from the moment the first title has settled: <name>.cover.jpg.
+        titled = [hs for hs in heading_specs if hs.title]
+        if motion.heading != "none" and titled:
+            from .heading import settled_s
+            at = titled[0].start + settled_s(motion.spring)
+            for p in written:
+                cover = Path(p).with_suffix(".cover.jpg")
+                subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-ss", f"{at:.3f}", "-i", str(p),
+                                "-frames:v", "1", "-q:v", "2", str(cover)], check=False)
 
     return warnings
 
