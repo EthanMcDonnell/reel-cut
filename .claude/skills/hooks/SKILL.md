@@ -6,55 +6,42 @@ description: >
 
 # Hooks
 
-## What Makes a Hook Work
+The hook is the video's first line. It has about one second to make the right viewer stop, and two more to give them a reason to stay.
 
-You have 1.3–3 seconds to stop the scroll. A strong hook does two things simultaneously:
+## What a Hook Does
 
-- **Reveals the WHAT** — the surprising fact, reversal, or counterintuitive truth
-- **Withholds the HOW** — the explanation the viewer now needs
-
-The WHAT creates the stop. The missing HOW creates the stay.
-
-**Weak vs. strong:** a hook that announces the subject and its explanation together has spent its tension before the viewer has stopped ("Today I'll explain how *X* works"). A hook that states the surprising thing and leaves the reason unsaid keeps it. Same subject either way — the difference is only which half you withhold.
-
-A surprising fact stops the scroll. An unresolved implication or personal threat makes them *stay*. Ask yourself: after hearing this hook, does the viewer *need* to know what comes next?
+1. **Names the topic in the first few words.** Viewers decide on the subject, so put the thing itself up front: a product, a company, an object they own. Never open without a subject ("Here's how to…").
+2. **Sets it against what the viewer expects.** Pair something familiar with something that doesn't fit. Lead with whichever is strongest: a belief the viewer holds that's wrong, something they've seen and never questioned, a name, a number that's absurd for its context, or a reversal.
+3. **Withholds the explanation.** State the surprising *what*, never the *how*. A hook that answers its own question has spent its tension.
+4. **Gives a reason to stay.** Know what the viewer gets or loses by watching: a belief of theirs corrected, a mystery they've hit themselves, something they'll use, or their money, time or safety. Say "you/your" when it's theirs. Curiosity about someone else's fact is the weakest reason.
+5. **Is specific.** A real name, number or time beats a vague claim ("in 4 days", not "quickly"). A number needs something riding on it, such as an absurd action, a cost, a reversal or the viewer's stake. Without that it's just a spec.
 
 ## Rules
 
-1. **Single fluent sentence.** One short concise sentence as the hook.
-2. **No em dashes (—). Ever.** Not even once. If you feel the urge to write "X — Y", rewrite it as a subordinate clause: "X because/while/until/but Y".
-3. **No triplet staccato.** Don't write three short punchy fragments in a row ("Fast. Cheap. Scalable.").
-4. **Promise exactly what you deliver.** The video must give the viewer what the hook implied — no bait-and-switch.
-5. **Cut every unnecessary word.** Shorter = more confident = more scroll-stopping.
-6. **Trigger one emotion or open one loop.** Curiosity, threat, awe, identity challenge. If a hook does none of these, rewrite it.
-7. **Lead with the most compelling raw element.** Before writing, identify the strongest hook element in the topic: a name, a number, a stat, a reversal, a belief the viewer holds that the video overturns, or something they've seen themselves and never questioned. Make sure it survives into the final hook. Do not abstract it away.
-8. **Make the threat personal when it applies to the viewer.** "Your data" beats a statistic about companies. Use "you/your" when the viewer is the one at risk.
-9. **Make bold declarative claims when the facts support it.** "X just killed Y" beats "X may be changing Y." If the claim is true, say it directly. Keep it short.
-10. **Compression shortens the sentence, never the claim.** Rule 5 cuts unnecessary words; a word carrying the claim's scope is not one of them. If the source credits a whole system, the hook may not credit one feature of it. If the behaviour only happens under overload, the hook may not imply always. Counts are scope too: if the source says N objects, the hook may not say one. Restore the scope with the two or three words that do it ("one of the reasons", "under load", "among other things") and cut elsewhere, or pick an angle that's true at hook length. A hook that only lands because the scope is wrong is not tight, it's inaccurate, and rule 4 is what it breaks.
-    - **Watch for the compression that lands on the design the source rejected.** This is the worst version of the failure, because the wrong hook sounds *more* striking than the right one. If a post explains how a sliding window gets chunked into many objects, "one file" isn't a rounding error — it's the naive approach the engineering exists to avoid. Before shipping a compressed claim, ask what the source ruled out, and check you haven't just described it.
-11. **A fact is not a hook, and neither is a big number on its own.** "Company X handles N sessions with Y" is information: the name and the number only qualify the viewer, they don't stop the scroll. The number needs something riding on it — an absurd action ("by downloading a file"), a reversal ("and the fix was the opposite"), a cost ("and it took down their own database"), or the viewer's own stake ("when *you* log out"). State the tension, not the spec.
-12. **Write for the ear.** The hook is heard once, at speed. A contrast between words that sound alike (megabits and megabytes) or one that only shows in spelling blurs when spoken, so carry it with words that sound different or leave it to the on-screen text.
+1. **One short sentence.** Use only the words that carry the claim. No em dashes. No three-fragment staccato ("Fast. Cheap. Scalable.").
+2. **Write for the ear and the screen.** It's heard once at speed and read on screen with the sound off, so it has to land both ways. Words that sound alike (megabits, megabytes) blur when spoken.
+3. **Say it boldly when it's true.** "X just killed Y", not "X may be changing Y".
+4. **Compression shortens the sentence, never the claim.** Keep the words that carry scope ("under load", "one of the reasons", the real count). If the source credits a whole system, don't credit one part of it. If the source rejected a design, don't describe that design. If the hook only lands with the scope wrong, pick a different angle.
+5. **Promise only what the video delivers.**
 
 ## Where Patterns Come From
 
-This skill is the craft. **Which pattern wins belongs to the audience, so it lives with that audience** — no pattern library here, and none carried from memory. Read both sources below before generating, every time:
+Which pattern wins depends on the audience, so the patterns live with the audience, not here. Read both before generating:
 
-1. **The series file.** When a `SERIES` is known, read `series/<slug>.md` — every series is one file there. Its `## Best Hooks` section is the source of truth for that series: which patterns win, the register the hook has to be spoken in, the hooks that have actually shipped, and their real numbers.
-2. **`.claude/voice/proven-hooks.md`**, if it exists — the creator's own shipped hooks across every series, ranked by real engagement, with the recurring templates distilled. Refresh it with `/voice-profile`.
+1. **`series/<slug>.md`** when a `SERIES` is known. Its `## Best Hooks` section is the source of truth: winning patterns, register, shipped hooks and their real numbers.
+2. **`.claude/voice/proven-hooks.md`**, if it exists. These are the creator's own hooks ranked by real engagement. Refresh it with `/voice-profile`.
 
-Use a pattern only if it fits the topic and the content of the video. Don't force one that doesn't.
+Use a pattern only if it fits the topic. Where a series file conflicts with this skill, follow the series file and note the conflict.
 
-**The series file outranks this skill.** These rules describe what usually works; a series file describes what has measurably worked for its audience. Where the two conflict, follow the series file and note the conflict rather than splitting the difference.
+## Quality Test
 
-## Hook Quality Test
+Run every candidate through all six checks and rewrite any that fail:
 
-Before finalizing, run these five checks:
+1. **Scroll:** would a fast scroller stop? A line that reads like a blog title fails.
+2. **Topic:** does the viewer know what it's about within the first few words?
+3. **Gap:** is the explanation withheld, and does the viewer now need it?
+4. **Reason:** can you name the viewer's reason to stay?
+5. **Statement:** could it sit unchanged in the source article? Then it's a fact, not a hook.
+6. **Promise:** does the video deliver exactly this?
 
-1. **Scroll test** — Would someone scrolling fast pause here? (If it sounds like a blog post title, the answer is no.)
-2. **HOW test** — Does the hook withhold something the viewer now needs to know?
-3. **Promise test** — Does the video actually deliver what the hook implies?
-4. **Statement test** — Could this sentence sit unchanged inside the source article without anyone noticing? Then it's a fact, not a hook. Rewrite until it couldn't.
-5. **Reason test** — Name the viewer's reason to keep watching: money, time or safety at stake for them, being misled, a belief of theirs that's wrong, a mystery they've hit themselves, or something they'll use. Curiosity about a fact alone is not a reason. Across a set, at least one hook leads with the stakes.
-
-If any check fails, rewrite. Where a series file sets its own bar for one of these, that bar replaces the check — a series whose hooks are required to state the claim outright is not failing the HOW test, it is running a different one.
-
+Across a set, lead each hook with a different element so each video tests a different reason to watch. Where a series file sets its own bar for a check, its bar replaces the check.
