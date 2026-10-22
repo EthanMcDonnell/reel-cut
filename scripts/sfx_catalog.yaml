@@ -1,38 +1,28 @@
 # Sound-effect kinds: what each is for, and the Freesound search that finds more.
 # The library is assets/sfx/<kind>-<n>.*; /produce-video picks from it by `use`.
 # scripts/fetch_sfx.py downloads new CC0 matches to assets/sfx/new/ for review, skipping every
-# Freesound ID already in assets/sfx/SOURCES.md. Meme entries are CC0 soundalikes, not originals.
+# Freesound ID already in assets/sfx/SOURCES.md. Every kind is named for the sound itself:
+# Freesound's CC0 library has no real branded or meme sounds (Apple Pay, vine boom...), and
+# soundalikes filed under those names don't sound like them. Add a recognisable one by hand;
+# the real thing is copyrighted, and Instagram's audio matching can flag it.
 # max_s: longest file accepted (default 6). skip: extra Freesound IDs never to fetch.
 
-- {name: vine-boom, query: vine boom, use: mock-dramatic reveal; a statement left hanging}
 - {name: bruh, query: bruh, use: deadpan disbelief at something dumb}
-- {name: emotional-damage, query: emotional damage, use: a brutal burn landing}
-- {name: oh-no-laugh, query: oh no no no laugh, use: something about to go wrong}
 - {name: sad-violin, query: sad violin, use: mock sympathy; a loss}
-- {name: curb-outro, query: curb your enthusiasm, use: awkward ending; cringe beat, max_s: 12}
-- {name: windows-error, query: windows error, use: something breaks; a bug}
+- {name: error, query: error beep, use: something breaks; a bug}
 - {name: metal-pipe, query: metal pipe falling, use: something breaks; absurd sudden fail}
 - {name: air-horn, query: air horn, use: hype; a big win}
-- {name: are-you-sure, query: are you sure about that, use: calling out a dubious claim}
-- {name: why-running, query: why are you running, use: someone dodging a problem}
 - {name: wasted, query: game over, use: total failure}
 - {name: oof, query: oof, use: minor ouch}
-- {name: villager-huh, query: villager huh, use: a confused "huh"}
-- {name: few-moments-later, query: a few moments later, use: time skip}
 - {name: boo-womp, query: sad trombone, use: letdown; anticlimax}
 - {name: dun-dun-duun, query: dun dun dun dramatic, use: dramatic reveal, skip: [411232]}
 - {name: rimshot, query: rimshot, use: right after a joke}
-- {name: needs-milk, query: he needs some milk, use: someone flexing}
-- {name: sheesh, query: sheesh, use: impressed}
-- {name: fbi-open-up, query: fbi open up, use: something shady or illegal}
 - {name: anime-wow, query: anime wow, use: amazed}
 - {name: crickets, query: crickets, use: awkward silence; nobody cares}
 - {name: fart-reverb, query: fart reverb, use: lowbrow gag; rarely}
-- {name: taco-bell-bong, query: bong chime, use: abrupt punchline hit}
-- {name: iphone-ding, query: notification ding, use: a notification or message}
-- {name: discord-ping, query: notification ping, use: chat or app ping}
-- {name: editing-pop, query: pop, use: text or an element popping in}
-- {name: mouse-click, query: mouse click, use: an on-screen click}
+- {name: bong, query: bong chime, use: abrupt punchline hit}
+- {name: notification-ding, query: notification ding, use: a notification or message}
+- {name: ping, query: notification ping, use: chat or app ping}
 - {name: keyboard-typing, query: keyboard typing, use: coding; writing}
 - {name: correct-ding, query: correct answer, use: right answer; it works}
 - {name: wrong-buzzer, query: wrong answer buzzer, use: wrong; it fails}
@@ -40,8 +30,8 @@
 - {name: camera-shutter, query: camera shutter, use: a screenshot or photo}
 - {name: bubble-pop, query: bubble pop, use: light, playful accent}
 - {name: whoosh, query: whoosh, use: transition; motion}
-- {name: imessage-send, query: message sent, use: sending a message}
-- {name: apple-pay, query: success chime, use: a payment going through}
+- {name: message-send, query: message sent, use: sending a message}
+- {name: success-chime, query: success chime, use: a payment or task going through}
 - {name: record-scratch, query: record scratch, use: "hold up — stop, wait, what?"}
 - {name: bass-drop, query: bass drop boom, use: a big moment}
 - {name: riser, query: riser, use: build-up; ends on the claim it leads into}
@@ -77,3 +67,4 @@
 - {name: coin-pickup, query: coin pickup, use: a small win; points scored}
 - {name: thunder, query: thunder, use: ominous news; a storm coming}
 - {name: punch, query: punch hit, use: a comedic hit; something taking a blow}
+
