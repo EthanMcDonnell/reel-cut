@@ -129,7 +129,7 @@ _LINE_STAGGER_S = 0.08
 
 
 _MARK_S = 0.45  # an accent marker's sweep, once the title has landed
-_SUB_DELAY_S = 0.15  # the subtitle follows the landed title by this much, on its own
+_SUB_DELAY_S = 0.45  # the subtitle follows the landed title by this much, so the eye takes the title first
 _SUB_S = 0.35
 
 

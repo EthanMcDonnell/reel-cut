@@ -38,6 +38,7 @@
 - {name: sparkle, query: sparkle, use: something new, shiny or magic}
 - {name: page-turn, query: page turn, use: next point; docs}
 - {name: pen-writing, query: pen writing, use: notes; signing}
+- {name: marker-stroke, query: scribble, use: a word written or underlined; the ink title, max_s: 1.5}
 - {name: tape-rip, query: tape rip, use: tearing something off; a reveal}
 - {name: clock-ticking, query: clock ticking, use: time pressure; waiting, max_s: 10}
 - {name: heartbeat, query: heartbeat, use: tension, max_s: 10}
