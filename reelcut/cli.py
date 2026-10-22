@@ -946,7 +946,7 @@ def _phase2(cfg, doc, outputs: list[tuple[Path, bool]], verbose: bool,
     from .image_spec import load_images
     from .edl import EDLEntry
     from .image_finder import ImageCue, detect_image_cues
-    from .motion import load_motion, resolve
+    from .motion import load_motion, off_palette, resolve
     from .renderer import render as do_render
     from .transcriber import WordTimestamp
 
@@ -1039,6 +1039,11 @@ def _phase2(cfg, doc, outputs: list[tuple[Path, bool]], verbose: bool,
                     warnings.append(f"overlay {label!r}: {exc} — its motion override is ignored")
                     console.print(f"  [yellow]{warnings[-1]}[/yellow]")
                     remapped_spec.motion = {}
+                outside = off_palette(motion.look, spec.motion)
+                if outside:
+                    label = spec.name or Path(spec.path).name
+                    console.print(f"  [yellow]overlay {label!r}: {', '.join(outside)} is outside the "
+                                  f"{motion.look} palette (`reelcut motion --list`)[/yellow]")
             cue = _resolve_image_spec(remapped_spec, cfg.images.display_duration_s, cfg.output.fps,
                                       spring=resolve(asdict(motion), remapped_spec.motion).spring)
             if cue:

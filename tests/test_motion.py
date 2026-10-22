@@ -55,6 +55,12 @@ class TestResolve:
         # calm's own hold (push) replaces editorial's override; the calm layer's enter wins.
         assert (m.hold, m.enter, m.transition) == ("push", "pop", "dissolve")
 
+    def test_palette_is_the_last_look_applied(self):
+        from reelcut.motion import off_palette
+        m = resolve({"look": "editorial"}, {"look": "calm"})
+        assert off_palette(m.look, {"enter": "rise", "exit": "fade"}) == []
+        assert off_palette(m.look, {"enter": "stamp"}) == ["enter 'stamp'"]
+
     def test_unknown_name_is_refused(self):
         with pytest.raises(ValueError, match="swoosh"):
             resolve({"enter": "swoosh"})

@@ -54,6 +54,18 @@ LOOKS = {
                  tilt=0.0, captions="pop", heading="ink",
                  zoom=dict(ZOOM, scale=1.04, hold=[2.5, 3.5], every=[4.0, 6.0], **{"in": 2.5, "out": 2.5})),
 }
+# The moves each look draws from. Claude picks per overlay from its look's palette; the look's
+# own enter/exit/hold/transition is the default when nothing in the palette fits better.
+PALETTES = {
+    "none": dict(enter=["fade", "snap"], exit=["fade", "snap"], hold=["still"], transition=["cut"]),
+    "editorial": dict(enter=["swing", "slot", "drop", "stamp", "wipe"], exit=["lift", "wipe", "fade"],
+                      hold=["drift", "still", "push"], transition=["stack", "push", "swap"]),
+    "punchy": dict(enter=["stamp", "pop", "slide", "shutter"], exit=["snap", "shrink"],
+                   hold=["still"], transition=["push", "cut", "swap"]),
+    "calm": dict(enter=["rise", "fade", "slot", "wipe", "iris"], exit=["fade", "sink"],
+                 hold=["push", "still"], transition=["dissolve", "swap", "push"]),
+}
+
 _CHOICES = {"spring": SPRINGS, "enter": ENTERS, "exit": EXITS, "hold": HOLDS,
             "transition": TRANSITIONS, "captions": CAPTIONS, "heading": HEADINGS}
 _FIELDS = (*_CHOICES, "tilt", "zoom")
@@ -65,6 +77,7 @@ _SETTLE_EPS = 0.001  # a spring has settled once it stays this close to 1 (a 0.1
 
 @dataclass(frozen=True)
 class Motion:
+    look: str = "none"        # the last look applied; its palette is what overlays pick from
     spring: str = "snappy"
     enter: str = "fade"
     exit: str = "fade"
@@ -78,7 +91,7 @@ class Motion:
 
 def resolve(*layers: dict | None) -> Motion:
     """The Motion for these override layers, earliest first (see module docstring)."""
-    vals = dict(LOOKS["none"])
+    vals = dict(LOOKS["none"], look="none")
     for layer in layers:
         for key, value in (layer or {}).items():
             if value is None:
@@ -87,6 +100,7 @@ def resolve(*layers: dict | None) -> Motion:
                 if value not in LOOKS:
                     raise ValueError(f"unknown motion look {value!r} — one of {', '.join(LOOKS)}")
                 vals.update({k: dict(v) if isinstance(v, dict) else v for k, v in LOOKS[value].items()})
+                vals["look"] = value
             elif key == "zoom":
                 vals["zoom"] = _zoom(vals["zoom"], value)
             elif key == "zooms":
@@ -134,9 +148,18 @@ def catalog() -> str:
     rows += [f"{k:<11} {', '.join(v)}" for k, v in _CHOICES.items()]
     rows.append("tilt        resting angle in degrees, alternating sign per overlay")
     rows.append(f"zoom        off, on, or an object over {ZOOM}")
-    rows += ["", "looks:"] + [f"  {name:<10} " + " ".join(f"{k}={v}" for k, v in vals.items())
-                              for name, vals in LOOKS.items()]
+    for name, vals in LOOKS.items():
+        rows += ["", f"{name}: " + " ".join(f"{k}={v}" for k, v in vals.items() if k != "zoom")]
+        rows += [f"  {k:<11} {', '.join(v)}" for k, v in PALETTES[name].items()]
     return "\n".join(rows)
+
+
+def off_palette(look: str, entry: dict) -> list[str]:
+    """The moves an images.json entry's `motion` picks from outside its look's palette."""
+    if "look" in entry:
+        return []
+    return [f"{k} {entry[k]!r}" for k, allowed in PALETTES[look].items()
+            if k in entry and entry[k] not in allowed]
 
 
 # ---------------------------------------------------------------------------
