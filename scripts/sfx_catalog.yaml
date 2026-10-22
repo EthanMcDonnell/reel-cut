@@ -76,3 +76,4 @@
 - {name: level-up, query: level up, use: an upgrade; leveling up}
 - {name: coin-pickup, query: coin pickup, use: a small win; points scored}
 - {name: thunder, query: thunder, use: ominous news; a storm coming}
+- {name: punch, query: punch hit, use: a comedic hit; something taking a blow}

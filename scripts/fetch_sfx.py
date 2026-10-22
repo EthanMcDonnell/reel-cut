@@ -3,9 +3,11 @@
 
     .venv/bin/python scripts/fetch_sfx.py [--per 3] [name ...]
 
-Searches Freesound's public site (no API key) for CC0 sounds under the entry's max_s,
-most-downloaded first, and saves the top `--per` HQ previews for review to
-assets/sfx/new/<name>-<id>.mp3, crediting each in assets/sfx/new/SOURCES.md. Any Freesound
+Searches Freesound's public site (no API key) for CC0 sounds under the entry's max_s, most
+relevant first, and saves the top `--per` HQ previews for review to
+assets/sfx/new/<name>-<id>-<title>.mp3, crediting each in assets/sfx/new/SOURCES.md.
+Search matches tags and descriptions too, so a result can be another sound entirely (a
+"crickets" search once returned a punch): the title in the file name shows it at review. Any Freesound
 ID already credited in assets/sfx/SOURCES.md (kept or rejected) or new/SOURCES.md is never
 fetched again, so it is safe to re-run.
 """
@@ -29,11 +31,11 @@ HEADERS = {"User-Agent": "Mozilla/5.0"}
 
 
 def search(client: httpx.Client, query: str, max_s: float) -> list[dict]:
-    """CC0 results for `query` no longer than max_s, most-downloaded first."""
+    """CC0 results for `query` no longer than max_s, most relevant first. (Sorting by downloads
+    let popular sounds that merely mention the query outrank ones that are it.)"""
     r = client.get(SEARCH, params={
         "q": query,
         "f": f'license:"Creative Commons 0" duration:[0 TO {max_s}]',
-        "s": "Downloads (most first)",
     })
     r.raise_for_status()
     results = []
@@ -75,7 +77,8 @@ def main() -> int:
             if not found:
                 missing.append(e["name"])
             for s in found:
-                path = OUT / f"{e['name']}-{s['id']}.mp3"
+                title = re.sub(r"[^a-z0-9]+", "-", s["title"].lower().rsplit(".", 1)[0]).strip("-")[:40]
+                path = OUT / f"{e['name']}-{s['id']}-{title}.mp3"
                 path.write_bytes(client.get(s["mp3"]).raise_for_status().content)
                 known.add(s["id"])
                 with sources.open("a") as f:
